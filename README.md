@@ -63,7 +63,7 @@ This sets the maximum grain pool size (range 1-2000, default 200).
 
 ## Documentation
 
-See [ligase_manual.txt](ligase_manual.txt) for full documentation covering all inlets, outlets, messages, parameters, and default values.
+See [ligase_manual.txt](ligase_manual.pdf) for full documentation covering all inlets, outlets, messages, parameters, and default values.
 
 ## License
 
