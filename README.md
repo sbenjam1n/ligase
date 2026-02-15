@@ -2,15 +2,13 @@
 
 A granular synthesizer/sampler/looper/delay external for [Pure Data](https://puredata.info/) with real-time recording, splice-based sample organization, multi-mode filtering, distortion, and chaotic parameter modulation.
 
-Inspired by the Elektron Morphagene, Audiomulch's DLGranulator, and TidalCycles.
-
 ## Features
 
 - **Asynchronous granular synthesis** with configurable grain pool (1-2000 grains)
 - **Splice-based organization** — divide a 10-minute stereo buffer into up to 64 segments for non-linear playback
 - **Real-time recording** with sound-on-sound mixing and three record modes
 - **Three playhead modes** — static, scanning, and clock-advance
-- **Multiple delay types** — DD-4 analog delay, Bencina pitch-preserving grain delay, and rhythmic stutter delay
+- **Multiple delay types** — DD-4 analog delay, pitch-preserving grain delay, and rhythmic stutter delay
 - **Multi-mode distortion** — 5 waveshaper modes (tanh, arctan, asymmetric, blend, polynomial) with pre/post emphasis filters
 - **Moog ladder filter** — classic 4-pole 24dB/octave lowpass with resonance
 - **Chaotic parameter modulation** — random, Perlin noise (1D/2D), Lorenz attractor, and N-body gravitational simulation
@@ -21,19 +19,7 @@ Inspired by the Elektron Morphagene, Audiomulch's DLGranulator, and TidalCycles.
 ## Signal Flow
 
 ```
-Input Audio --> Recording System
-                     |
-               Granular Grains
-                     |
-                Grain Delay
-                     |
-              [Recorded to Buffer]
-                     |
-             Moog Ladder Filter
-                     |
-                Distortion
-                     |
-               Output (L/R)
+grains → delay → [RECORDING] → output → fog → Moog → distortion → dac~​ 
 ```
 
 ## Requirements
