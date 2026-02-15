@@ -1,10 +1,10 @@
-# Automated Test Procedure for Erosion~ Audio Routing
+# Automated Test Procedure for Ligase~ Audio Routing
 
 ## Purpose
 
-This document provides a complete, step-by-step procedure to verify that the erosion~ external correctly records audio input (specifically from noise~) when both objects are connected to dac~, without DSP execution order conflicts.
+This document provides a complete, step-by-step procedure to verify that the ligase~ external correctly records audio input (specifically from noise~) when both objects are connected to dac~, without DSP execution order conflicts.
 
-**Original Issue:** When noise~ and erosion~ were both connected to dac~, the noise would be silenced and recordings would show zero amplitude (L=0.000000 R=0.000000).
+**Original Issue:** When noise~ and ligase~ were both connected to dac~, the noise would be silenced and recordings would show zero amplitude (L=0.000000 R=0.000000).
 
 **Expected After Fix:** Recordings show non-zero amplitude (e.g., L=0.481438 R=0.481438), indicating successful audio capture.
 
@@ -32,13 +32,13 @@ sox --version        # Should show: SoX v14.4.2 or similar
 ```
 
 ### Project Files Required
-Navigate to the erosion_pd_project directory:
+Navigate to the ligase_pd_project directory:
 ```bash
-cd /home/sbenja88/projects/erosion_pd_project
+cd ~/projects/ligase_pd_project
 ```
 
 Ensure these files exist:
-- `erosion~.pd_linux` - The compiled external
+- `ligase~.pd_linux` - The compiled external
 - `test_recording.pd` - Automated recording test patch
 
 ---
@@ -49,12 +49,12 @@ Ensure these files exist:
 
 ```bash
 # Remove any previous test files
-rm -f /tmp/erosion_test.wav
+rm -f /tmp/ligase_test.wav
 rm -f /tmp/pd_auto.log
 rm -f /tmp/pd_playback.log
 
 # Verify cleanup
-ls /tmp/erosion_test.wav 2>&1
+ls /tmp/ligase_test.wav 2>&1
 # Expected: "No such file or directory"
 ```
 
@@ -71,7 +71,7 @@ timeout 10s pd -nogui -nosound -stderr -path . test_auto.pd 2>&1 | tee /tmp/pd_a
 - `pd -nogui` - Run Pure Data without GUI
 - `-nosound` - Disable audio output (not needed for test)
 - `-stderr` - Print messages to stderr
-- `-path .` - Add current directory to search path (for erosion~.pd_linux)
+- `-path .` - Add current directory to search path (for ligase~.pd_linux)
 - `test_auto.pd` - The test patch
 - `2>&1 | tee /tmp/pd_auto.log` - Capture all output to log file
 
@@ -79,15 +79,15 @@ timeout 10s pd -nogui -nosound -stderr -path . test_auto.pd 2>&1 | tee /tmp/pd_a
 ```
 priority 6 scheduling failed; running at normal priority
 priority 8 scheduling failed.
-erosion~: input-only recording started (will create splice at sample 0 on stop)
-erosion~: recording started (overdub mode)
-erosion~: recording stopped
-erosion~: saved /tmp/erosion_test.wav
+ligase~: input-only recording started (will create splice at sample 0 on stop)
+ligase~: recording started (overdub mode)
+ligase~: recording stopped
+ligase~: saved /tmp/ligase_test.wav
 ```
 
 **Key Success Indicators:**
 - ✅ No error messages (except priority warnings, which are normal)
-- ✅ "erosion~: saved /tmp/erosion_test.wav" appears
+- ✅ "ligase~: saved /tmp/ligase_test.wav" appears
 - ✅ Process exits cleanly (within 10 seconds)
 
 ### Step 3: Verify WAV File Creation
@@ -95,14 +95,14 @@ erosion~: saved /tmp/erosion_test.wav
 Check that the recording was saved:
 
 ```bash
-ls -lh /tmp/erosion_test.wav
-file /tmp/erosion_test.wav
+ls -lh /tmp/ligase_test.wav
+file /tmp/ligase_test.wav
 ```
 
 **Expected Output:**
 ```
--rw-r--r-- 1 user user 1.1M Oct 11 01:45 /tmp/erosion_test.wav
-/tmp/erosion_test.wav: RIFF (little-endian) data, WAVE audio, IEEE Float, stereo 48000 Hz
+-rw-r--r-- 1 user user 1.1M Oct 11 01:45 /tmp/ligase_test.wav
+/tmp/ligase_test.wav: RIFF (little-endian) data, WAVE audio, IEEE Float, stereo 48000 Hz
 ```
 
 **Success Criteria:**
@@ -116,7 +116,7 @@ file /tmp/erosion_test.wav
 Use sox to verify the recording contains actual audio (not silence):
 
 ```bash
-sox /tmp/erosion_test.wav -n stat 2>&1 | grep -E "(Samples read|Length|RMS|Maximum amplitude)"
+sox /tmp/ligase_test.wav -n stat 2>&1 | grep -E "(Samples read|Length|RMS|Maximum amplitude)"
 ```
 
 **Expected Output:**
@@ -175,18 +175,18 @@ The test automatically performs these operations:
    - Initialize noise~ generator
 
 2. **Recording Setup (100ms)**
-   - Send `recinput` message to erosion~ (enables input-only recording mode)
+   - Send `recinput` message to ligase~ (enables input-only recording mode)
    - This ensures clean recording without sound-on-sound mixing
 
 3. **Recording (3000ms)**
    - Send `record 1` to start recording
-   - noise~ generates audio → feeds to erosion~ inputs
-   - erosion~ captures to internal buffer
+   - noise~ generates audio → feeds to ligase~ inputs
+   - ligase~ captures to internal buffer
    - Wait 3 seconds
 
 4. **Save (500ms)**
    - Send `record 0` to stop recording
-   - Send `save /tmp/erosion_test.wav` to write buffer to disk
+   - Send `save /tmp/ligase_test.wav` to write buffer to disk
 
 5. **Cleanup (500ms)**
    - Send `pd quit` to exit cleanly
@@ -216,14 +216,14 @@ The test patch contains:
     ↓
 [delay 500]
     ↓
-[msg: save /tmp/erosion_test.wav]  ← Save to disk
+[msg: save /tmp/ligase_test.wav]  ← Save to disk
     ↓
 [delay 500]
     ↓
 [msg: pd quit]       ← Exit Pure Data
 
 Audio Path:
-[noise~] ──→ [erosion~ 500] ──→ [dac~ 1 2]
+[noise~] ──→ [ligase~ 500] ──→ [dac~ 1 2]
                ↑
                └─ [receive e-ctl] ← Control messages
 ```
@@ -232,7 +232,7 @@ Audio Path:
 - Uses `[receive e-ctl]` for message routing (avoids PD's direct connection issues)
 - Delays ensure messages arrive in correct order
 - `loadbang` makes test fully automatic
-- Both noise~ channels feed both erosion~ inputs (stereo test)
+- Both noise~ channels feed both ligase~ inputs (stereo test)
 - DAC connection verifies no interference between objects
 
 ---
@@ -246,7 +246,7 @@ If all steps show expected results:
 2. RMS amplitude > 0.05
 3. Buffer check shows L > 0.01 and R > 0.01
 
-**Conclusion:** The audio routing fix is working correctly. The erosion~ external properly records input audio even when connected to dac~ alongside the audio source.
+**Conclusion:** The audio routing fix is working correctly. The ligase~ external properly records input audio even when connected to dac~ alongside the audio source.
 
 ### ❌ FAIL - Recording Silent
 
@@ -255,14 +255,14 @@ If buffer check shows `L=0.000000 R=0.000000`:
 **Diagnosis:** The DSP execution order conflict bug is still present.
 
 **Likely Causes:**
-1. erosion~.pd_linux was not recompiled after applying the fix
-2. Wrong version of erosion~.pd_linux is being loaded
-3. The fix was not correctly applied to src/erosion~.c
+1. ligase~.pd_linux was not recompiled after applying the fix
+2. Wrong version of ligase~.pd_linux is being loaded
+3. The fix was not correctly applied to src/ligase~.c
 
 **Troubleshooting Steps:**
 ```bash
 # 1. Verify the fix is in the source code
-grep -A3 "Initialize output buffers to silence" src/erosion~.c
+grep -A3 "Initialize output buffers to silence" src/ligase~.c
 
 # Expected output:
 #   // Initialize output buffers to silence
@@ -275,11 +275,11 @@ make clean
 make
 
 # 3. Verify new binary timestamp
-ls -l erosion~.pd_linux
+ls -l ligase~.pd_linux
 # Should show recent modification time
 
 # 4. Re-run tests
-rm -f /tmp/erosion_test.wav
+rm -f /tmp/ligase_test.wav
 timeout 10s pd -nogui -nosound -stderr -path . test_auto.pd 2>&1 | tee /tmp/pd_auto.log
 ```
 
@@ -297,7 +297,7 @@ If RMS amplitude is between 0.001 and 0.05:
 **Verification:**
 ```bash
 # Check if amplitude scales correctly over time
-sox /tmp/erosion_test.wav -n stat 2>&1 | grep -E "(Maximum|RMS|Mean)"
+sox /tmp/ligase_test.wav -n stat 2>&1 | grep -E "(Maximum|RMS|Mean)"
 ```
 
 ---
@@ -312,15 +312,15 @@ sudo apt-get update
 sudo apt-get install -y puredata
 ```
 
-### Issue: "erosion~: no such object"
+### Issue: "ligase~: no such object"
 
-**Cause:** Pure Data cannot find erosion~.pd_linux
+**Cause:** Pure Data cannot find ligase~.pd_linux
 
 **Solution:**
 ```bash
 # Ensure you're in the correct directory
-cd /home/sbenja88/projects/erosion_pd_project
-ls -l erosion~.pd_linux  # Verify file exists
+cd ~/projects/ligase_pd_project
+ls -l ligase~.pd_linux  # Verify file exists
 
 # Add -path . to pd command
 pd -nogui -nosound -path . test_auto.pd
@@ -348,10 +348,10 @@ pd -nogui -nosound -path . test_auto.pd
 **Solution:**
 ```bash
 # Check file size
-ls -lh /tmp/erosion_test.wav
+ls -lh /tmp/ligase_test.wav
 
 # If < 100 KB, recording failed - re-run test
-rm -f /tmp/erosion_test.wav
+rm -f /tmp/ligase_test.wav
 timeout 10s pd -nogui -nosound -stderr -path . test_auto.pd 2>&1
 ```
 
@@ -363,14 +363,14 @@ For convenience, use this one-liner to run all tests:
 
 ```bash
 #!/bin/bash
-cd /home/sbenja88/projects/erosion_pd_project && \
-rm -f /tmp/erosion_test.wav && \
+cd ~/projects/ligase_pd_project && \
+rm -f /tmp/ligase_test.wav && \
 echo "=== Running Recording Test ===" && \
 timeout 10s pd -nogui -nosound -stderr -path . test_auto.pd 2>&1 | tee /tmp/pd_auto.log && \
 echo -e "\n=== File Check ===" && \
-ls -lh /tmp/erosion_test.wav && \
+ls -lh /tmp/ligase_test.wav && \
 echo -e "\n=== Audio Analysis ===" && \
-sox /tmp/erosion_test.wav -n stat 2>&1 | grep -E "(RMS|Maximum amplitude)" && \
+sox /tmp/ligase_test.wav -n stat 2>&1 | grep -E "(RMS|Maximum amplitude)" && \
 echo -e "\n=== Buffer Verification ===" && \
 timeout 5s pd -nogui -nosound -stderr -path . test_playback.pd 2>&1 | grep "buffer check:" && \
 echo -e "\n=== TEST COMPLETE ==="
@@ -380,10 +380,10 @@ echo -e "\n=== TEST COMPLETE ==="
 ```
 === Running Recording Test ===
 [... PD messages ...]
-erosion~: saved /tmp/erosion_test.wav
+ligase~: saved /tmp/ligase_test.wav
 
 === File Check ===
--rw-r--r-- 1 user user 1.1M Oct 11 01:45 /tmp/erosion_test.wav
+-rw-r--r-- 1 user user 1.1M Oct 11 01:45 /tmp/ligase_test.wav
 
 === Audio Analysis ===
 Maximum amplitude:     0.998733
@@ -402,13 +402,13 @@ RMS     amplitude:     0.104593
 ### When to Run These Tests
 
 1. **After applying the audio routing fix** - Verify it worked
-2. **After modifying src/erosion~.c** - Ensure no regression
+2. **After modifying src/ligase~.c** - Ensure no regression
 3. **Before releasing a new version** - QA verification
 4. **After OS/PD updates** - Verify compatibility
 
 ### Updating Test Expectations
 
-If the erosion~ implementation changes (e.g., different sample rates, buffer sizes), update these thresholds in this document:
+If the ligase~ implementation changes (e.g., different sample rates, buffer sizes), update these thresholds in this document:
 
 - **File size:** Currently expecting 1.0-1.5 MB for 3 seconds
 - **RMS amplitude:** Currently expecting > 0.05 for noise~
@@ -419,7 +419,7 @@ If the erosion~ implementation changes (e.g., different sample rates, buffer siz
 
 All test artifacts are stored in `/tmp` and can be safely deleted:
 ```bash
-rm -f /tmp/erosion_test.wav /tmp/pd_auto.log /tmp/pd_playback.log
+rm -f /tmp/ligase_test.wav /tmp/pd_auto.log /tmp/pd_playback.log
 ```
 
 ---
