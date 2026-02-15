@@ -1,0 +1,2 @@
+gcc -dynamiclib -undefined dynamic_lookup -o erosion~.pd_darwin src/erosion~.c src/envelope.c src/grain.c src/reel.c src/splice.c -I/Applications/Pd-0.53-2.app/Contents/Resources/src -Wall -O2
+
