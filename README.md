@@ -69,4 +69,4 @@ See [ligase_manual.pdf](ligase_manual.pdf) for full documentation covering all i
 
 Copyright (C) 2025 Steven Benjamin
 
-Licensed under the [GNU General Public License](https://www.gnu.org/licenses/gpl-3.0.html).
+
