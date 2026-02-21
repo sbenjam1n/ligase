@@ -54,8 +54,11 @@ static void smear_magnitudes(grain_fog_t *fog, float amount) {
 static void update_magnitude_filter_coefficients(grain_fog_t *fog) {
     // Design a 2-pole resonant lowpass filter (biquad)
     // Using cookbook formulas for resonant lowpass
+    // Note: filter runs at the FFT hop rate, not the audio sample rate
+    int hop_size = fog->fft_size / 4;
+    float frame_rate = (float)fog->sample_rate / (float)hop_size;
 
-    float omega = 2.0f * M_PI * fog->mag_cutoff_hz / (float)fog->sample_rate;
+    float omega = 2.0f * M_PI * fog->mag_cutoff_hz / frame_rate;
     float sn = sinf(omega);
     float cs = cosf(omega);
     float alpha = sn / (2.0f * fog->mag_resonance);
@@ -80,32 +83,25 @@ static void filter_magnitudes(grain_fog_t *fog, float amount) {
         return;
     }
 
-    // Apply 2-pole IIR filter to each bin's magnitude
+    // Apply 2-pole IIR filter to each bin's magnitude using Direct Form II Transposed
+    // This form uses both feedforward (b0,b1,b2) and feedback (a1,a2) coefficients
+    // and requires only 2 state variables per bin (z1, z2)
     for (int i = 0; i < fog->num_bins; i++) {
-        float input = fog->smeared_mags[i];
+        float x_n = fog->smeared_mags[i];
 
-        // Biquad difference equation:
-        // y[n] = b0*x[n] + b1*x[n-1] + b2*x[n-2] - a1*y[n-1] - a2*y[n-2]
-        // For magnitude, we use the smeared magnitude as x[n]
-        // and store filtered magnitudes as y[n]
-
-        float x_n = input;
-        float x_n1 = fog->mag_z1[i];  // x[n-1]
-        float x_n2 = fog->mag_z2[i];  // x[n-2]
-
-        // Note: For first implementation, treating magnitude history as input history
-        // This is simplified - could be improved by treating filtered mag as output
-        float filtered = fog->mag_b0 * x_n +
-                        fog->mag_b1 * x_n1 +
-                        fog->mag_b2 * x_n2;
+        // Direct Form II Transposed:
+        //   y[n] = b0*x[n] + z1[n-1]
+        //   z1[n] = b1*x[n] - a1*y[n] + z2[n-1]
+        //   z2[n] = b2*x[n] - a2*y[n]
+        float filtered = fog->mag_b0 * x_n + fog->mag_z1[i];
 
         // Apply soft limiting to prevent magnitude explosion
         // tanhf provides soft knee compression to tame resonance peaks
         filtered = tanhf(filtered * 0.5f) * 2.0f;
 
-        // Update state with denormal flushing
-        fog->mag_z2[i] = fog->mag_z1[i];
-        fog->mag_z1[i] = x_n;
+        // Update state variables (Direct Form II Transposed)
+        fog->mag_z1[i] = fog->mag_b1 * x_n - fog->mag_a1 * filtered + fog->mag_z2[i];
+        fog->mag_z2[i] = fog->mag_b2 * x_n - fog->mag_a2 * filtered;
 
         // Flush denormals to prevent CPU spikes
         if (fabsf(fog->mag_z1[i]) < 1e-15f) fog->mag_z1[i] = 0.0f;
@@ -124,7 +120,11 @@ static void filter_magnitudes(grain_fog_t *fog, float amount) {
 static void update_phase_filter_coefficient(grain_fog_t *fog) {
     // Simple 1-pole lowpass: y[n] = (1-a)*x[n] + a*y[n-1]
     // where a = exp(-2*pi*fc/fs)
-    float omega = 2.0f * M_PI * fog->phase_cutoff_hz / (float)fog->sample_rate;
+    // Note: filter runs at the FFT hop rate, not the audio sample rate
+    int hop_size = fog->fft_size / 4;
+    float frame_rate = (float)fog->sample_rate / (float)hop_size;
+
+    float omega = 2.0f * M_PI * fog->phase_cutoff_hz / frame_rate;
     fog->phase_lp_coeff = expf(-omega);
 }
 
@@ -446,11 +446,10 @@ static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
     float time_domain[1024];
     kiss_fftri(fog->fft_inverse, bins, time_domain);
 
-    // Normalize for kissfft (inverse FFT scales by N) and apply synthesis window
-    // For Hann window with 4x overlap: COLA sum of window^2 is ~1.5
-    // Need to compensate: divide by N (IFFT scaling) and multiply by COLA factor
-    // Empirically determined: (1/N) * 6.5 gives unity gain for Hann^2 with 4x overlap
-    const float norm_factor = 6.5f / fog->fft_size;
+    // Normalize for kissfft (inverse FFT does not divide by N) and apply synthesis window
+    // For Hann window with 4x overlap: COLA sum of window^2 is 1.5
+    // Correct normalization: 1/(N * COLA_sum) = 1/(N * 1.5) = 2/(3*N)
+    const float norm_factor = 2.0f / (3.0f * fog->fft_size);
     for (int i = 0; i < fog->fft_size; i++) {
         output[i] = time_domain[i] * fog->window[i] * norm_factor;
     }
