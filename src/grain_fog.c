@@ -209,13 +209,13 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size) {
     // Default parameters
     fog->mix = 0.0f;
     fog->smear_enabled = 1;
-    fog->smear_bins = 4;
+    fog->smear_bins = 8;  // Wider blur for more diffuse, hazy timbre
     fog->smear_onset_curve = FOG_ONSET_LOGARITHMIC;
     fog->smear_onset_amount = 1.0f;
 
     fog->specmagfilter_enabled = 1;
     fog->mag_cutoff_hz = 2.0f;
-    fog->mag_resonance = 0.707f;  // Butterworth (no peaking)
+    fog->mag_resonance = 1.0f;  // Gentle resonance for ghostly spectral persistence
     fog->phase_cutoff_hz = 2.0f;
     fog->specmagfilter_onset_curve = FOG_ONSET_LOGARITHMIC;
     fog->specmagfilter_onset_amount = 1.0f;
@@ -246,9 +246,12 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size) {
     fog->output_buffer_right = (float*)calloc(fft_size, sizeof(float));
     fog->window = (float*)calloc(fft_size, sizeof(float));
 
-    // Precompute Hann window: w[n] = 0.5 * (1 - cos(2π*n/(N-1)))
+    // Precompute periodic Hann window: w[n] = 0.5 * (1 - cos(2π*n/N))
+    // Periodic form (divide by N, not N-1) gives perfect COLA with 4x overlap:
+    //   sum of Hann^2 at every position = 1.5 (constant)
+    // Symmetric form (N-1) creates periodic COLA variation → comb-filter artifacts
     for (int i = 0; i < fft_size; i++) {
-        fog->window[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / (fft_size - 1)));
+        fog->window[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / fft_size));
     }
 
     // Initialize overlap-add state
@@ -403,38 +406,40 @@ static float calculate_onset_amount(float mix, fog_onset_curve_t curve, float cu
 
 // @region:ligase_pd.core.grain.fog.fft_processing FFT Frame Processing
 
-// Process a single FFT frame (1024 samples) with spectral effects
+// Process a single FFT frame with spectral effects
+// Uses fft_imag_left as scratch space for windowed input and IFFT output
 static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
                               kiss_fft_cpx *bins) {
-    // Apply Hann window to input
-    float windowed[1024];
+    // Use fft_imag_left as scratch buffer (not used for anything else during processing)
+    float *scratch = fog->fft_imag_left;
+
+    // Apply analysis window (periodic Hann) to input
     for (int i = 0; i < fog->fft_size; i++) {
-        windowed[i] = input[i] * fog->window[i];
+        scratch[i] = input[i] * fog->window[i];
     }
 
     // Forward FFT (real → complex)
-    kiss_fftr(fog->fft_forward, windowed, bins);
+    kiss_fftr(fog->fft_forward, scratch, bins);
 
     // Convert to polar (magnitude/phase)
     complex_to_polar(fog, bins);
 
-    // Apply spectral processing if enabled
+    // Stage 1: Horizontal smear (frequency-axis magnitude averaging)
     if (fog->smear_enabled) {
         float smear_amt = calculate_onset_amount(fog->mix,
             fog->smear_onset_curve, fog->smear_onset_amount);
         smear_magnitudes(fog, smear_amt);
     } else {
-        // No smear - copy magnitudes directly
         memcpy(fog->smeared_mags, fog->magnitudes, fog->num_bins * sizeof(float));
     }
 
+    // Stage 2: Vertical filter (time-axis resonant lowpass on magnitudes + phase smoothing)
     if (fog->specmagfilter_enabled) {
         float specmag_amt = calculate_onset_amount(fog->mix,
             fog->specmagfilter_onset_curve, fog->specmagfilter_onset_amount);
         filter_magnitudes(fog, specmag_amt);
         filter_phases(fog, specmag_amt);
     } else {
-        // No filtering - copy directly
         memcpy(fog->filtered_mags, fog->smeared_mags, fog->num_bins * sizeof(float));
         memcpy(fog->filtered_phases, fog->phases, fog->num_bins * sizeof(float));
     }
@@ -442,16 +447,16 @@ static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
     // Convert back to Cartesian (real/imag)
     polar_to_complex(fog, bins, fog->filtered_mags, fog->filtered_phases);
 
-    // Inverse FFT (complex → real)
-    float time_domain[1024];
-    kiss_fftri(fog->fft_inverse, bins, time_domain);
+    // Inverse FFT (complex → real), reuse scratch buffer
+    kiss_fftri(fog->fft_inverse, bins, scratch);
 
-    // Normalize for kissfft (inverse FFT does not divide by N) and apply synthesis window
-    // For Hann window with 4x overlap: COLA sum of window^2 is 1.5
-    // Correct normalization: 1/(N * COLA_sum) = 1/(N * 1.5) = 2/(3*N)
+    // Apply synthesis window and normalize
+    // kissfft round-trip gain = N (verified: forward is standard DFT, inverse is unscaled)
+    // Periodic Hann^2 (analysis * synthesis) COLA with 4x overlap = 1.5
+    // Unity gain normalization: 1/(N * COLA) = 1/(N * 1.5) = 2/(3*N)
     const float norm_factor = 2.0f / (3.0f * fog->fft_size);
     for (int i = 0; i < fog->fft_size; i++) {
-        output[i] = time_domain[i] * fog->window[i] * norm_factor;
+        output[i] = scratch[i] * fog->window[i] * norm_factor;
     }
 }
 
@@ -541,10 +546,11 @@ void grain_fog_process_block(
         // 4. READ OUTPUT: Get sample from accumulation buffer
         float wet_left, wet_right;
 
-        // Check if we have valid processed audio yet
-        if (fog->frames_processed > 0) {
+        // With 4x overlap, need 4 frames before output is fully "baked"
+        // (each position has contributions from all 4 overlapping windows)
+        if (fog->frames_processed >= 4) {
             // Safety check: ensure output_read_pos is in valid range
-            if (fog->output_read_pos >= fog->fft_size) {
+            if (fog->output_read_pos >= hop_size) {
                 fog->output_read_pos = 0;
             }
 
@@ -555,30 +561,32 @@ void grain_fog_process_block(
             // Apply final safety clipping
             wet_left = fmaxf(-1.0f, fminf(1.0f, wet_left));
             wet_right = fmaxf(-1.0f, fminf(1.0f, wet_right));
-
-            fog->output_read_pos++;
-
-            // When we've consumed hop_size samples, shift accumulation buffer
-            if (fog->output_read_pos >= hop_size) {
-                memmove(fog->output_buffer_left,
-                       fog->output_buffer_left + hop_size,
-                       (fog->fft_size - hop_size) * sizeof(float));
-                memmove(fog->output_buffer_right,
-                       fog->output_buffer_right + hop_size,
-                       (fog->fft_size - hop_size) * sizeof(float));
-
-                // Zero-pad the end (the crucial "clear" step)
-                memset(fog->output_buffer_left + (fog->fft_size - hop_size), 0,
-                      hop_size * sizeof(float));
-                memset(fog->output_buffer_right + (fog->fft_size - hop_size), 0,
-                      hop_size * sizeof(float));
-
-                fog->output_read_pos = 0;
-            }
         } else {
-            // Initial latency period - no processed audio yet, pass through dry
+            // Initial latency period - accumulation buffer not yet fully baked
+            // Pass through dry input as the wet signal to avoid volume dip
             wet_left = in_left[i];
             wet_right = in_right[i];
+        }
+
+        fog->output_read_pos++;
+
+        // When we've consumed hop_size samples, shift accumulation buffer
+        // (this runs during latency too, to keep the buffer advancing)
+        if (fog->output_read_pos >= hop_size) {
+            memmove(fog->output_buffer_left,
+                   fog->output_buffer_left + hop_size,
+                   (fog->fft_size - hop_size) * sizeof(float));
+            memmove(fog->output_buffer_right,
+                   fog->output_buffer_right + hop_size,
+                   (fog->fft_size - hop_size) * sizeof(float));
+
+            // Zero-pad the end (the crucial "clear" step)
+            memset(fog->output_buffer_left + (fog->fft_size - hop_size), 0,
+                  hop_size * sizeof(float));
+            memset(fog->output_buffer_right + (fog->fft_size - hop_size), 0,
+                  hop_size * sizeof(float));
+
+            fog->output_read_pos = 0;
         }
 
         // 5. CROSSFADE: Mix dry and wet
