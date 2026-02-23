@@ -85,8 +85,10 @@ static void update_magnitude_filter_coefficients(grain_fog_t *fog) {
 
 // @region:ligase_pd.core.grain.fog.specmagfilter.magnitude_filter Magnitude Filter
 
-// Apply resonant lowpass filtering to magnitudes (vertical/temporal axis)
-static void filter_magnitudes(grain_fog_t *fog, float amount) {
+// Apply resonant lowpass filtering to magnitudes (vertical/temporal axis).
+// z1/z2 are the per-bin IIR state arrays for the channel being processed;
+// callers pass the appropriate left or right arrays.
+static void filter_magnitudes(grain_fog_t *fog, float amount, float *z1, float *z2) {
     if (!fog->specmagfilter_enabled || amount < 0.001f) {
         // No filtering - copy smeared mags directly
         memcpy(fog->filtered_mags, fog->smeared_mags, fog->num_bins * sizeof(float));
@@ -103,19 +105,19 @@ static void filter_magnitudes(grain_fog_t *fog, float amount) {
         //   y[n] = b0*x[n] + z1[n-1]
         //   z1[n] = b1*x[n] - a1*y[n] + z2[n-1]
         //   z2[n] = b2*x[n] - a2*y[n]
-        float filtered = fog->mag_b0 * x_n + fog->mag_z1[i];
+        float filtered = fog->mag_b0 * x_n + z1[i];
 
         // Apply soft limiting to prevent magnitude explosion
         // tanhf provides soft knee compression to tame resonance peaks
         filtered = tanhf(filtered * 0.5f) * 2.0f;
 
         // Update state variables (Direct Form II Transposed)
-        fog->mag_z1[i] = fog->mag_b1 * x_n - fog->mag_a1 * filtered + fog->mag_z2[i];
-        fog->mag_z2[i] = fog->mag_b2 * x_n - fog->mag_a2 * filtered;
+        z1[i] = fog->mag_b1 * x_n - fog->mag_a1 * filtered + z2[i];
+        z2[i] = fog->mag_b2 * x_n - fog->mag_a2 * filtered;
 
         // Flush denormals to prevent CPU spikes
-        if (fabsf(fog->mag_z1[i]) < 1e-15f) fog->mag_z1[i] = 0.0f;
-        if (fabsf(fog->mag_z2[i]) < 1e-15f) fog->mag_z2[i] = 0.0f;
+        if (fabsf(z1[i]) < 1e-15f) z1[i] = 0.0f;
+        if (fabsf(z2[i]) < 1e-15f) z2[i] = 0.0f;
 
         // Blend between unfiltered and filtered based on amount
         fog->filtered_mags[i] = fog->smeared_mags[i] * (1.0f - amount) + filtered * amount;
@@ -138,8 +140,11 @@ static void update_phase_filter_coefficient(grain_fog_t *fog) {
     fog->phase_lp_coeff = expf(-omega);
 }
 
-// Apply lowpass filtering to phase deltas (vertical/temporal axis)
-static void filter_phases(grain_fog_t *fog, float amount) {
+// Apply lowpass filtering to phase deltas (vertical/temporal axis).
+// phase_prev/phase_delta_z1 are the per-bin state arrays for the channel being
+// processed; callers pass the appropriate left or right arrays.
+static void filter_phases(grain_fog_t *fog, float amount,
+                          float *phase_prev, float *phase_delta_z1) {
     if (!fog->specmagfilter_enabled || amount < 0.001f) {
         // No filtering - copy phases directly
         memcpy(fog->filtered_phases, fog->phases, fog->num_bins * sizeof(float));
@@ -149,7 +154,7 @@ static void filter_phases(grain_fog_t *fog, float amount) {
     // Apply phase delta lowpass filtering
     for (int i = 0; i < fog->num_bins; i++) {
         float current_phase = fog->phases[i];
-        float prev_phase = fog->phase_prev[i];
+        float prev_phase = phase_prev[i];
 
         // Calculate phase delta (unwrapped)
         float delta = current_phase - prev_phase;
@@ -160,17 +165,17 @@ static void filter_phases(grain_fog_t *fog, float amount) {
 
         // Lowpass filter the delta
         float filtered_delta = delta * (1.0f - fog->phase_lp_coeff) +
-                              fog->phase_delta_z1[i] * fog->phase_lp_coeff;
+                              phase_delta_z1[i] * fog->phase_lp_coeff;
 
         // Reconstruct filtered phase
         float filtered_phase = prev_phase + filtered_delta;
 
         // Update state
-        fog->phase_delta_z1[i] = filtered_delta;
-        fog->phase_prev[i] = filtered_phase;
+        phase_delta_z1[i] = filtered_delta;
+        phase_prev[i] = filtered_phase;
 
         // Flush denormals to prevent CPU spikes
-        if (fabsf(fog->phase_delta_z1[i]) < 1e-15f) fog->phase_delta_z1[i] = 0.0f;
+        if (fabsf(phase_delta_z1[i]) < 1e-15f) phase_delta_z1[i] = 0.0f;
 
         // Blend between unfiltered and filtered based on amount
         fog->filtered_phases[i] = current_phase * (1.0f - amount) + filtered_phase * amount;
@@ -230,11 +235,19 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size) {
     fog->specmagfilter_onset_curve = FOG_ONSET_LOGARITHMIC;
     fog->specmagfilter_onset_amount = 1.0f;
 
-    // Allocate per-bin state arrays
+    // Allocate per-bin state arrays (left channel + right-channel duplicates for
+    // independent stereo mode; both are always allocated so the mode can be
+    // switched at runtime without reallocation)
     fog->mag_z1 = (float*)calloc(fog->num_bins, sizeof(float));
     fog->mag_z2 = (float*)calloc(fog->num_bins, sizeof(float));
     fog->phase_prev = (float*)calloc(fog->num_bins, sizeof(float));
     fog->phase_delta_z1 = (float*)calloc(fog->num_bins, sizeof(float));
+    fog->mag_z1_right = (float*)calloc(fog->num_bins, sizeof(float));
+    fog->mag_z2_right = (float*)calloc(fog->num_bins, sizeof(float));
+    fog->phase_prev_right = (float*)calloc(fog->num_bins, sizeof(float));
+    fog->phase_delta_z1_right = (float*)calloc(fog->num_bins, sizeof(float));
+
+    fog->stereo_filter_independent = 0;  // default: shared state
 
     // Allocate temporary processing buffers
     fog->magnitudes = (float*)calloc(fog->num_bins, sizeof(float));
@@ -309,6 +322,10 @@ void grain_fog_destroy(grain_fog_t *fog) {
     free(fog->mag_z2);
     free(fog->phase_prev);
     free(fog->phase_delta_z1);
+    free(fog->mag_z1_right);
+    free(fog->mag_z2_right);
+    free(fog->phase_prev_right);
+    free(fog->phase_delta_z1_right);
     free(fog->magnitudes);
     free(fog->phases);
     free(fog->smeared_mags);
@@ -343,6 +360,12 @@ void grain_fog_destroy(grain_fog_t *fog) {
 void grain_fog_set_mix(grain_fog_t *fog, float mix) {
     if (!fog || fog->magic != FOG_MAGIC) return;
     fog->mix = fmaxf(0.0f, fminf(1.0f, mix));
+}
+
+// Stereo filter mode
+void grain_fog_set_stereo_filter_mode(grain_fog_t *fog, int independent) {
+    if (!fog || fog->magic != FOG_MAGIC) return;
+    fog->stereo_filter_independent = independent ? 1 : 0;
 }
 
 // @region:ligase_pd.core.grain.fog.messages.smear Smear Control Messages
@@ -434,9 +457,11 @@ static float calculate_onset_amount(float mix, fog_onset_curve_t curve, float cu
 
 // @region:ligase_pd.core.grain.fog.fft_processing FFT Frame Processing
 
-// Process a single FFT frame with spectral effects
+// Process a single FFT frame with spectral effects.
+// channel: 0 = left, 1 = right — used to select per-channel filter state when
+// stereo_filter_independent is enabled.
 static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
-                              kiss_fft_cpx *bins) {
+                              kiss_fft_cpx *bins, int channel) {
     float *scratch = fog->scratch;
 
     // Apply analysis window (periodic Hann) to input
@@ -459,12 +484,28 @@ static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
         memcpy(fog->smeared_mags, fog->magnitudes, fog->num_bins * sizeof(float));
     }
 
-    // Stage 2: Vertical filter (time-axis resonant lowpass on magnitudes + phase smoothing)
+    // Stage 2: Vertical filter (time-axis resonant lowpass on magnitudes + phase smoothing).
+    // In independent mode each channel uses its own state arrays; in shared mode both
+    // channels use the left-channel arrays (preserving the original interleaved behaviour).
     if (fog->specmagfilter_enabled) {
         float specmag_amt = calculate_onset_amount(fog->mix,
             fog->specmagfilter_onset_curve, fog->specmagfilter_onset_amount);
-        filter_magnitudes(fog, specmag_amt);
-        filter_phases(fog, specmag_amt);
+
+        float *mag_z1, *mag_z2, *ph_prev, *ph_delta;
+        if (fog->stereo_filter_independent && channel == 1) {
+            mag_z1   = fog->mag_z1_right;
+            mag_z2   = fog->mag_z2_right;
+            ph_prev  = fog->phase_prev_right;
+            ph_delta = fog->phase_delta_z1_right;
+        } else {
+            mag_z1   = fog->mag_z1;
+            mag_z2   = fog->mag_z2;
+            ph_prev  = fog->phase_prev;
+            ph_delta = fog->phase_delta_z1;
+        }
+
+        filter_magnitudes(fog, specmag_amt, mag_z1, mag_z2);
+        filter_phases(fog, specmag_amt, ph_prev, ph_delta);
     } else {
         memcpy(fog->filtered_mags, fog->smeared_mags, fog->num_bins * sizeof(float));
         memcpy(fog->filtered_phases, fog->phases, fog->num_bins * sizeof(float));
@@ -581,13 +622,13 @@ void grain_fog_process_block(
         // Done AFTER reading output so the new frame's contributions
         // go to future output positions, not the current one
         if (fog->samples_until_process <= 0) {
-            // Process left channel FFT frame
+            // Process left channel FFT frame (channel 0)
             process_fft_frame(fog, fog->input_buffer_left,
-                            fog->fft_real_left, fog->fft_bins_left);
+                            fog->fft_real_left, fog->fft_bins_left, 0);
 
-            // Process right channel FFT frame
+            // Process right channel FFT frame (channel 1)
             process_fft_frame(fog, fog->input_buffer_right,
-                            fog->fft_real_right, fog->fft_bins_right);
+                            fog->fft_real_right, fog->fft_bins_right, 1);
 
             // ADD to accumulation buffer (the key OLA step)
             for (int j = 0; j < fog->fft_size; j++) {

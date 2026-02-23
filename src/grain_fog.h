@@ -31,6 +31,11 @@ void grain_fog_destroy(grain_fog_t *fog);
 // Main inlet control (0.0-1.0, logarithmic equal-power crossfade)
 void grain_fog_set_mix(grain_fog_t *fog, float mix);
 
+// Stereo filter mode:
+//   0 (default) — shared state (diffuse mono-ish spectral character)
+//   1 — independent per-channel state (true stereo spectral evolution)
+void grain_fog_set_stereo_filter_mode(grain_fog_t *fog, int independent);
+
 // @region:ligase_pd.core.grain.fog.messages.smear Smear Control Messages
 
 // Smear (horizontal spectral blurring) parameters

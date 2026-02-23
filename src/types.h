@@ -610,8 +610,10 @@ typedef struct {
     // @region:ligase_pd.core.grain.fog.specmagfilter.magnitude_filter Magnitude Filter State
     // Per-bin filter state for magnitude temporal filtering (vertical axis)
     // 2-pole IIR resonant lowpass filter for each bin
-    float *mag_z1;               // Magnitude at T-1 (previous frame)
-    float *mag_z2;               // Magnitude at T-2 (two frames ago)
+    float *mag_z1;               // Left channel: magnitude state T-1
+    float *mag_z2;               // Left channel: magnitude state T-2
+    float *mag_z1_right;         // Right channel: magnitude state T-1 (independent mode)
+    float *mag_z2_right;         // Right channel: magnitude state T-2 (independent mode)
 
     // Pre-computed filter coefficients (updated when cutoff/resonance changes)
     float mag_a1, mag_a2;        // IIR feedback coefficients
@@ -620,12 +622,21 @@ typedef struct {
 
     // @region:ligase_pd.core.grain.fog.specmagfilter.phase_filter Phase Filter State
     // Per-bin filter state for phase temporal filtering
-    float *phase_prev;           // Previous phase value for each bin
-    float *phase_delta_z1;       // Phase delta at T-1 (for lowpass filtering)
+    float *phase_prev;           // Left channel: previous phase value per bin
+    float *phase_delta_z1;       // Left channel: phase delta at T-1
+    float *phase_prev_right;     // Right channel: previous phase value per bin (independent mode)
+    float *phase_delta_z1_right; // Right channel: phase delta at T-1 (independent mode)
 
     // Pre-computed filter coefficient for phase lowpass (1-pole)
     float phase_lp_coeff;
     // @endregion:ligase_pd.core.grain.fog.specmagfilter.phase_filter
+
+    // Stereo filter mode:
+    //   0 (default) — shared state: L and R processing share the same filter state arrays,
+    //                 producing a diffuse mono-ish spectral character.
+    //   1 — independent: each channel has its own per-bin state, tracking L and R
+    //                    independently for true stereo spectral evolution.
+    int stereo_filter_independent;
 
     // @region:ligase_pd.core.grain.fog.process Temporary Processing Buffers
     // Buffers for FFT/spectral processing
