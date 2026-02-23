@@ -503,7 +503,58 @@ void grain_fog_process_block(
         // 2. COUNTDOWN: Decrement process counter
         fog->samples_until_process--;
 
-        // 3. PROCESS: When countdown hits 0, process FFT frame
+        // 3. READ OUTPUT: Read from accumulation buffer BEFORE adding new frame
+        // This ensures each output sample sees exactly 4 overlapping frame
+        // contributions (correct COLA). Reading after the add would give
+        // position hop_size-1 an extra frame contribution, causing gain ripple.
+        float wet_left, wet_right;
+
+        // With 4x overlap, need 4 frames before output is fully "baked"
+        // (each position has contributions from all 4 overlapping windows)
+        if (fog->frames_processed >= 4) {
+            // Safety check: ensure output_read_pos is in valid range
+            if (fog->output_read_pos >= hop_size) {
+                fog->output_read_pos = 0;
+            }
+
+            // Read from accumulation buffer
+            wet_left = fog->output_buffer_left[fog->output_read_pos];
+            wet_right = fog->output_buffer_right[fog->output_read_pos];
+
+            // Apply final safety clipping
+            wet_left = fmaxf(-1.0f, fminf(1.0f, wet_left));
+            wet_right = fmaxf(-1.0f, fminf(1.0f, wet_right));
+        } else {
+            // Initial latency period - accumulation buffer not yet fully baked
+            // Pass through dry input as the wet signal to avoid volume dip
+            wet_left = in_left[i];
+            wet_right = in_right[i];
+        }
+
+        fog->output_read_pos++;
+
+        // 4. SHIFT OUTPUT: When we've consumed hop_size samples, shift accumulation buffer
+        // (this runs during latency too, to keep the buffer advancing)
+        if (fog->output_read_pos >= hop_size) {
+            memmove(fog->output_buffer_left,
+                   fog->output_buffer_left + hop_size,
+                   (fog->fft_size - hop_size) * sizeof(float));
+            memmove(fog->output_buffer_right,
+                   fog->output_buffer_right + hop_size,
+                   (fog->fft_size - hop_size) * sizeof(float));
+
+            // Zero-pad the end (the crucial "clear" step)
+            memset(fog->output_buffer_left + (fog->fft_size - hop_size), 0,
+                  hop_size * sizeof(float));
+            memset(fog->output_buffer_right + (fog->fft_size - hop_size), 0,
+                  hop_size * sizeof(float));
+
+            fog->output_read_pos = 0;
+        }
+
+        // 5. PROCESS: When countdown hits 0, process FFT frame
+        // Done AFTER reading output so the new frame's contributions
+        // go to future output positions, not the current one
         if (fog->samples_until_process <= 0) {
             // Process left channel FFT frame
             process_fft_frame(fog, fog->input_buffer_left,
@@ -543,53 +594,7 @@ void grain_fog_process_block(
             fog->frames_processed++;
         }
 
-        // 4. READ OUTPUT: Get sample from accumulation buffer
-        float wet_left, wet_right;
-
-        // With 4x overlap, need 4 frames before output is fully "baked"
-        // (each position has contributions from all 4 overlapping windows)
-        if (fog->frames_processed >= 4) {
-            // Safety check: ensure output_read_pos is in valid range
-            if (fog->output_read_pos >= hop_size) {
-                fog->output_read_pos = 0;
-            }
-
-            // Read from accumulation buffer
-            wet_left = fog->output_buffer_left[fog->output_read_pos];
-            wet_right = fog->output_buffer_right[fog->output_read_pos];
-
-            // Apply final safety clipping
-            wet_left = fmaxf(-1.0f, fminf(1.0f, wet_left));
-            wet_right = fmaxf(-1.0f, fminf(1.0f, wet_right));
-        } else {
-            // Initial latency period - accumulation buffer not yet fully baked
-            // Pass through dry input as the wet signal to avoid volume dip
-            wet_left = in_left[i];
-            wet_right = in_right[i];
-        }
-
-        fog->output_read_pos++;
-
-        // When we've consumed hop_size samples, shift accumulation buffer
-        // (this runs during latency too, to keep the buffer advancing)
-        if (fog->output_read_pos >= hop_size) {
-            memmove(fog->output_buffer_left,
-                   fog->output_buffer_left + hop_size,
-                   (fog->fft_size - hop_size) * sizeof(float));
-            memmove(fog->output_buffer_right,
-                   fog->output_buffer_right + hop_size,
-                   (fog->fft_size - hop_size) * sizeof(float));
-
-            // Zero-pad the end (the crucial "clear" step)
-            memset(fog->output_buffer_left + (fog->fft_size - hop_size), 0,
-                  hop_size * sizeof(float));
-            memset(fog->output_buffer_right + (fog->fft_size - hop_size), 0,
-                  hop_size * sizeof(float));
-
-            fog->output_read_pos = 0;
-        }
-
-        // 5. CROSSFADE: Mix dry and wet
+        // 6. CROSSFADE: Mix dry and wet
         out_left[i] = in_left[i] * dry_gain + wet_left * wet_gain;
         out_right[i] = in_right[i] * dry_gain + wet_right * wet_gain;
     }
