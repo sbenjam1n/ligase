@@ -80,6 +80,13 @@ test_query: erosion_query_test.$(EXT)
 	@echo "Query test external built: erosion_query_test.$(EXT)"
 	@echo "Open test_query_system.pd to run tests"
 
-.PHONY: all clean install test_random test_pitch test_dist test_splice test_query
+# Test fog bypass/passthrough (FFT->IFFT roundtrip)
+test_fog_build: test_fog.c src/grain_fog.o src/kiss_fft.o src/kiss_fftr.o
+	$(CC) $(CFLAGS) -o test_fog test_fog.c src/grain_fog.o src/kiss_fft.o src/kiss_fftr.o -lm
+
+test_fog: test_fog_build
+	./test_fog
+
+.PHONY: all clean install test_random test_pitch test_dist test_splice test_query test_fog
 
 # @endregion:erosion_pd.utils
