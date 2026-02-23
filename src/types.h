@@ -641,6 +641,10 @@ typedef struct {
     float *fft_real_right;
     float *fft_imag_right;
 
+    // Scratch buffer for process_fft_frame (windowed input + IFFT output).
+    // Dedicated rather than aliasing fft_imag_left so the coupling is explicit.
+    float *scratch;
+
     // Overlap-add buffers for continuous processing
     float *input_buffer_left;      // 1024 samples
     float *input_buffer_right;     // 1024 samples
@@ -651,6 +655,7 @@ typedef struct {
     int samples_until_process;     // Countdown to next FFT processing (starts at hop_size)
     int output_read_pos;           // Read position in accumulation buffer (0-255 for hop_size)
     int frames_processed;          // Number of FFT frames processed (for initial latency)
+    float cola_norm_factor;        // OLA normalization: 1 / (fft_size * COLA_sum), computed at init
 
     // kissfft configuration objects
     kiss_fftr_cfg fft_forward;     // Forward FFT config

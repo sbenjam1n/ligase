@@ -22,25 +22,35 @@ static void smear_magnitudes(grain_fog_t *fog, float amount) {
         return;
     }
 
-    // Apply neighbor averaging with amount scaling
+    // Sliding-window average: O(num_bins) regardless of smear_bins width.
+    // Maintain a running sum and count; add the incoming right edge, drop the
+    // outgoing left edge as the window slides across the bin array.
     int bins = fog->smear_bins;
+    int num_bins = fog->num_bins;
 
-    for (int i = 0; i < fog->num_bins; i++) {
-        float sum = 0.0f;
-        int count = 0;
+    // Initialise window centred at bin 0: covers [0, bins] (left side clipped)
+    float run_sum = 0.0f;
+    int   run_count = 0;
+    for (int j = 0; j <= bins && j < num_bins; j++) {
+        run_sum += fog->magnitudes[j];
+        run_count++;
+    }
 
-        // Average across neighbors
-        for (int j = i - bins; j <= i + bins; j++) {
-            if (j >= 0 && j < fog->num_bins) {
-                sum += fog->magnitudes[j];
-                count++;
-            }
-        }
-
-        float smeared = sum / (float)count;
-
-        // Blend between original and smeared based on amount
+    for (int i = 0; i < num_bins; i++) {
+        float smeared = run_sum / (float)run_count;
         fog->smeared_mags[i] = fog->magnitudes[i] * (1.0f - amount) + smeared * amount;
+
+        // Slide right: add new right-edge bin, remove old left-edge bin
+        int new_right = i + 1 + bins;
+        if (new_right < num_bins) {
+            run_sum += fog->magnitudes[new_right];
+            run_count++;
+        }
+        int old_left = i - bins;
+        if (old_left >= 0) {
+            run_sum -= fog->magnitudes[old_left];
+            run_count--;
+        }
     }
 }
 
@@ -238,6 +248,7 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size) {
     fog->fft_imag_left = (float*)calloc(fft_size, sizeof(float));
     fog->fft_real_right = (float*)calloc(fft_size, sizeof(float));
     fog->fft_imag_right = (float*)calloc(fft_size, sizeof(float));
+    fog->scratch = (float*)calloc(fft_size, sizeof(float));
 
     // Allocate overlap-add buffers
     fog->input_buffer_left = (float*)calloc(fft_size, sizeof(float));
@@ -252,6 +263,22 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size) {
     // Symmetric form (N-1) creates periodic COLA variation → comb-filter artifacts
     for (int i = 0; i < fft_size; i++) {
         fog->window[i] = 0.5f * (1.0f - cosf(2.0f * M_PI * i / fft_size));
+    }
+
+    // Compute COLA normalization factor from the window rather than hardcoding 1.5.
+    // Sum w[n]^2 at one sample position across all 4 overlapping frames.
+    // For overlap-add to be unity-gain: norm = 1 / (fft_size * cola_sum).
+    // (kissfft's unscaled IFFT contributes a factor of fft_size, COLA handles the rest.)
+    {
+        int hop_size = fft_size / 4;
+        float cola_sum = 0.0f;
+        for (int k = 0; k < 4; k++) {
+            // Window contribution at sample position 0 from frame k hops back
+            int idx = ((- k * hop_size) % fft_size + fft_size) % fft_size;
+            float w = fog->window[idx];
+            cola_sum += w * w;
+        }
+        fog->cola_norm_factor = 1.0f / (cola_sum * (float)fft_size);
     }
 
     // Initialize overlap-add state
@@ -291,6 +318,7 @@ void grain_fog_destroy(grain_fog_t *fog) {
     free(fog->fft_imag_left);
     free(fog->fft_real_right);
     free(fog->fft_imag_right);
+    free(fog->scratch);
 
     // Free overlap-add buffers
     free(fog->input_buffer_left);
@@ -407,11 +435,9 @@ static float calculate_onset_amount(float mix, fog_onset_curve_t curve, float cu
 // @region:ligase_pd.core.grain.fog.fft_processing FFT Frame Processing
 
 // Process a single FFT frame with spectral effects
-// Uses fft_imag_left as scratch space for windowed input and IFFT output
 static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
                               kiss_fft_cpx *bins) {
-    // Use fft_imag_left as scratch buffer (not used for anything else during processing)
-    float *scratch = fog->fft_imag_left;
+    float *scratch = fog->scratch;
 
     // Apply analysis window (periodic Hann) to input
     for (int i = 0; i < fog->fft_size; i++) {
@@ -450,11 +476,10 @@ static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
     // Inverse FFT (complex → real), reuse scratch buffer
     kiss_fftri(fog->fft_inverse, bins, scratch);
 
-    // Apply synthesis window and normalize
-    // kissfft round-trip gain = N (verified: forward is standard DFT, inverse is unscaled)
-    // Periodic Hann^2 (analysis * synthesis) COLA with 4x overlap = 1.5
-    // Unity gain normalization: 1/(N * COLA) = 1/(N * 1.5) = 2/(3*N)
-    const float norm_factor = 2.0f / (3.0f * fog->fft_size);
+    // Apply synthesis window and normalize.
+    // kissfft round-trip gain = N (unscaled IFFT). COLA sum cancels the windowing.
+    // norm_factor = 1 / (N * COLA_sum), computed at init from the actual window.
+    const float norm_factor = fog->cola_norm_factor;
     for (int i = 0; i < fog->fft_size; i++) {
         output[i] = scratch[i] * fog->window[i] * norm_factor;
     }
