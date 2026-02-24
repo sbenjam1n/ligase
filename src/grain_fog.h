@@ -25,11 +25,17 @@
 // @region:ligase_pd.core.grain.fog.api Public API
 
 // Create and destroy fog effect
-grain_fog_t* grain_fog_create(int sample_rate, int fft_size);
+// overlap_factor: 2, 4 (default), or 8. hop_size = fft_size / overlap_factor.
+grain_fog_t* grain_fog_create(int sample_rate, int fft_size, int overlap_factor);
 void grain_fog_destroy(grain_fog_t *fog);
 
 // Main inlet control (0.0-1.0, logarithmic equal-power crossfade)
 void grain_fog_set_mix(grain_fog_t *fog, float mix);
+
+// Stereo filter mode:
+//   0 (default) — shared state (diffuse mono-ish spectral character)
+//   1 — independent per-channel state (true stereo spectral evolution)
+void grain_fog_set_stereo_filter_mode(grain_fog_t *fog, int independent);
 
 // @region:ligase_pd.core.grain.fog.messages.smear Smear Control Messages
 
@@ -67,6 +73,39 @@ void grain_fog_process_block(
 );
 
 // @endregion:ligase_pd.core.grain.fog.process
+
+// @region:ligase_pd.core.grain.fog.pool Per-Grain Fog Pool API
+
+// Create and destroy fog pool (num_slots clamped to 1-8; pass 0 to read from ligase.conf)
+// Pass sample_rate/fft_size/overlap_factor <= 0 to read from config
+fog_pool_t* fog_pool_create(int num_slots, int sample_rate, int fft_size, int overlap_factor);
+void fog_pool_destroy(fog_pool_t *pool);
+
+// Accumulator management (call at start of each DSP block in per-grain mode)
+void fog_pool_resize_accumulators(fog_pool_t *pool, int blocksize);
+void fog_pool_clear_accumulators(fog_pool_t *pool, int blocksize);
+
+// Process all slots through their fog instances, sum results into out buffers
+void fog_pool_process(fog_pool_t *pool, float *out_left, float *out_right, int blocksize);
+
+// Assign a grain to the next slot (round-robin), returns slot index
+int fog_pool_assign_slot(fog_pool_t *pool);
+
+// Parameter forwarding wrappers (apply to all slots)
+void fog_pool_set_mix(fog_pool_t *pool, float mix);
+void fog_pool_set_smear_bins(fog_pool_t *pool, int bins);
+void fog_pool_set_smear_enabled(fog_pool_t *pool, int enabled);
+void fog_pool_set_smear_onset_curve(fog_pool_t *pool, fog_onset_curve_t curve);
+void fog_pool_set_smear_onset_amount(fog_pool_t *pool, float amount);
+void fog_pool_set_mag_cutoff(fog_pool_t *pool, float cutoff_hz);
+void fog_pool_set_mag_resonance(fog_pool_t *pool, float q);
+void fog_pool_set_phase_cutoff(fog_pool_t *pool, float cutoff_hz);
+void fog_pool_set_specmagfilter_enabled(fog_pool_t *pool, int enabled);
+void fog_pool_set_specmagfilter_onset_curve(fog_pool_t *pool, fog_onset_curve_t curve);
+void fog_pool_set_specmagfilter_onset_amount(fog_pool_t *pool, float amount);
+void fog_pool_set_stereo_filter_mode(fog_pool_t *pool, int independent);
+
+// @endregion:ligase_pd.core.grain.fog.pool
 
 // @endregion:ligase_pd.core.grain.fog.api
 

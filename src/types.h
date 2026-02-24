@@ -281,6 +281,7 @@ typedef struct grain {
     float saw_depth;          // Saw modulation depth/intensity (0.0-1.0)
     uint32_t splice_start;    // Splice boundary start (for wrapping)
     uint32_t splice_end;      // Splice boundary end (for wrapping)
+    int fog_slot_idx;         // Fog pool slot assignment (-1 = post-mix mode)
     struct grain *next;       // Next grain in pool
 } grain_t;
 
@@ -485,6 +486,9 @@ typedef struct {
 
 // @region:ligase_pd.core.types.scheduler Scheduler Structure
 
+// Forward declaration for fog_pool_t (defined after grain_fog_t)
+typedef struct fog_pool fog_pool_t;
+
 #define DEFAULT_MAX_GRAINS 200
 #define MAX_POOL_SIZE 2000  // Absolute maximum for safety
 
@@ -534,6 +538,22 @@ typedef struct scheduler {
     param_range_t dist_poly_c2_range;        // Polynomial c2 coefficient (-10.0 to 10.0)
     param_range_t dist_poly_c3_range;        // Polynomial c3 coefficient (-10.0 to 10.0)
 
+    // Fog parameter ranges
+    param_range_t fog_mix_range;             // Fog dry/wet mix (0.0-1.0)
+    param_range_t fog_smear_bins_range;      // Fog smear bins (0-32)
+    param_range_t fog_smear_onset_range;     // Fog smear onset amount (0.0-1.0)
+    param_range_t fog_mag_cutoff_range;      // Fog magnitude cutoff (0.1-20.0 Hz)
+    param_range_t fog_mag_resonance_range;   // Fog magnitude resonance (0.1-10.0)
+    param_range_t fog_phase_cutoff_range;    // Fog phase cutoff (0.1-20.0 Hz)
+    param_range_t fog_smf_onset_range;       // Fog specmagfilter onset amount (0.0-1.0)
+
+    // Stut parameter range
+    param_range_t stut_reps_range;           // Stut repetitions (1-16)
+
+    // Bencina parameter ranges
+    param_range_t bencina_iot_range;         // Bencina grain spacing (1.0-1000.0 ms)
+    param_range_t bencina_grainsize_range;   // Bencina grain size (0.001-2.0 sec)
+
     // Perlin noise state
     perlin_state_t perlin_state;
 
@@ -549,6 +569,9 @@ typedef struct scheduler {
     // Delay mode structures (for bencina and stut modes)
     grain_delay_stut_t *delay_stut;      // Stut mode state (NULL if not allocated)
     grain_delay_bencina_t *delay_bencina; // Bencina mode state (NULL if not allocated)
+
+    // Fog pool for per-grain fog mode (NULL if not allocated)
+    fog_pool_t *fog_pool;
 } scheduler_t;
 
 // @endregion:ligase_pd.core.types.scheduler
@@ -585,7 +608,9 @@ typedef enum {
 typedef struct {
     uint32_t magic;              // Magic number for validation (0xF06BEEF0)
     int sample_rate;
-    int fft_size;                // FFT window size (512, 1024, 2048, etc.)
+    int fft_size;                // FFT window size (512, 1024, 2048)
+    int overlap_factor;          // Overlap factor (2, 4, or 8); hop_size = fft_size/overlap_factor
+    int hop_size;                // Derived: fft_size / overlap_factor
     int num_bins;                // Number of frequency bins (fft_size/2 + 1)
 
     // Main inlet control
@@ -610,8 +635,10 @@ typedef struct {
     // @region:ligase_pd.core.grain.fog.specmagfilter.magnitude_filter Magnitude Filter State
     // Per-bin filter state for magnitude temporal filtering (vertical axis)
     // 2-pole IIR resonant lowpass filter for each bin
-    float *mag_z1;               // Magnitude at T-1 (previous frame)
-    float *mag_z2;               // Magnitude at T-2 (two frames ago)
+    float *mag_z1;               // Left channel: magnitude state T-1
+    float *mag_z2;               // Left channel: magnitude state T-2
+    float *mag_z1_right;         // Right channel: magnitude state T-1 (independent mode)
+    float *mag_z2_right;         // Right channel: magnitude state T-2 (independent mode)
 
     // Pre-computed filter coefficients (updated when cutoff/resonance changes)
     float mag_a1, mag_a2;        // IIR feedback coefficients
@@ -620,12 +647,21 @@ typedef struct {
 
     // @region:ligase_pd.core.grain.fog.specmagfilter.phase_filter Phase Filter State
     // Per-bin filter state for phase temporal filtering
-    float *phase_prev;           // Previous phase value for each bin
-    float *phase_delta_z1;       // Phase delta at T-1 (for lowpass filtering)
+    float *phase_prev;           // Left channel: previous phase value per bin
+    float *phase_delta_z1;       // Left channel: phase delta at T-1
+    float *phase_prev_right;     // Right channel: previous phase value per bin (independent mode)
+    float *phase_delta_z1_right; // Right channel: phase delta at T-1 (independent mode)
 
     // Pre-computed filter coefficient for phase lowpass (1-pole)
     float phase_lp_coeff;
     // @endregion:ligase_pd.core.grain.fog.specmagfilter.phase_filter
+
+    // Stereo filter mode:
+    //   0 (default) — shared state: L and R processing share the same filter state arrays,
+    //                 producing a diffuse mono-ish spectral character.
+    //   1 — independent: each channel has its own per-bin state, tracking L and R
+    //                    independently for true stereo spectral evolution.
+    int stereo_filter_independent;
 
     // @region:ligase_pd.core.grain.fog.process Temporary Processing Buffers
     // Buffers for FFT/spectral processing
@@ -641,6 +677,10 @@ typedef struct {
     float *fft_real_right;
     float *fft_imag_right;
 
+    // Scratch buffer for process_fft_frame (windowed input + IFFT output).
+    // Dedicated rather than aliasing fft_imag_left so the coupling is explicit.
+    float *scratch;
+
     // Overlap-add buffers for continuous processing
     float *input_buffer_left;      // 1024 samples
     float *input_buffer_right;     // 1024 samples
@@ -651,6 +691,7 @@ typedef struct {
     int samples_until_process;     // Countdown to next FFT processing (starts at hop_size)
     int output_read_pos;           // Read position in accumulation buffer (0-255 for hop_size)
     int frames_processed;          // Number of FFT frames processed (for initial latency)
+    float cola_norm_factor;        // OLA normalization: 1 / (fft_size * COLA_sum), computed at init
 
     // kissfft configuration objects
     kiss_fftr_cfg fft_forward;     // Forward FFT config
@@ -662,6 +703,27 @@ typedef struct {
     // @endregion:ligase_pd.core.grain.fog.process
 
 } grain_fog_t;
+
+// @region:ligase_pd.core.types.fog_pool Fog Pool Structure (Per-Grain Fog)
+
+typedef struct {
+    grain_fog_t *fog;
+    float *accum_left;
+    float *accum_right;
+    int accum_size;
+} fog_slot_t;
+
+#define FOG_POOL_MAX_SLOTS 8
+#define FOG_POOL_DEFAULT_SLOTS 4
+
+struct fog_pool {
+    fog_slot_t slots[FOG_POOL_MAX_SLOTS];
+    int num_slots;
+    int next_slot;       // round-robin counter
+    int position_mode;   // 0=per-grain, 1=post-mix (default)
+};
+
+// @endregion:ligase_pd.core.types.fog_pool
 
 // @endregion:ligase_pd.core.types.grain_fog
 

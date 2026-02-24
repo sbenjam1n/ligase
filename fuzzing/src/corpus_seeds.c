@@ -105,6 +105,53 @@ static const seed_entry_t SEED_CORPUS[] = {
     {"gdelay_mix 1", SUBSYS_DELAY, 6},
     {"gdelay_clear", SUBSYS_DELAY, 8},
 
+    // === DELAY MODES & HIGH-FEEDBACK SCENARIOS ===
+    {"delay_mode 0", SUBSYS_DELAY, 9},               // DD-4 mode
+    {"delay_mode 1", SUBSYS_DELAY, 9},               // Bencina mode
+    {"delay_mode 2", SUBSYS_DELAY, 9},               // Stut mode
+    {"gdelay_feed 0.99", SUBSYS_DELAY, 10},          // Near-infinite feedback
+    {"gdelay_time 5.0", SUBSYS_DELAY, 8},            // Mid-range delay
+    {"stut_reps 1", SUBSYS_DELAY, 8},
+    {"stut_reps 16", SUBSYS_DELAY, 9},               // Maximum repetitions
+    {"bencina_iot 1", SUBSYS_DELAY, 9},              // Minimum spacing
+    {"bencina_iot 1000", SUBSYS_DELAY, 9},           // Maximum spacing
+    {"bencina_grainsize 0.001", SUBSYS_DELAY, 9},    // Minimum grain size
+    {"bencina_grainsize 2.0", SUBSYS_DELAY, 9},      // Maximum grain size
+
+    // === FOG SPECTRAL EFFECT ===
+    {"fog_mix 0", SUBSYS_CROSS_SYSTEM, 7},
+    {"fog_mix 1", SUBSYS_CROSS_SYSTEM, 8},
+    {"fog_smear_bins 0", SUBSYS_CROSS_SYSTEM, 7},
+    {"fog_smear_bins 32", SUBSYS_CROSS_SYSTEM, 9},
+    {"fog_smear_onset 0", SUBSYS_CROSS_SYSTEM, 7},
+    {"fog_smear_onset 1", SUBSYS_CROSS_SYSTEM, 7},
+    {"fog_mag_cutoff 0.1", SUBSYS_CROSS_SYSTEM, 8},
+    {"fog_mag_cutoff 20", SUBSYS_CROSS_SYSTEM, 8},
+    {"fog_mag_resonance 0.1", SUBSYS_CROSS_SYSTEM, 8},
+    {"fog_mag_resonance 10", SUBSYS_CROSS_SYSTEM, 9},
+    {"fog_phase_cutoff 0.1", SUBSYS_CROSS_SYSTEM, 8},
+    {"fog_phase_cutoff 20", SUBSYS_CROSS_SYSTEM, 8},
+    {"fog_smf_onset 0", SUBSYS_CROSS_SYSTEM, 7},
+    {"fog_smf_onset 1", SUBSYS_CROSS_SYSTEM, 7},
+    {"fog_smear_enable 1", SUBSYS_CROSS_SYSTEM, 7},
+    {"fog_specmagfilter_enable 1", SUBSYS_CROSS_SYSTEM, 7},
+    {"fog_position 0", SUBSYS_CROSS_SYSTEM, 9},     // Per-grain fog
+    {"fog_position 1", SUBSYS_CROSS_SYSTEM, 8},     // Post-mix fog
+
+    // === MODULATION OF NEW PARAMETERS ===
+    {"param_range fog_mix 0 1", SUBSYS_MODULATION, 9},
+    {"param_range fog_smear_bins 0 32", SUBSYS_MODULATION, 9},
+    {"param_range fog_mag_cutoff 0.1 20", SUBSYS_MODULATION, 9},
+    {"param_range fog_mag_resonance 0.1 10", SUBSYS_MODULATION, 9},
+    {"param_range stut_reps 1 16", SUBSYS_MODULATION, 9},
+    {"param_range bencina_iot 1 1000", SUBSYS_MODULATION, 9},
+    {"param_range bencina_grainsize 0.001 2.0", SUBSYS_MODULATION, 9},
+    {"param_range scanrate 0.5 2.0", SUBSYS_MODULATION, 8},
+
+    // === CROSS-SYSTEM STRESS (high-feedback + effects) ===
+    {"param_range gdelay_feed 0.9 1.0", SUBSYS_CROSS_SYSTEM, 10},
+    {"param_range distortion 0.5 1.0", SUBSYS_CROSS_SYSTEM, 10},
+
     // === DISTORTION (complex signal processing) ===
     {"distortion 0", SUBSYS_DISTORTION, 7},
     {"distortion 1", SUBSYS_DISTORTION, 8},

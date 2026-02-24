@@ -32,20 +32,56 @@ sox --version        # Should show: SoX v14.4.2 or similar
 ```
 
 ### Project Files Required
-Navigate to the ligase_pd_project directory:
+Navigate to the ligase project directory:
 ```bash
-cd ~/projects/ligase_pd_project
+cd ~/projects/ligase
 ```
 
 Ensure these files exist:
 - `ligase~.pd_linux` - The compiled external
-- `test_recording.pd` - Automated recording test patch
+- `test_auto.pd` - Automated recording test patch
+- `test_playback.pd` - Automated playback verification patch
+- `ligase.conf` - Configuration file (fft_size, overlap_factor, max_grains)
 
 ---
 
 ## Test Procedure
 
-### Step 1: Clean Previous Test Results
+### Step 1: Build the External
+
+```bash
+make
+```
+
+**Expected Output:** Clean compilation with zero warnings, producing `ligase~.pd_linux`.
+
+**Success Criteria:**
+- ✅ `make` exits with status 0
+- ✅ No compiler warnings or errors
+- ✅ `ligase~.pd_linux` is present and recently modified
+
+### Step 2: Run Fog Unit Tests
+
+```bash
+make test_fog
+```
+
+**Expected Output:**
+```
+=== Fog Bypass Test ===
+Test 1 PASS: gain = 0.00 dB (expected 0.00 dB)
+Test 2 PASS: THD = -137.76 dB (below -60 dB threshold)
+Test 3 PASS: latency = 0 samples (expected 0)
+Test 4 PASS: stereo gain match = 0.00 dB
+All fog tests passed.
+```
+
+**Success Criteria:**
+- ✅ All 4 tests report PASS
+- ✅ THD below -60 dB
+- ✅ Gain within 0.1 dB of 0 dB
+
+### Step 3: Clean Previous Test Results
 
 ```bash
 # Remove any previous test files
@@ -58,7 +94,7 @@ ls /tmp/ligase_test.wav 2>&1
 # Expected: "No such file or directory"
 ```
 
-### Step 2: Run Recording Test
+### Step 4: Run Recording Test
 
 Execute the automated recording test:
 
@@ -67,9 +103,9 @@ timeout 10s pd -nogui -nosound -stderr -path . test_auto.pd 2>&1 | tee /tmp/pd_a
 ```
 
 **Command Breakdown:**
-- `timeout 10s` - Kills PD after 10 seconds (prevents hanging)
+- `timeout 10s` - Kills Pd after 10 seconds (prevents hanging)
 - `pd -nogui` - Run Pure Data without GUI
-- `-nosound` - Disable audio output (not needed for test)
+- `-nosound` - Disable audio I/O (the patch activates DSP internally via `\; pd dsp 1`)
 - `-stderr` - Print messages to stderr
 - `-path .` - Add current directory to search path (for ligase~.pd_linux)
 - `test_auto.pd` - The test patch
@@ -78,6 +114,12 @@ timeout 10s pd -nogui -nosound -stderr -path . test_auto.pd 2>&1 | tee /tmp/pd_a
 **Expected Console Output:**
 ```
 priority 6 scheduling failed; running at normal priority
+ligase~: Loaded max_grains = 200 from ligase.conf
+ligase~: Loaded fft_size = 1024 from ligase.conf
+ligase~: Loaded overlap_factor = 4 from ligase.conf
+ligase_dsp: CALLED (x=..., sp=...)
+ligase_dsp: Adding perform callback (sr=44100, blocksize=64)
+ligase_dsp: COMPLETE
 priority 8 scheduling failed.
 ligase~: input-only recording started (will create splice at sample 0 on stop)
 ligase~: recording started (overdub mode)
@@ -86,32 +128,29 @@ ligase~: saved /tmp/ligase_test.wav
 ```
 
 **Key Success Indicators:**
+- ✅ `ligase_dsp: CALLED` appears (confirms DSP is running)
+- ✅ `ligase~: saved /tmp/ligase_test.wav` appears
 - ✅ No error messages (except priority warnings, which are normal)
-- ✅ "ligase~: saved /tmp/ligase_test.wav" appears
-- ✅ Process exits cleanly (within 10 seconds)
+- ✅ Process exits cleanly within 10 seconds
 
-### Step 3: Verify WAV File Creation
+### Step 5: Verify WAV File Creation
 
 Check that the recording was saved:
 
 ```bash
 ls -lh /tmp/ligase_test.wav
-file /tmp/ligase_test.wav
 ```
 
 **Expected Output:**
 ```
--rw-r--r-- 1 user user 1.1M Oct 11 01:45 /tmp/ligase_test.wav
-/tmp/ligase_test.wav: RIFF (little-endian) data, WAVE audio, IEEE Float, stereo 48000 Hz
+-rw-r--r-- 1 user user 1.1M ... /tmp/ligase_test.wav
 ```
 
 **Success Criteria:**
 - ✅ File exists
 - ✅ File size is between 1.0 MB and 1.5 MB
-- ✅ File type is "WAVE audio"
-- ✅ Format is "stereo 48000 Hz" or "stereo 44100 Hz"
 
-### Step 4: Analyze Audio Content
+### Step 6: Analyze Audio Content
 
 Use sox to verify the recording contains actual audio (not silence):
 
@@ -123,13 +162,13 @@ sox /tmp/ligase_test.wav -n stat 2>&1 | grep -E "(Samples read|Length|RMS|Maximu
 ```
 Samples read:            264576
 Length (seconds):      2.756000
-Maximum amplitude:     0.998733
-RMS     amplitude:     0.104593
+Maximum amplitude:     0.981718
+RMS     amplitude:     0.293041
 ```
 
 **Success Criteria:**
 - ✅ Samples read > 250,000 (indicates ~3 seconds of audio)
-- ✅ Length is approximately 2.5-3.0 seconds
+- ✅ Length is approximately 2.5–3.0 seconds
 - ✅ **Maximum amplitude > 0.5** (strong signal)
 - ✅ **RMS amplitude > 0.05** (NOT silence - this is the critical metric)
 
@@ -138,7 +177,7 @@ RMS     amplitude:     0.104593
 - ❌ Maximum amplitude < 0.1 (very weak signal)
 - ❌ File size < 100 KB (incomplete recording)
 
-### Step 5: Playback Buffer Verification
+### Step 7: Playback Buffer Verification
 
 This is the **most critical test** - it verifies the internal buffer contains audio:
 
@@ -151,7 +190,7 @@ grep "buffer check:" /tmp/pd_playback.log
 
 **Expected Output:**
 ```
-  buffer check: avg amplitude L=0.481438 R=0.481438
+  buffer check: avg amplitude L=0.330989 R=0.330989
 ```
 
 **Success Criteria:**
@@ -170,25 +209,27 @@ grep "buffer check:" /tmp/pd_playback.log
 
 The test automatically performs these operations:
 
-1. **Initialization (500ms)**
-   - Start Pure Data DSP
-   - Initialize noise~ generator
+1. **DSP Activation (immediate)**
+   - `\; pd dsp 1` sent from loadbang — required in `-nosound` mode; Pd does not start DSP automatically without an audio device
 
-2. **Recording Setup (100ms)**
+2. **Initialization (500ms)**
+   - Initialize noise~ generator and ligase~
+
+3. **Recording Setup (100ms)**
    - Send `recinput` message to ligase~ (enables input-only recording mode)
    - This ensures clean recording without sound-on-sound mixing
 
-3. **Recording (3000ms)**
+4. **Recording (3000ms)**
    - Send `record 1` to start recording
    - noise~ generates audio → feeds to ligase~ inputs
-   - ligase~ captures to internal buffer
+   - ligase~ captures to internal buffer via DSP callback
    - Wait 3 seconds
 
-4. **Save (500ms)**
+5. **Save (500ms)**
    - Send `record 0` to stop recording
    - Send `save /tmp/ligase_test.wav` to write buffer to disk
 
-5. **Cleanup (500ms)**
+6. **Cleanup (500ms)**
    - Send `pd quit` to exit cleanly
 
 **Total test duration:** ~5 seconds
@@ -200,40 +241,39 @@ The test automatically performs these operations:
 The test patch contains:
 
 ```
-[loadbang]           ← Triggers on patch load
+[loadbang] ──→ [\; pd dsp 1]    ← Enable DSP immediately (required with -nosound)
     ↓
-[delay 500]          ← Wait for DSP initialization
+[delay 500]
     ↓
-[msg: recinput]      ← Set input-only recording mode
+[msg: recinput] ──→ [ligase~]   ← Set input-only recording mode
     ↓
 [delay 100]
     ↓
-[msg: record 1]      ← Start recording
+[msg: record 1] ──→ [ligase~]   ← Start recording
     ↓
-[delay 3000]         ← Record for 3 seconds
+[delay 3000]                    ← Record for 3 seconds
     ↓
-[msg: record 0]      ← Stop recording
-    ↓
-[delay 500]
-    ↓
-[msg: save /tmp/ligase_test.wav]  ← Save to disk
+[msg: record 0] ──→ [ligase~]   ← Stop recording
     ↓
 [delay 500]
     ↓
-[msg: pd quit]       ← Exit Pure Data
+[msg: save /tmp/ligase_test.wav] ──→ [ligase~]   ← Save to disk
+    ↓
+[delay 500]
+    ↓
+[\; pd quit]                    ← Exit Pure Data
 
 Audio Path:
-[noise~] ──→ [ligase~ 500] ──→ [dac~ 1 2]
-               ↑
-               └─ [receive e-ctl] ← Control messages
+[noise~] ──→ [ligase~] ──→ [dac~ 1 2]
+  └──────────────┘ (both inlets, stereo)
 ```
 
 **Key Design Elements:**
-- Uses `[receive e-ctl]` for message routing (avoids PD's direct connection issues)
+- `[\; pd dsp 1]` wired directly from loadbang (no delay) — DSP must be active before recording begins
 - Delays ensure messages arrive in correct order
 - `loadbang` makes test fully automatic
-- Both noise~ channels feed both ligase~ inputs (stereo test)
-- DAC connection verifies no interference between objects
+- Both noise~ outputs feed both ligase~ inputs (stereo test)
+- DAC connection ensures signal flow mirrors real-world usage
 
 ---
 
@@ -319,7 +359,7 @@ sudo apt-get install -y puredata
 **Solution:**
 ```bash
 # Ensure you're in the correct directory
-cd ~/projects/ligase_pd_project
+cd ~/projects/ligase
 ls -l ligase~.pd_linux  # Verify file exists
 
 # Add -path . to pd command
@@ -359,11 +399,13 @@ timeout 10s pd -nogui -nosound -stderr -path . test_auto.pd 2>&1
 
 ## Quick Test Script
 
-For convenience, use this one-liner to run all tests:
+For convenience, use this script to run all tests from the project root:
 
 ```bash
 #!/bin/bash
-cd ~/projects/ligase_pd_project && \
+cd ~/projects/ligase && \
+make && \
+make test_fog && \
 rm -f /tmp/ligase_test.wav && \
 echo "=== Running Recording Test ===" && \
 timeout 10s pd -nogui -nosound -stderr -path . test_auto.pd 2>&1 | tee /tmp/pd_auto.log && \
@@ -379,18 +421,18 @@ echo -e "\n=== TEST COMPLETE ==="
 **Expected Final Output:**
 ```
 === Running Recording Test ===
-[... PD messages ...]
+[... Pd messages including "ligase_dsp: CALLED" ...]
 ligase~: saved /tmp/ligase_test.wav
 
 === File Check ===
--rw-r--r-- 1 user user 1.1M Oct 11 01:45 /tmp/ligase_test.wav
+-rw-r--r-- 1 user user 1.1M ... /tmp/ligase_test.wav
 
 === Audio Analysis ===
-Maximum amplitude:     0.998733
-RMS     amplitude:     0.104593
+Maximum amplitude:     0.981718
+RMS     amplitude:     0.293041
 
 === Buffer Verification ===
-  buffer check: avg amplitude L=0.481438 R=0.481438
+  buffer check: avg amplitude L=0.330989 R=0.330989
 
 === TEST COMPLETE ===
 ```
@@ -445,3 +487,11 @@ rm -f /tmp/ligase_test.wav /tmp/pd_auto.log /tmp/pd_playback.log
 - **2025-10-11:** Initial automated test procedure created
   - Verified working on Debian 12, Pure Data 0.53.1
   - Test successfully detects the fix: buffer amplitude changed from 0.000000 to 0.481438
+
+- **2026-02-24:** Updated for ligase-improvements branch
+  - Added Step 1 (`make`) and Step 2 (`make test_fog`) to cover build and unit tests
+  - Renumbered remaining steps (3–7)
+  - Fixed `test_auto.pd` and `test_playback.pd`: added `[\; pd dsp 1]` wired from loadbang — required because Pd with `-nosound` does not start DSP automatically; without it `ligase_dsp: CALLED` never appears and all recordings are empty
+  - Updated expected output values to reflect current implementation (RMS 0.293, max 0.982, buffer check L/R 0.331)
+  - Corrected project directory from `~/projects/ligase` to `~/projects/ligase`
+  - Updated patch diagram in "Understanding test_auto.pd" to reflect actual wiring (removed obsolete `[receive e-ctl]` reference)

@@ -16,36 +16,30 @@
 
 #define SAMPLE_RATE 48000
 #define FFT_SIZE    1024
+
+// OLA timing constants derived from FFT_SIZE and 4x overlap:
+//
+// Signal delay: the steady-state latency from input to output is FFT_SIZE
+// samples. Analytically: the first FFT fires after FFT_SIZE input samples;
+// position 0 of the output buffer at that point corresponds to input sample
+// FFT_SIZE - FFT_SIZE = 0, so the output at time T reads input from T - FFT_SIZE.
+//
+// Startup latency: frames_processed < 4 uses dry passthrough. The 4th frame
+// fires after FFT_SIZE + 3*(FFT_SIZE/4) samples. Skip well past this before
+// measuring to avoid startup transients.
+#define OLA_HOP_SIZE        (FFT_SIZE / 4)                       // 256
+#define OLA_SIGNAL_DELAY    FFT_SIZE                             // 1024 samples
+#define OLA_STARTUP_SAMPLES (FFT_SIZE + 3 * OLA_HOP_SIZE)       // 1792 samples
+
 #define BLOCK_SIZE  64
-// Run enough samples for OLA to reach steady state and measure cleanly
-// Latency: ~1792 samples (initial fill + 4x overlap warmup)
-// Use 2 seconds for plenty of steady-state data
-#define TOTAL_SAMPLES (SAMPLE_RATE * 2)
-// Skip first portion to avoid OLA startup transients
-#define SKIP_SAMPLES  4096
+// Run 2 seconds total; skip 3x the startup window before measuring
+#define TOTAL_SAMPLES       (SAMPLE_RATE * 2)
+#define SKIP_SAMPLES        (OLA_STARTUP_SAMPLES * 3)           // 5376 samples
 
 static float in_left[TOTAL_SAMPLES];
 static float in_right[TOTAL_SAMPLES];
 static float out_left[TOTAL_SAMPLES];
 static float out_right[TOTAL_SAMPLES];
-
-// Find delay between two signals using cross-correlation
-static int find_delay(float *reference, float *delayed, int len, int max_lag) {
-    float best_corr = -1e30f;
-    int best_lag = 0;
-
-    for (int lag = 0; lag < max_lag; lag++) {
-        float corr = 0.0f;
-        for (int i = 0; i < len - max_lag; i++) {
-            corr += reference[i] * delayed[i + lag];
-        }
-        if (corr > best_corr) {
-            best_corr = corr;
-            best_lag = lag;
-        }
-    }
-    return best_lag;
-}
 
 // Process all samples through fog in BLOCK_SIZE chunks
 static void run_fog(grain_fog_t *fog, int num_samples) {
@@ -58,11 +52,16 @@ static void run_fog(grain_fog_t *fog, int num_samples) {
 }
 
 // Test 1: Sine wave passthrough with smear and specmagfilter disabled
-// Expected: unity gain, low THD (< -40 dB)
+//
+// The OLA introduces a fixed signal delay of OLA_SIGNAL_DELAY samples.
+// THD is measured by aligning the output to the input using this known delay
+// rather than cross-correlation, which produces ambiguous peaks for periodic
+// signals (the sine autocorrelation has equal-height peaks every ~period
+// samples, so cross-correlation returns delay % period rather than true delay).
 static int test_sine_passthrough(void) {
     printf("Test 1: Sine passthrough (smear=off, specmagfilter=off, mix=1.0)\n");
 
-    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE);
+    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE, 4);
     if (!fog) { printf("  FAIL: couldn't create fog\n"); return 1; }
 
     grain_fog_set_mix(fog, 1.0f);
@@ -78,15 +77,14 @@ static int test_sine_passthrough(void) {
 
     run_fog(fog, TOTAL_SAMPLES);
 
-    // Find delay using cross-correlation on steady-state region
-    int delay = find_delay(in_left + SKIP_SAMPLES, out_left + SKIP_SAMPLES,
-                           TOTAL_SAMPLES - SKIP_SAMPLES, FFT_SIZE * 2);
-    printf("  Detected delay: %d samples\n", delay);
+    // Align output to input using the known analytical OLA signal delay.
+    // out_left[SKIP_SAMPLES + OLA_SIGNAL_DELAY + i] corresponds to
+    // in_left[SKIP_SAMPLES + i] in steady state.
+    int out_start = SKIP_SAMPLES + OLA_SIGNAL_DELAY;
+    int in_start  = SKIP_SAMPLES;
+    int end       = TOTAL_SAMPLES - FFT_SIZE;  // avoid tail edge effects
+    int count     = end - out_start;
 
-    // Measure gain and THD on aligned steady-state region
-    int start = SKIP_SAMPLES + delay;
-    int end = TOTAL_SAMPLES - FFT_SIZE;  // avoid tail edge effects
-    int count = end - start;
     if (count < SAMPLE_RATE / 2) {
         printf("  FAIL: not enough steady-state samples (count=%d)\n", count);
         grain_fog_destroy(fog);
@@ -95,8 +93,8 @@ static int test_sine_passthrough(void) {
 
     double rms_ref = 0.0, rms_out = 0.0, rms_err = 0.0;
     for (int i = 0; i < count; i++) {
-        float ref = in_left[SKIP_SAMPLES + i];
-        float out = out_left[start + i];
+        float ref = in_left[in_start + i];
+        float out = out_left[out_start + i];
         float err = out - ref;
         rms_ref += (double)ref * ref;
         rms_out += (double)out * out;
@@ -107,8 +105,9 @@ static int test_sine_passthrough(void) {
     rms_err = sqrt(rms_err / count);
 
     float gain_db = 20.0f * log10f(rms_out / rms_ref);
-    float thd_db = 20.0f * log10f(rms_err / rms_out);
+    float thd_db  = (rms_err > 1e-15) ? 20.0f * log10f(rms_err / rms_out) : -180.0f;
 
+    printf("  OLA signal delay: %d samples (analytical)\n", OLA_SIGNAL_DELAY);
     printf("  Gain: %.4f (%.2f dB)\n", (float)(rms_out / rms_ref), gain_db);
     printf("  THD:  %.2f dB\n", thd_db);
 
@@ -127,11 +126,16 @@ static int test_sine_passthrough(void) {
     return fail;
 }
 
-// Test 2: DC passthrough - stable output with low ripple
+// Test 2: DC passthrough — stable output with low ripple
+//
+// DC has no period, so alignment is not needed. However, SKIP_SAMPLES must
+// exceed OLA_STARTUP_SAMPLES (1792) to avoid measuring the startup transient
+// where frames_processed < 4 forces dry passthrough instead of OLA output.
+// At SKIP_SAMPLES = 3 * OLA_STARTUP_SAMPLES the OLA is fully settled.
 static int test_dc_passthrough(void) {
     printf("Test 2: DC passthrough (constant 0.5, smear=off, specmagfilter=off)\n");
 
-    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE);
+    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE, 4);
     if (!fog) { printf("  FAIL: couldn't create fog\n"); return 1; }
 
     grain_fog_set_mix(fog, 1.0f);
@@ -145,31 +149,32 @@ static int test_dc_passthrough(void) {
 
     run_fog(fog, TOTAL_SAMPLES);
 
-    // Measure mean and std dev of steady-state output
-    int start = SKIP_SAMPLES;
-    int end = TOTAL_SAMPLES - FFT_SIZE;
+    // Measure mean and std dev of steady-state output (past startup + signal delay)
+    int start = SKIP_SAMPLES + OLA_SIGNAL_DELAY;
+    int end   = TOTAL_SAMPLES - FFT_SIZE;
     int count = end - start;
 
     double sum = 0.0, sum2 = 0.0;
     for (int i = start; i < end; i++) {
-        sum += out_left[i];
+        sum  += out_left[i];
         sum2 += (double)out_left[i] * out_left[i];
     }
-    double mean = sum / count;
+    double mean     = sum / count;
     double variance = sum2 / count - mean * mean;
-    double stddev = sqrt(fabs(variance));
+    double stddev   = sqrt(fabs(variance));
 
-    float dc_gain = (float)(mean / 0.5);
+    float dc_gain   = (float)(mean / 0.5);
+    float dc_gain_db = 20.0f * log10f(fabsf(dc_gain));
     float ripple_db = (stddev > 1e-10) ? 20.0f * log10f(stddev / fabs(mean)) : -120.0f;
 
     printf("  Mean output: %.6f (expected ~0.5)\n", mean);
-    printf("  DC gain:     %.4f (%.2f dB)\n", dc_gain, 20.0f * log10f(fabsf(dc_gain)));
+    printf("  DC gain:     %.4f (%.2f dB)\n", dc_gain, dc_gain_db);
     printf("  Ripple:      %.2f dB\n", ripple_db);
 
     grain_fog_destroy(fog);
 
     int fail = 0;
-    if (fabsf(20.0f * log10f(fabsf(dc_gain))) > 0.5f) {
+    if (fabsf(dc_gain_db) > 0.5f) {
         printf("  FAIL: DC gain outside +/-0.5 dB\n");
         fail = 1;
     }
@@ -185,7 +190,7 @@ static int test_dc_passthrough(void) {
 static int test_silence_bypass(void) {
     printf("Test 3: Silence passthrough (mix=0.0 should be clean bypass)\n");
 
-    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE);
+    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE, 4);
     if (!fog) { printf("  FAIL: couldn't create fog\n"); return 1; }
 
     grain_fog_set_mix(fog, 0.0f);
@@ -217,6 +222,7 @@ static int test_silence_bypass(void) {
 }
 
 // Test 4: Verify gain consistency across frequencies
+// Uses RMS comparison of aligned (delay-corrected) output vs input.
 static int test_multi_frequency_gain(void) {
     printf("Test 4: Multi-frequency gain consistency (100, 440, 1000, 5000 Hz)\n");
 
@@ -225,7 +231,7 @@ static int test_multi_frequency_gain(void) {
     float gains[4];
 
     for (int f = 0; f < nfreqs; f++) {
-        grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE);
+        grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE, 4);
         grain_fog_set_mix(fog, 1.0f);
         grain_fog_set_smear_enabled(fog, 0);
         grain_fog_set_specmagfilter_enabled(fog, 0);
@@ -237,13 +243,14 @@ static int test_multi_frequency_gain(void) {
 
         run_fog(fog, TOTAL_SAMPLES);
 
-        // Measure RMS in steady-state region
-        int start = SKIP_SAMPLES;
-        int end = TOTAL_SAMPLES - FFT_SIZE;
+        // Compare aligned RMS: out[SKIP + DELAY + i] vs in[SKIP + i]
+        int out_start = SKIP_SAMPLES + OLA_SIGNAL_DELAY;
+        int end       = TOTAL_SAMPLES - FFT_SIZE;
+        int count     = end - out_start;
         double rms_in = 0.0, rms_out = 0.0;
-        for (int i = start; i < end; i++) {
-            rms_in += (double)in_left[i] * in_left[i];
-            rms_out += (double)out_left[i] * out_left[i];
+        for (int i = 0; i < count; i++) {
+            rms_in  += (double)in_left[SKIP_SAMPLES + i] * in_left[SKIP_SAMPLES + i];
+            rms_out += (double)out_left[out_start + i]   * out_left[out_start + i];
         }
         gains[f] = (float)sqrt(rms_out / rms_in);
 

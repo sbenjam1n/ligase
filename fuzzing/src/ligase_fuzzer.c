@@ -222,9 +222,10 @@ void mutate_message(uint8_t *buf, size_t *len, size_t max_len, uint32_t *rng_sta
                 static const char *fragments[] = {
                     "param_range", "rand_type", "nbody_", "perlin_",
                     "lorenz_", "distortion_", "moog_", "gdelay_",
-                    "splice_", "pitch_", "grain"
+                    "splice_", "pitch_", "grain",
+                    "fog_", "stut_", "bencina_", "delay_mode", "scanrate"
                 };
-                size_t idx = xorshift32(rng_state) % 11;
+                size_t idx = xorshift32(rng_state) % 16;
                 size_t frag_len = strlen(fragments[idx]);
                 if (*len + frag_len < max_len) {
                     memcpy(buf + *len, fragments[idx], frag_len);
