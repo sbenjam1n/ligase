@@ -2585,6 +2585,14 @@ static void ligase_fog_specmagfilter_onset_amount(ligase_t *x, t_floatarg amount
     }
 }
 
+static void ligase_fog_stereo_filter_mode(ligase_t *x, t_floatarg mode) {
+    if (x->fog) {
+        grain_fog_set_stereo_filter_mode(x->fog, (int)mode);
+        post("ligase~: fog stereo filter mode set to %s",
+             (int)mode ? "independent" : "shared");
+    }
+}
+
 // @endregion:ligase_pd.core.grain.fog.messages
 
 // @region:ligase_pd.core.grain.distortion Grain Distortion Methods
@@ -4243,6 +4251,7 @@ void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_fog_specmagfilter_enable, gensym("fog_specmagfilter_enable"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_fog_specmagfilter_onset_curve, gensym("fog_specmagfilter_onset_curve"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_fog_specmagfilter_onset_amount, gensym("fog_specmagfilter_onset_amount"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_fog_stereo_filter_mode, gensym("fog_stereo_filter_mode"), A_DEFFLOAT, 0);
 
     class_addmethod(ligase_class, (t_method)ligase_distortion_enable, gensym("distortion_enable"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_distortion_intensity, gensym("distortion"), A_DEFFLOAT, 0);
