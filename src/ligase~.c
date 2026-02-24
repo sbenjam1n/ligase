@@ -4027,7 +4027,7 @@ static void *ligase_new(void) {
     x->delay_stut = grain_delay_stut_create(48000);
     x->delay_bencina = grain_delay_bencina_create(x->envelope, 48000);
     x->moogladder = grain_moogladder_create(48000);
-    x->fog = grain_fog_create(48000, 1024);  // 1024-point FFT
+    x->fog = grain_fog_create(48000, 0, 0);  // fft_size and overlap_factor from ligase.conf
 
     // Check for allocation failures
     if (!x->reel || !x->envelope || !x->scheduler || !x->recorder ||

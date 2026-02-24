@@ -25,7 +25,8 @@
 // @region:ligase_pd.core.grain.fog.api Public API
 
 // Create and destroy fog effect
-grain_fog_t* grain_fog_create(int sample_rate, int fft_size);
+// overlap_factor: 2, 4 (default), or 8. hop_size = fft_size / overlap_factor.
+grain_fog_t* grain_fog_create(int sample_rate, int fft_size, int overlap_factor);
 void grain_fog_destroy(grain_fog_t *fog);
 
 // Main inlet control (0.0-1.0, logarithmic equal-power crossfade)

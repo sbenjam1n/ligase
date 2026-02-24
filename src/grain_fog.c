@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdio.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -65,8 +66,7 @@ static void update_magnitude_filter_coefficients(grain_fog_t *fog) {
     // Design a 2-pole resonant lowpass filter (biquad)
     // Using cookbook formulas for resonant lowpass
     // Note: filter runs at the FFT hop rate, not the audio sample rate
-    int hop_size = fog->fft_size / 4;
-    float frame_rate = (float)fog->sample_rate / (float)hop_size;
+    float frame_rate = (float)fog->sample_rate / (float)fog->hop_size;
 
     float omega = 2.0f * M_PI * fog->mag_cutoff_hz / frame_rate;
     float sn = sinf(omega);
@@ -133,8 +133,7 @@ static void update_phase_filter_coefficient(grain_fog_t *fog) {
     // Simple 1-pole lowpass: y[n] = (1-a)*x[n] + a*y[n-1]
     // where a = exp(-2*pi*fc/fs)
     // Note: filter runs at the FFT hop rate, not the audio sample rate
-    int hop_size = fog->fft_size / 4;
-    float frame_rate = (float)fog->sample_rate / (float)hop_size;
+    float frame_rate = (float)fog->sample_rate / (float)fog->hop_size;
 
     float omega = 2.0f * M_PI * fog->phase_cutoff_hz / frame_rate;
     fog->phase_lp_coeff = expf(-omega);
@@ -211,14 +210,60 @@ static void polar_to_complex(grain_fog_t *fog, kiss_fft_cpx *bins,
 
 // @region:ligase_pd.core.grain.fog.api Public API
 
-// Create fog effect processor
-grain_fog_t* grain_fog_create(int sample_rate, int fft_size) {
+// @region:ligase_pd.core.grain.fog.config Configuration Reader
+
+// Read fft_size and overlap_factor from ligase.conf.
+// Sets defaults (1024, 4) if the file is missing or values are absent.
+// Only 512/1024/2048 are accepted for fft_size; only 2/4/8 for overlap_factor.
+static void read_fog_config(int *out_fft_size, int *out_overlap_factor) {
+    *out_fft_size = 1024;
+    *out_overlap_factor = 4;
+
+    FILE *f = fopen("ligase.conf", "r");
+    if (!f) return;
+
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        if (line[0] == '#' || line[0] == '\n' || line[0] == '\r') continue;
+        int value;
+        if (sscanf(line, " fft_size = %d", &value) == 1) {
+            if (value == 512 || value == 1024 || value == 2048) {
+                *out_fft_size = value;
+                fprintf(stderr, "ligase~: Loaded fft_size = %d from ligase.conf\n", value);
+            } else {
+                fprintf(stderr, "ligase~: Warning: unsupported fft_size %d, using 1024\n", value);
+            }
+        } else if (sscanf(line, " overlap_factor = %d", &value) == 1) {
+            if (value == 2 || value == 4 || value == 8) {
+                *out_overlap_factor = value;
+                fprintf(stderr, "ligase~: Loaded overlap_factor = %d from ligase.conf\n", value);
+            } else {
+                fprintf(stderr, "ligase~: Warning: unsupported overlap_factor %d, using 4\n", value);
+            }
+        }
+    }
+    fclose(f);
+}
+
+// @endregion:ligase_pd.core.grain.fog.config
+
+// Create fog effect processor.
+// Pass fft_size <= 0 or overlap_factor <= 0 to read those values from ligase.conf.
+grain_fog_t* grain_fog_create(int sample_rate, int fft_size, int overlap_factor) {
+    // Resolve fft_size and overlap_factor from config when not explicitly provided
+    int cfg_fft_size, cfg_overlap_factor;
+    read_fog_config(&cfg_fft_size, &cfg_overlap_factor);
+    if (fft_size <= 0)      fft_size      = cfg_fft_size;
+    if (overlap_factor <= 0) overlap_factor = cfg_overlap_factor;
+
     grain_fog_t *fog = (grain_fog_t*)calloc(1, sizeof(grain_fog_t));
     if (!fog) return NULL;
 
     fog->magic = FOG_MAGIC;
     fog->sample_rate = sample_rate;
     fog->fft_size = fft_size;
+    fog->overlap_factor = overlap_factor;
+    fog->hop_size = fft_size / overlap_factor;
     fog->num_bins = fft_size / 2 + 1;
 
     // Default parameters
@@ -279,15 +324,14 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size) {
     }
 
     // Compute COLA normalization factor from the window rather than hardcoding 1.5.
-    // Sum w[n]^2 at one sample position across all 4 overlapping frames.
+    // Sum w[n]^2 at one sample position across all overlapping frames.
     // For overlap-add to be unity-gain: norm = 1 / (fft_size * cola_sum).
     // (kissfft's unscaled IFFT contributes a factor of fft_size, COLA handles the rest.)
     {
-        int hop_size = fft_size / 4;
         float cola_sum = 0.0f;
-        for (int k = 0; k < 4; k++) {
+        for (int k = 0; k < fog->overlap_factor; k++) {
             // Window contribution at sample position 0 from frame k hops back
-            int idx = ((- k * hop_size) % fft_size + fft_size) % fft_size;
+            int idx = ((-k * fog->hop_size) % fft_size + fft_size) % fft_size;
             float w = fog->window[idx];
             cola_sum += w * w;
         }
@@ -296,7 +340,7 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size) {
 
     // Initialize overlap-add state
     fog->input_pos = 0;
-    fog->samples_until_process = fft_size;  // Will process after filling first frame
+    fog->samples_until_process = fft_size;  // Process after filling first full frame
     fog->output_read_pos = 0;
     fog->frames_processed = 0;  // No valid output yet
 
@@ -556,8 +600,7 @@ void grain_fog_process_block(
     float wet_gain = sinf(theta);
     float dry_gain = cosf(theta);
 
-    // Hop size for 4x overlap (75% overlap)
-    const int hop_size = fog->fft_size / 4;  // 256 samples for 1024 FFT
+    const int hop_size = fog->hop_size;
 
     // Process each sample in the block
     for (int i = 0; i < blocksize; i++) {
@@ -575,9 +618,9 @@ void grain_fog_process_block(
         // position hop_size-1 an extra frame contribution, causing gain ripple.
         float wet_left, wet_right;
 
-        // With 4x overlap, need 4 frames before output is fully "baked"
-        // (each position has contributions from all 4 overlapping windows)
-        if (fog->frames_processed >= 4) {
+        // Need overlap_factor frames before output is fully "baked"
+        // (each position has contributions from all overlapping windows)
+        if (fog->frames_processed >= fog->overlap_factor) {
             // Safety check: ensure output_read_pos is in valid range
             if (fog->output_read_pos >= hop_size) {
                 fog->output_read_pos = 0;
@@ -651,10 +694,10 @@ void grain_fog_process_block(
                   hop_size * sizeof(float));
 
             // Reset input position
-            fog->input_pos = fog->fft_size - hop_size;  // 768
+            fog->input_pos = fog->fft_size - hop_size;
 
             // Reset process countdown
-            fog->samples_until_process = hop_size;  // 256
+            fog->samples_until_process = hop_size;
 
             // Track that we've processed a frame
             fog->frames_processed++;

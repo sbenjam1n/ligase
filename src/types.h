@@ -585,7 +585,9 @@ typedef enum {
 typedef struct {
     uint32_t magic;              // Magic number for validation (0xF06BEEF0)
     int sample_rate;
-    int fft_size;                // FFT window size (512, 1024, 2048, etc.)
+    int fft_size;                // FFT window size (512, 1024, 2048)
+    int overlap_factor;          // Overlap factor (2, 4, or 8); hop_size = fft_size/overlap_factor
+    int hop_size;                // Derived: fft_size / overlap_factor
     int num_bins;                // Number of frequency bins (fft_size/2 + 1)
 
     // Main inlet control

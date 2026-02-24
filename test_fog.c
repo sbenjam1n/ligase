@@ -61,7 +61,7 @@ static void run_fog(grain_fog_t *fog, int num_samples) {
 static int test_sine_passthrough(void) {
     printf("Test 1: Sine passthrough (smear=off, specmagfilter=off, mix=1.0)\n");
 
-    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE);
+    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE, 4);
     if (!fog) { printf("  FAIL: couldn't create fog\n"); return 1; }
 
     grain_fog_set_mix(fog, 1.0f);
@@ -135,7 +135,7 @@ static int test_sine_passthrough(void) {
 static int test_dc_passthrough(void) {
     printf("Test 2: DC passthrough (constant 0.5, smear=off, specmagfilter=off)\n");
 
-    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE);
+    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE, 4);
     if (!fog) { printf("  FAIL: couldn't create fog\n"); return 1; }
 
     grain_fog_set_mix(fog, 1.0f);
@@ -190,7 +190,7 @@ static int test_dc_passthrough(void) {
 static int test_silence_bypass(void) {
     printf("Test 3: Silence passthrough (mix=0.0 should be clean bypass)\n");
 
-    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE);
+    grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE, 4);
     if (!fog) { printf("  FAIL: couldn't create fog\n"); return 1; }
 
     grain_fog_set_mix(fog, 0.0f);
@@ -231,7 +231,7 @@ static int test_multi_frequency_gain(void) {
     float gains[4];
 
     for (int f = 0; f < nfreqs; f++) {
-        grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE);
+        grain_fog_t *fog = grain_fog_create(SAMPLE_RATE, FFT_SIZE, 4);
         grain_fog_set_mix(fog, 1.0f);
         grain_fog_set_smear_enabled(fog, 0);
         grain_fog_set_specmagfilter_enabled(fog, 0);
