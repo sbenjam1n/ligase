@@ -281,6 +281,7 @@ typedef struct grain {
     float saw_depth;          // Saw modulation depth/intensity (0.0-1.0)
     uint32_t splice_start;    // Splice boundary start (for wrapping)
     uint32_t splice_end;      // Splice boundary end (for wrapping)
+    int fog_slot_idx;         // Fog pool slot assignment (-1 = post-mix mode)
     struct grain *next;       // Next grain in pool
 } grain_t;
 
@@ -485,6 +486,9 @@ typedef struct {
 
 // @region:ligase_pd.core.types.scheduler Scheduler Structure
 
+// Forward declaration for fog_pool_t (defined after grain_fog_t)
+typedef struct fog_pool fog_pool_t;
+
 #define DEFAULT_MAX_GRAINS 200
 #define MAX_POOL_SIZE 2000  // Absolute maximum for safety
 
@@ -534,6 +538,22 @@ typedef struct scheduler {
     param_range_t dist_poly_c2_range;        // Polynomial c2 coefficient (-10.0 to 10.0)
     param_range_t dist_poly_c3_range;        // Polynomial c3 coefficient (-10.0 to 10.0)
 
+    // Fog parameter ranges
+    param_range_t fog_mix_range;             // Fog dry/wet mix (0.0-1.0)
+    param_range_t fog_smear_bins_range;      // Fog smear bins (0-32)
+    param_range_t fog_smear_onset_range;     // Fog smear onset amount (0.0-1.0)
+    param_range_t fog_mag_cutoff_range;      // Fog magnitude cutoff (0.1-20.0 Hz)
+    param_range_t fog_mag_resonance_range;   // Fog magnitude resonance (0.1-10.0)
+    param_range_t fog_phase_cutoff_range;    // Fog phase cutoff (0.1-20.0 Hz)
+    param_range_t fog_smf_onset_range;       // Fog specmagfilter onset amount (0.0-1.0)
+
+    // Stut parameter range
+    param_range_t stut_reps_range;           // Stut repetitions (1-16)
+
+    // Bencina parameter ranges
+    param_range_t bencina_iot_range;         // Bencina grain spacing (1.0-1000.0 ms)
+    param_range_t bencina_grainsize_range;   // Bencina grain size (0.001-2.0 sec)
+
     // Perlin noise state
     perlin_state_t perlin_state;
 
@@ -549,6 +569,9 @@ typedef struct scheduler {
     // Delay mode structures (for bencina and stut modes)
     grain_delay_stut_t *delay_stut;      // Stut mode state (NULL if not allocated)
     grain_delay_bencina_t *delay_bencina; // Bencina mode state (NULL if not allocated)
+
+    // Fog pool for per-grain fog mode (NULL if not allocated)
+    fog_pool_t *fog_pool;
 } scheduler_t;
 
 // @endregion:ligase_pd.core.types.scheduler
@@ -680,6 +703,27 @@ typedef struct {
     // @endregion:ligase_pd.core.grain.fog.process
 
 } grain_fog_t;
+
+// @region:ligase_pd.core.types.fog_pool Fog Pool Structure (Per-Grain Fog)
+
+typedef struct {
+    grain_fog_t *fog;
+    float *accum_left;
+    float *accum_right;
+    int accum_size;
+} fog_slot_t;
+
+#define FOG_POOL_MAX_SLOTS 8
+#define FOG_POOL_DEFAULT_SLOTS 4
+
+struct fog_pool {
+    fog_slot_t slots[FOG_POOL_MAX_SLOTS];
+    int num_slots;
+    int next_slot;       // round-robin counter
+    int position_mode;   // 0=per-grain, 1=post-mix (default)
+};
+
+// @endregion:ligase_pd.core.types.fog_pool
 
 // @endregion:ligase_pd.core.types.grain_fog
 

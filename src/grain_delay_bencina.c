@@ -175,7 +175,7 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
                                 delay->buffer_right[read_pos_next] * frac;
 
             // Calculate envelope amplitude
-            float env_phase = g->phase / g->grain_length;  // Normalize to 0.0-1.0
+            float env_phase = (g->grain_length > 0.0f) ? (g->phase / g->grain_length) : 1.0f;
             if (env_phase > 1.0f) env_phase = 1.0f;
             float env_amp = envelope_sample(bencina->envelope, env_phase);
 
@@ -219,8 +219,15 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
         float feedback_right = filtered_right * delay->feedback;
 
         // Write to buffer: input + feedback (Sound-on-Sound)
-        delay->buffer_left[delay->write_pos] = in_left[s] + feedback_left;
-        delay->buffer_right[delay->write_pos] = in_right[s] + feedback_right;
+        // Soft-clip to prevent unbounded feedback accumulation
+        float write_left = in_left[s] + feedback_left;
+        float write_right = in_right[s] + feedback_right;
+        if (write_left > 4.0f) write_left = 4.0f;
+        else if (write_left < -4.0f) write_left = -4.0f;
+        if (write_right > 4.0f) write_right = 4.0f;
+        else if (write_right < -4.0f) write_right = -4.0f;
+        delay->buffer_left[delay->write_pos] = write_left;
+        delay->buffer_right[delay->write_pos] = write_right;
 
         // Advance write position
         delay->write_pos = (delay->write_pos + 1) % delay->buffer_size;

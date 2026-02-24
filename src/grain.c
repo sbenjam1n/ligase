@@ -3,6 +3,7 @@
 #include "types.h"
 #include "perlin.h"
 #include "grain_distortion.h"
+#include "grain_fog.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -418,6 +419,22 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->dist_poly_c2_range = default_range;
     sched->dist_poly_c3_range = default_range;
 
+    // Initialize fog parameter ranges (all disabled by default)
+    sched->fog_mix_range = default_range;
+    sched->fog_smear_bins_range = default_range;
+    sched->fog_smear_onset_range = default_range;
+    sched->fog_mag_cutoff_range = default_range;
+    sched->fog_mag_resonance_range = default_range;
+    sched->fog_phase_cutoff_range = default_range;
+    sched->fog_smf_onset_range = default_range;
+
+    // Initialize stut parameter range (disabled by default)
+    sched->stut_reps_range = default_range;
+
+    // Initialize bencina parameter ranges (disabled by default)
+    sched->bencina_iot_range = default_range;
+    sched->bencina_grainsize_range = default_range;
+
     // Initialize grain distortion (enabled by default with zero intensity)
     sched->distortion = grain_distortion_create(sample_rate);
     if (!sched->distortion) {
@@ -537,6 +554,9 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
 
 void scheduler_destroy(scheduler_t *sched) {
     if (sched) {
+        if (sched->fog_pool) {
+            fog_pool_destroy(sched->fog_pool);
+        }
         if (sched->distortion) {
             grain_distortion_destroy(sched->distortion);
         }
@@ -858,6 +878,13 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
 
     grain->splice_start = splice_start;
     grain->splice_end = splice_end;
+
+    // Assign fog pool slot (per-grain mode) or -1 (post-mix mode)
+    if (sched->fog_pool && sched->fog_pool->position_mode == 0) {
+        grain->fog_slot_idx = fog_pool_assign_slot(sched->fog_pool);
+    } else {
+        grain->fog_slot_idx = -1;
+    }
 }
 
 void scheduler_set_grain_size(scheduler_t *sched, float grain_size) {
@@ -939,6 +966,13 @@ void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float 
     memset(out_left, 0, blocksize * sizeof(float));
     memset(out_right, 0, blocksize * sizeof(float));
 
+    // Per-grain fog: resize and clear accumulation buffers at block start
+    int per_grain_fog = (sched->fog_pool && sched->fog_pool->position_mode == 0);
+    if (per_grain_fog) {
+        fog_pool_resize_accumulators(sched->fog_pool, blocksize);
+        fog_pool_clear_accumulators(sched->fog_pool, blocksize);
+    }
+
     // DEBUG: Count active grains
     static int debug_count = 0;
     if (debug_count < 10) {
@@ -970,6 +1004,18 @@ void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float 
         }
 
         int grain_finished = 0;  // Track if we manually advanced to next grain
+
+        // Determine output target: slot accumulator (per-grain fog) or main output
+        float *target_left = out_left;
+        float *target_right = out_right;
+        if (per_grain_fog && grain->fog_slot_idx >= 0 &&
+            grain->fog_slot_idx < sched->fog_pool->num_slots) {
+            fog_slot_t *slot = &sched->fog_pool->slots[grain->fog_slot_idx];
+            if (slot->accum_left && slot->accum_right) {
+                target_left = slot->accum_left;
+                target_right = slot->accum_right;
+            }
+        }
 
         for (int i = 0; i < blocksize; i++) {
             if (grain->envelope_phase >= grain->grain_length) {
@@ -1046,8 +1092,8 @@ void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float 
                 float right_gain = sinf(pan_angle);  // 0.0 at left, 0.707 at center, 1.0 at right
 
                 // Output panned mono signal to both channels
-                out_left[i] += mono_sample * left_gain;
-                out_right[i] += mono_sample * right_gain;
+                target_left[i] += mono_sample * left_gain;
+                target_right[i] += mono_sample * right_gain;
             } else {
                 // Mode 1: Stereo balance (preserve stereo width)
                 // Apply envelope and amplitude to both channels independently
@@ -1061,8 +1107,8 @@ void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float 
                 float right_gain = sinf(pan_angle);  // 0.0 at left, 0.707 at center, 1.0 at right
 
                 // Output balanced stereo signal
-                out_left[i] += sample_left * left_gain;
-                out_right[i] += sample_right * right_gain;
+                target_left[i] += sample_left * left_gain;
+                target_right[i] += sample_right * right_gain;
             }
 
             // Advance grain position
@@ -1086,6 +1132,12 @@ void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float 
         if (!grain_finished && grain) {
             grain = grain->next;
         }
+    }
+
+    // Per-grain fog: process each slot's accumulated audio through its fog FFT pipeline
+    // and sum the results into the output buffers
+    if (per_grain_fog) {
+        fog_pool_process(sched->fog_pool, out_left, out_right, blocksize);
     }
 }
 

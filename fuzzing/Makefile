@@ -10,9 +10,6 @@ SANITIZER_FLAGS = -fsanitize=address,undefined \
                   -fno-sanitize-recover=all \
                   -g -O1
 
-# Coverage-guided fuzzing (optional, for future libFuzzer integration)
-# COVERAGE_FLAGS = -fsanitize-coverage=trace-pc-guard
-
 # Standard Pure Data external flags
 PD_CFLAGS = -DPD -I$(PD_INCLUDE) -Wall -W -Wstrict-prototypes \
             -Wno-unused -Wno-parentheses -Wno-switch -fPIC
@@ -31,8 +28,24 @@ FUZZER_SRCS = $(SRC_DIR)/ligase_fuzzer.c \
               $(SRC_DIR)/corpus_seeds.c \
               $(SRC_DIR)/corpus_selection.c
 
-# Ligase sources (to be compiled with sanitizers)
-LIGASE_SRCS = $(LIGASE_SRC_DIR)/ligase.c
+# All ligase~ source files (compiled directly with sanitizers)
+LIGASE_SRCS = $(LIGASE_SRC_DIR)/ligase~.c \
+              $(LIGASE_SRC_DIR)/envelope.c \
+              $(LIGASE_SRC_DIR)/grain.c \
+              $(LIGASE_SRC_DIR)/grain_delay.c \
+              $(LIGASE_SRC_DIR)/grain_delay_stut.c \
+              $(LIGASE_SRC_DIR)/grain_delay_bencina.c \
+              $(LIGASE_SRC_DIR)/grain_distortion.c \
+              $(LIGASE_SRC_DIR)/grain_moogladder.c \
+              $(LIGASE_SRC_DIR)/grain_fog.c \
+              $(LIGASE_SRC_DIR)/kiss_fft.c \
+              $(LIGASE_SRC_DIR)/kiss_fftr.c \
+              $(LIGASE_SRC_DIR)/reel.c \
+              $(LIGASE_SRC_DIR)/splice.c \
+              $(LIGASE_SRC_DIR)/perlin.c \
+              $(LIGASE_SRC_DIR)/sphere.c
+
+LIGASE_OBJS = $(addprefix $(BUILD_DIR)/,$(notdir $(LIGASE_SRCS:.c=.o)))
 
 # Output
 FUZZER_TARGET = ligase_fuzzer~.pd_linux
@@ -50,18 +63,14 @@ $(FUZZER_TARGET): $(FUZZER_SRCS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(FUZZER_SRCS)
 	@echo "Built fuzzer: $@"
 
-# Build instrumented ligase~ (copy from main build if it exists, else warn)
-$(LIGASE_TARGET): | $(BUILD_DIR)
-	@if [ -f ../ligase~.pd_linux ]; then \
-		echo "Copying and rebuilding ligase~ with sanitizers..."; \
-		$(MAKE) -C .. ligase~.pd_linux CC="$(CC)" CFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)"; \
-		cp ../ligase~.pd_linux $@; \
-		echo "Built instrumented ligase~: $@"; \
-	else \
-		echo "WARNING: ../ligase~.pd_linux not found. Build ligase~ first."; \
-		echo "Run: make -C .."; \
-		exit 1; \
-	fi
+# Compile each ligase~ source with sanitizers into build/
+$(BUILD_DIR)/%.o: $(LIGASE_SRC_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) -I/usr/local/include/pd -c $< -o $@
+
+# Link instrumented ligase~ from sanitized object files
+$(LIGASE_TARGET): $(LIGASE_OBJS)
+	$(CC) $(LDFLAGS) -o $@ $(LIGASE_OBJS)
+	@echo "Built instrumented ligase~: $@"
 
 clean:
 	rm -f $(FUZZER_TARGET) $(LIGASE_TARGET)

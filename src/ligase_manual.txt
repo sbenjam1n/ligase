@@ -41,6 +41,7 @@ GRAIN PARAMETERS………………………………………………………�
 * Amplitude
 * Pan
 * Envelope Shape
+* Saw Envelope Modulation
 * Nth Grain End Output
 TIMING & QUANTIZATION……………………………………………………………………………23
 * Clock Management
@@ -48,8 +49,17 @@ TIMING & QUANTIZATION…………………………………………………�
 * Grain Size Quantization
 * Delay Time Quantization
 PITCH & SPEED………………………………………………………………………………………..26
-DELAY……………………………………………………………………………………………………28 
-DISTORTION………………………………………………………………….…………………………29
+DELAY……………………………………………………………………………………………………28
+* DD-4 Mode
+* Bencina Mode
+* Stut Mode
+FOG (SPECTRAL EFFECT)………………………………………………………………………….…29
+* Smear (Horizontal)
+* SpecMagFilter (Vertical)
+* Stereo Filter Mode
+* Per-Grain Fog Mode
+* Configuration
+DISTORTION………………………………………………………………….…………………………31
 * Control
 * Waveshaper Modes
 * Pre-emphasis / De-emphasis (Inner Filters)
@@ -60,6 +70,8 @@ PARAMETER RANGES & MODULATION……………………………………………
 * Modulatable Parameters
 * Messages
 * N-Body Control
+* Sphere Simulation
+* Waveform LFOs
 * Sampling Timing
 * Modulation Mapping
 * Generator Outlet Sends
@@ -78,7 +90,7 @@ QUERY STATE……………………………………………………………
 OVERVIEW
 
 
-ligase~ is a granular synthesizer/sampler/looper/delay with real-time recording, reel/splice management, filter, distortion and chaotic parameter modulation inspired by features of the Morphagene, Audiomulch’s DLGranulator and Tidalcycles.
+ligase~ is a granular synthesizer/sampler/looper/delay with real-time recording, reel/splice management, spectral fog, filter, distortion and chaotic parameter modulation inspired by features of the Morphagene, Audiomulch’s DLGranulator and Tidalcycles.
 
 
 ligase~ implements asynchronous granular synthesis with splice-based sample organization. The engine operates on a fixed-size stereo buffer (10 minutes at 48kHz) divided into segments called splices. 
@@ -179,16 +191,16 @@ INLETS
 11. GDelay Time - Delay time (0-10 seconds)
 
 
-12. GDelay Feedback - Feedback amount (0-1)
+12. GDelay Feedback - Feedback amount (0-1) (DD-4/Bencina only)
 
 
-13. GDelay Tone - Lowpass filter (0-1)
+13. GDelay Tone - Lowpass filter (0-1) (DD-4/Bencina only)
 
 
 14. GDelay Mix - Dry/wet mix (0-1)
 
 
-15. Distortion - Drive intensity (0-1)
+15. Fog Mix - Spectral fog blend (0-1)
 
 
 16. Moog Cutoff - Filter cutoff (20-20000 Hz)
@@ -301,11 +313,18 @@ clockstop - Stop clock, keep last BPM
 
 
 Grain Parameters
-         
+
 grainsize <0.001-10> - Grain duration in seconds
-         grainstart <0-1> - Position within splice where grains begin (0=start, 1=end)
+grainstart <0-1> - Position within splice where grains begin (0=start, 1=end)
 iot <0.0005-2> - Interonset time in seconds
 maxgrains <1-pool_size> - Max concurrent grains
+amplitude <0-2> - Grain amplitude
+pan <0-1> - Stereo position (0=left, 0.5=center, 1=right)
+pan_mode <0|1> - Mono panning / Stereo balance
+saw_cycles <0-64> - Saw envelope modulation cycles
+saw_depth <0-1> - Saw envelope modulation depth
+envelope <0|1|2|3|4> - Parabolic/Trapezoidal/Cosine/Gaussian/Exponential
+env_skew <0-1> - Envelope shape skew
 grain_bang_rate <N> - Bang outlet every N grains (0=off)
 
 
@@ -382,6 +401,23 @@ dist_poly_c3 <-10 to 10> - Cubic coefficient
 
 
 
+Fog (Spectral Effect)
+
+
+fog_smear_bins <0-32> - Frequency smear width (bins)
+fog_smear_enable <0|1> - Enable/disable smear
+fog_smear_onset_curve <0|1|2> - Linear/Exponential/Logarithmic
+fog_smear_onset_amount <0-1> - Smear onset depth
+fog_mag_cutoff <0.1-20> - Magnitude filter cutoff (Hz)
+fog_mag_resonance <0.1-10> - Magnitude filter Q
+fog_phase_cutoff <0.1-20> - Phase filter cutoff (Hz)
+fog_specmagfilter_enable <0|1> - Enable/disable temporal filter
+fog_specmagfilter_onset_curve <0|1|2> - Linear/Exponential/Logarithmic
+fog_specmagfilter_onset_amount <0-1> - Temporal filter onset depth
+fog_stereo_filter_mode <0|1> - Shared/Independent stereo state
+fog_position <0|1> - Per-grain/Post-mix mode
+
+
 Moogladder Filter
 
 
@@ -389,6 +425,30 @@ moog_cutoff <20-20000> - Cutoff frequency (Hz)
 moog_resonance <0-4> - Resonance amount
 moog_mix <0-1> - Dry/wet mix
 moog_enable <0|1> - Enable/bypass
+
+
+Delay Modes
+
+
+delay_mode <0|1|2> - DD-4/Bencina/Stut
+stut - Trigger stut effect
+stut_reps <1-16> - Stut repetitions
+stut_reduction <0-1> - Gain decay per repeat
+stut_spacing <ms> - Spacing between repeats
+bencina_iot <ms> - Bencina grain spacing
+bencina_grainsize <seconds> - Bencina grain size
+bencina_wrap <0|1> - Global/Splice wrap mode
+bencina_clear - Clear bencina grains
+
+
+Sphere Simulation
+
+
+sphere_kick <instance> <vx> <vy> <vz> - Apply velocity impulse
+sphere_damping <instance> <0-1> - Damping coefficient
+sphere_elasticity <instance> <0-1> - Bounce elasticity
+sphere_reset <instance> - Reset to initial state
+sphere_mode <instance> <0-6> - Output mode (X/Y/Z/VelX/VelY/VelZ/VelMag)
 
 
 Parameter Ranging
@@ -413,10 +473,14 @@ Generators
 
 
 rand_1, rand_2, rand_3, rand_4
-perlin_1d_1, perlin_1d_2, perlin_1d_3, perlin_1d_4 
-perlin_2d_1, perlin_2d_2, perlin_2d_3, perlin_2d_4 
-lorenz_1, lorenz_2, lorenz_3, lorenz_4 
+perlin_1d_1, perlin_1d_2, perlin_1d_3, perlin_1d_4
+perlin_2d_1, perlin_2d_2, perlin_2d_3, perlin_2d_4
+lorenz_1, lorenz_2, lorenz_3, lorenz_4
 nbody_1, nbody_2, nbody_3, nbody_4
+sphere_1, sphere_2, sphere_3, sphere_4
+saw_1, saw_2, saw_3, saw_4
+sine_1, sine_2, sine_3, sine_4
+square_1, square_2, square_3, square_4
 
 
 Generator Modulation Outlet Send
@@ -442,6 +506,16 @@ nbody_pump <instance> <0-0.01> - Energy injection
 nbody_reset <instance> - Reset to initial conditions
 
 
+Sphere Configuration
+
+
+sphere_kick <instance> <vx> <vy> <vz> - Apply velocity impulse
+sphere_damping <instance> <0-1> - Damping coefficient
+sphere_elasticity <instance> <0-1> - Bounce elasticity
+sphere_reset <instance> - Reset to initial state
+sphere_mode <instance> <0-6> - Output: X/Y/Z/VelX/VelY/VelZ/VelMag
+
+
 Pitch Control
 
 
@@ -465,6 +539,9 @@ iot: 0.1 seconds
 maxgrains: 4
 amplitude: 1.0
 pan: 0.5 (center)
+pan_mode: 0 (constant-power mono panning)
+saw_cycles: 0.0 (off)
+saw_depth: 0.0 (off)
 env_skew: 0.5 (symmetric)
 
 
@@ -504,10 +581,33 @@ split: 0 (allow split)
 Effects
 
 
+fog_mix: 0.0 (dry)
+fog_smear_bins: 8
+fog_smear_enable: 1
+fog_smear_onset_curve: 2 (logarithmic)
+fog_smear_onset_amount: 1.0
+fog_mag_cutoff: 2.0 Hz
+fog_mag_resonance: 1.0
+fog_phase_cutoff: 2.0 Hz
+fog_specmagfilter_enable: 1
+fog_specmagfilter_onset_curve: 2 (logarithmic)
+fog_specmagfilter_onset_amount: 1.0
+fog_stereo_filter_mode: 0 (shared)
+fog_position: 1 (post-mix)
+fog_pool_size: 4 (configurable via ligase.conf)
 gdelay_time: 0.0 (off)
 gdelay_feed: 0.0
 gdelay_tone: 0.5
 gdelay_mix: 0.0
+delay_mode: 0 (DD-4)
+delay_quant_note: 16 (1/16)
+delay_quant_amount: 0.0 (disabled)
+stut_reps: 4
+stut_reduction: 0.5
+stut_spacing: 62.5 ms
+bencina_iot: 50.0 ms
+bencina_grainsize: 0.1 seconds
+bencina_wrap: 1 (splice)
 distortion: 0.0 (clean)
 distortion_enable: 1
 distortion_oversampling: 4x
@@ -1725,6 +1825,39 @@ Regenerates​ envelope table immediately on change.​
 ​Signal inlet 18: updates if value in range [0.001, 1.0] and different from current, else keeps​ ​current value.​
 
 
+Saw Envelope Modulation
+
+
+Per-grain sawtooth wave carved into the envelope. Creates jagged, rhythmic amplitude spikes within each grain. The saw wave modulates the envelope shape: at depth=0 the envelope is unmodified, at depth=1 the saw wave fully carves the envelope into sharp peaks.
+
+
+Formula: env_val = base_env * (1.0 - depth * (1.0 - saw_val))
+
+
+saw_cycles <float>  Number of sawtooth cycles per grain duration.
+
+
+Range: 0.0 to 64.0. Default: 0.0 (off).
+
+
+0.0 = no modulation. 1.0 = one ramp per grain. Higher values = more spikes. Non-integer values produce partial final cycles.
+
+
+Signal inlet 21 or message. Supports param_range modulation.
+
+
+saw_depth <float>  Modulation intensity.
+
+
+Range: 0.0 to 1.0. Default: 0.0 (off).
+
+
+0.0 = pure base envelope. 1.0 = maximum jaggedness (spikes drop to zero between peaks).
+
+
+Signal inlet 22 or message. Supports param_range modulation.
+
+
 Grain​ Bang Output​
 
 
@@ -2110,7 +2243,7 @@ MIDI mode "latches" to the last valid note until pitch_mode changes. Switching b
 DELAY​
 
 
-DD​-4 style delay applied to grain output after Moog filter. Circular buffer with feedback loop and​ tone​ control.​
+Delay effect applied to the mixed grain output before recording. Three modes available: DD-4 (analog-style), Bencina (pitch-preserving granular), and Stut (quantized rhythmic). All modes share a 9.5-second stereo circular buffer (at 48kHz) and common control parameters (time, feedback, tone, mix). Mode-specific parameters are set via messages.​
 
 
 Parameters​​
@@ -2146,13 +2279,13 @@ Range:​ 0.0 to 1.0​
 Clamped​ to bounds.​
 
 
-Feedback​ applied after tone filter in feedback loop.​
+Feedback​ applied after tone filter in feedback loop (DD-4 and Bencina modes only; inactive in Stut mode).​
 
 
 Signal​ inlet 11: updates if value in range (0.0, 1.0], else keeps current value.​
 
 
-gdelay​_tone <float>​ Set​ tone character via one-pole​​IIR low-pass filter in feedback loop.​
+gdelay​_tone <float>​ Set​ tone character via one-pole​​IIR low-pass filter in feedback loop (DD-4 and Bencina modes only; inactive in Stut mode).​
 
 
 Range:​ 0.0 to 1.0​
@@ -2173,7 +2306,7 @@ Filter​ coefficient applied directly: filtered = tone × delayed + (1 - tone) 
 Higher​ values pass more high frequencies. Lower values create darker, warmer repeats.​
 
 
-Signal​ inlet 12: updates if value in range (0.0, 1.0], else keeps current value.​
+Signal​ inlet 12: In DD-4/Bencina modes, updates feedback if value in range (0.0, 1.0]. In Stut mode (delay_mode 2), controls stut_reduction (gain decay per repeat, range 0.0-1.0).​
 
 
 gdelay​_mix <float>​ Set​ dry/wet mix.​
@@ -2194,16 +2327,252 @@ Clamped​ to bounds.​
 Output​ calculation: output = dry × (1 - mix) + wet × mix​
 
 
-Signal​ inlet 13: updates if value in range (0.0, 1.0], else keeps current value.​
+Signal​ inlet 13: In DD-4/Bencina modes, updates tone if value in range (0.0, 1.0]. In Stut mode (delay_mode 2), controls stut_spacing (repetition spacing in ms, range 1.0-5000.0).​
 
 
 gdelay​_clear​  Clear delay buffers and filter​​state.​
 
 
-Zeros​ buffer_left, buffer_right, lpf_state_left, lpf_state_right.​ 
+Zeros​ buffer_left, buffer_right, lpf_state_left, lpf_state_right.​
 
 
 ​Immediate silence in feedback loop.​
+
+
+Delay Modes
+
+
+delay_mode <0|1|2>  Select delay algorithm.
+
+
+DD-4 Mode (delay_mode 0)
+
+
+Default mode. Classic analog-style delay with a single read head at a fixed distance behind the write head. Feedback and tone filter operate in the feedback loop.
+
+Architecture: input + feedback is written to the buffer. A single read head reads at write_pos minus delay_time with linear interpolation. The delayed signal passes through a one-pole IIR low-pass filter (the tone control), then feedback is calculated from the filtered output.
+
+Active inlets: all four (time, feedback, tone, mix).
+
+Delay time is smoothed internally (coefficient 0.001, approximately 20ms transition at 48kHz) to prevent clicks during time changes.
+
+
+Bencina Mode (delay_mode 1)
+
+
+Pitch-preserving granular delay based on the Ross Bencina architecture. Instead of a single read head, spawns up to 32 micro-grains inside the delay buffer. Each grain stores a relative offset from the write head (a "moving tap"), so the grain follows the write head at a fixed distance. This is what preserves pitch — the grain envelope re-synthesizes the delayed audio independently of delay time changes.
+
+Architecture: grains are triggered continuously at a fixed interval (bencina_iot). Each grain reads from write_pos minus its stored offset, applies the main envelope shape as a window, and uses constant-power panning. The sum of all active grains passes through the tone filter, and the filtered output is fed back into the buffer before the write head advances. This true feedback creates recursive granulation — delayed grains get re-granulated — producing shimmer and evolving textures at higher feedback values.
+
+Active inlets: all four (time, feedback, tone, mix). Time controls the distance of the moving tap from the write head. Feedback and tone operate in the grain output path.
+
+
+bencina_iot <float>  Spacing between grain triggers (milliseconds). Controls grain density.
+
+Range: 1.0 to 1000.0 ms. Default: 50.0 ms (20 grains/sec).
+
+Lower values = denser cloud, more overlap between grains. For rhythmic effects, set to a musical subdivision (e.g. 125ms = 1/8 note at 120 BPM).
+
+
+bencina_grainsize <float>  Individual grain length (seconds).
+
+Range: 0.001 to 2.0 seconds. Default: 0.1 seconds (100ms).
+
+Longer grains = smoother, more blurred output. Shorter grains = more granular texture. Applied to future grains only (existing grains keep their size).
+
+
+bencina_wrap <0|1>  Buffer wrap mode.
+
+0 = global (default): grains can read from any part of the buffer, creating layered textures from across the recording. 1 = splice: grains wrap within current splice boundaries, preventing cross-splice bleed.
+
+Applied to all existing and future grains.
+
+
+bencina_clear  Clear all active bencina grains. Immediate silence. Resets active grain count to 0.
+
+
+Stut Mode (delay_mode 2)
+
+
+Quantized rhythmic delay. Unlike DD-4 and Bencina which run continuously, Stut is event-triggered via the stut message. When triggered, it captures the current buffer write position and schedules N repetitions at fixed time intervals, each with exponentially decaying gain.
+
+Architecture: the stut message captures an absolute buffer position at the moment of triggering. It then schedules up to 16 grains, each with a countdown timer (i × spacing) and a gain value (gain_reduction ^ i). During processing, each grain counts down; when its timer reaches zero it emits a single-sample pulse from the captured position, scaled by its gain. This produces discrete rhythmic echoes of the captured moment.
+
+Active inlets: time, mix, and — in Stut mode — inlets 12 and 13 are repurposed. Inlet 12 controls stut_reduction (gain decay per repeat, 0.0-1.0) instead of feedback. Inlet 13 controls stut_spacing (repetition spacing in ms, 1.0-5000.0) instead of tone. The stut grains read directly from captured buffer positions with per-repetition gain decay — there is no feedback loop or tone filter in the stut signal path. The mix parameter controls dry/wet blend as usual. Modulation ranges (gdelay_feed range, gdelay_tone range) also route to stut_reduction and stut_spacing respectively when in Stut mode.
+
+
+stut  Trigger a stut sequence. Captures the current splice boundaries and write position. Schedules repetitions immediately. If delay quantization is active (delay_quant > 0, BPM running), uses the quantized grid spacing instead of stut_spacing.
+
+
+stut_reps <int>  Number of repetitions per trigger.
+
+Range: 1 to 16. Default: 4.
+
+
+stut_reduction <float>  Gain reduction factor per repeat. Each repetition's gain = reduction ^ repetition_number.
+
+Range: 0.0 to 1.0. Default: 0.5.
+
+0.0 = maximum reduction (only the first repeat is audible). 0.5 = each repeat is half the volume of the previous. 1.0 = no reduction (all repeats at full volume).
+
+Example with 4 reps, reduction 0.5: gains are [1.0, 0.5, 0.25, 0.125].
+
+
+stut_spacing <float>  Base spacing between repetitions (milliseconds).
+
+Range: 1.0 to 5000.0 ms. Default: 62.5 ms (1/16 note at 120 BPM).
+
+Overridden by delay quantization grid when active (see below).
+
+
+Stut and Delay Quantization
+
+
+The stut trigger integrates with the delay quantization system. When all three conditions are met — delay_quant amount > 0, BPM > 1.0, and clock running — the stut trigger uses delay_quant_grid_ms as the spacing between repetitions instead of stut_spacing. This locks stut repeats to the tempo grid.
+
+Example: at 120 BPM with delay_quantize 16 and delay_quant 1.0, stut repeats are spaced at 125ms (1/16 note). Changing delay_quantize to 8 spaces them at 250ms (1/8 note).
+
+Note: delay quantization also affects DD-4 delay time (blending toward the grid), but does not affect Bencina grain spacing. Use bencina_iot directly for Bencina timing.
+
+
+Per-Mode Parameter Summary
+
+
+                DD-4            Bencina         Stut
+gdelay_time     Active          Active          Inactive*
+gdelay_feed     Active          Active          → stut_reduction
+gdelay_tone     Active          Active          → stut_spacing
+gdelay_mix      Active          Active          Active
+delay_quant     Blends time     No effect       Overrides spacing
+Triggering      Continuous      Continuous      Event (stut msg)
+Read pattern    Fixed offset    Moving tap      Captured position
+Max voices      1               32              16
+
+* Stut writes input to the shared buffer using the write head, but stut grains read from captured absolute positions. The delay_time parameter does not affect stut grain playback positions.
+
+All three modes share the circular delay buffer and write head. Mode-specific parameters only affect their respective mode. Switching modes via delay_mode takes effect immediately.
+
+
+FOG (SPECTRAL EFFECT)
+
+
+FFT-based spectral processing applied to the grain output. Combines horizontal smear (frequency-axis magnitude averaging) and vertical specmagfilter (time-axis resonant filtering of magnitude and phase) to create spectral fog — timbral sustain, blurring, and ghostly persistence.
+
+
+Signal chain: FFT → polar conversion → smear → specmagfilter → IFFT
+
+
+Fog is a monitoring effect — it is not recorded into the reel. Applied after delay and before distortion in the effects chain.
+
+
+Signal inlet 15: fog mix (0.0-1.0). 0.0 = dry bypass (no FFT processing). 1.0 = full wet (100% spectral effect). Equal-power crossfade between dry and wet.
+
+
+Smear (Horizontal)
+
+
+Frequency-axis magnitude averaging. Blurs the spectral content across neighboring bins, creating a diffuse, hazy timbre.
+
+
+fog_smear_bins <int>  Number of neighbor bins to average on each side.
+
+
+Range: 0 to 32. Default: 8.
+
+
+Higher values = wider blur, more diffuse timbre. 0 = no smearing.
+
+
+fog_smear_enable <0|1>  Enable/disable smear processing.
+
+
+fog_smear_onset_curve <0|1|2>  How smear amount scales with fog mix. 0 = linear, 1 = exponential (x^2, delayed onset), 2 = logarithmic (sqrt, early onset). Default: 2.
+
+
+fog_smear_onset_amount <0-1>  Maximum smear depth at mix=1.0. Default: 1.0.
+
+
+SpecMagFilter (Vertical)
+
+
+Time-axis resonant filtering. Lowpass filters magnitude and phase per bin across consecutive FFT frames, creating temporal persistence — spectral content decays slowly rather than updating instantly.
+
+
+fog_mag_cutoff <float>  Magnitude filter cutoff frequency. Controls how quickly magnitudes track changes.
+
+
+Range: 0.1 to 20.0 Hz (relative to FFT hop rate). Default: 2.0 Hz.
+
+
+Lower values = slower tracking, longer spectral sustain. Higher values = faster response.
+
+
+fog_mag_resonance <float>  Magnitude filter resonance (Q factor). Adds a peak at the cutoff frequency, emphasizing the rate of spectral change.
+
+
+Range: 0.1 to 10.0. Default: 1.0.
+
+
+Higher values create a more pronounced, ringy spectral persistence. Soft-limited via tanh to prevent magnitude explosion.
+
+
+fog_phase_cutoff <float>  Phase lowpass cutoff. Controls smoothing of phase evolution between frames.
+
+
+Range: 0.1 to 20.0 Hz. Default: 2.0 Hz.
+
+
+Lower values freeze phase relationships, creating a static spectral snapshot.
+
+
+fog_specmagfilter_enable <0|1>  Enable/disable temporal filtering.
+
+
+fog_specmagfilter_onset_curve <0|1|2>  How filter depth scales with fog mix. 0 = linear, 1 = exponential, 2 = logarithmic (default).
+
+
+fog_specmagfilter_onset_amount <0-1>  Maximum filter depth at mix=1.0. Default: 1.0.
+
+
+Stereo Filter Mode
+
+
+fog_stereo_filter_mode <0|1>  Select stereo processing strategy.
+
+
+0 (default): Shared state. Left and right channels share the same per-bin filter state arrays. Creates a diffuse, mono-ish spectral character — both channels converge toward the same spectral evolution.
+
+
+1: Independent. Each channel has its own per-bin state arrays. Left and right channels evolve independently, preserving true stereo spectral separation.
+
+
+Per-Grain Fog Mode
+
+
+fog_position <0|1>  Select fog routing.
+
+
+0: Per-grain. Each grain is assigned to one of N independent fog slots via round-robin at trigger time. Grains accumulate into per-slot buffers, then each slot runs its own FFT pipeline. Different grains develop independent spectral evolution — some fogging faster, some slower — creating richer, more complex textures than global processing.
+
+
+1 (default): Post-mix. Single fog instance processes the mixed grain output. Existing behavior.
+
+
+Pool size is configurable via ligase.conf (fog_pool_size, 1-8 slots, default 4). Each slot costs ~76KB.
+
+
+Configuration (ligase.conf)
+
+
+fft_size = 1024       FFT window size: 512, 1024 (default), or 2048.
+                      512 = lower latency, less frequency resolution.
+                      2048 = highest resolution, higher latency.
+
+overlap_factor = 4    Overlap factor: 2, 4 (default), or 8.
+                      Higher = smoother temporal evolution, more CPU.
+
+fog_pool_size = 4     Per-grain fog slots: 1-8, default 4.
+                      ~76KB per slot.
 
 
 
@@ -2268,7 +2637,7 @@ Mode​ 1: Post-mix (default)​
 ​Uses oversampling. Uses grain_distortion_process_block().​
 
 
-Signal​ chain: grains → delay → [RECORDING] → output → Moog → distortion → dac~​ 
+Signal​ chain: grains → delay → [RECORDING] → fog → distortion → Moog → dac~​
 
 
 ​Distortion NOT recorded (monitoring/output only).​
@@ -2572,7 +2941,7 @@ Range:​ 20 to 20000 Hz​
 ​Cutoff coefficient clamped to [0.0, 1.0] for stability.​
 
 
-Signal​ inlet 15: updates if value in range [20.0, 20000.0], else keeps current value.​
+Signal​ inlet 16: updates if value in range [20.0, 20000.0], else keeps current value.​
 
 
 moog​_resonance <float>​ Set​ resonance feedback amount.​
@@ -2682,6 +3051,45 @@ Coupling​ between parameter value and modulation depth. Decorrelated via insta
 Body​ positions, velocities, distances, angular momentum, total energy. Returns​ ​normalized [0.0, 1.0].​
 
 
+●​​  RAND​_TYPE_SPHERE​
+
+
+3D sphere physics simulation (STK-based). A sphere bounces within a bounded space with configurable damping and elasticity. Each instance can be "kicked" with a velocity impulse. Output mode selectable per instance (0-6): 0=Position X, 1=Position Y, 2=Position Z, 3=Velocity X, 4=Velocity Y, 5=Velocity Z, 6=Velocity Magnitude. Returns normalized [0.0, 1.0].
+
+
+sphere_kick <instance> <vx> <vy> <vz>  Apply velocity impulse to sphere instance. Creates sudden, decaying motion patterns.
+
+
+sphere_damping <instance> <0-1>  Set damping coefficient. Higher values = faster energy decay.
+
+
+sphere_elasticity <instance> <0-1>  Set bounce elasticity. 1.0 = perfect elastic bounce. Lower values absorb energy on wall contact.
+
+
+sphere_reset <instance>  Reset sphere to initial position and zero velocity.
+
+
+sphere_mode <instance> <0-6>  Set output mode. 0-2 = position axes, 3-5 = velocity axes, 6 = velocity magnitude.
+
+
+●​​  RAND​_TYPE_SAW​
+
+
+Sawtooth wave LFO. Unipolar ramp from 0.0 to 1.0. Phase advances by iot × noise_frequency_scale per grain trigger. Creates predictable linear sweep patterns for modulation.
+
+
+●​​  RAND​_TYPE_SINE​
+
+
+Sine wave LFO. Unipolar 0.0 to 1.0 (mapped from bipolar sine). Phase advances by iot × noise_frequency_scale per grain trigger. Creates smooth, predictable oscillating modulation.
+
+
+●​​  RAND​_TYPE_SQUARE​
+
+
+Square wave LFO. Bipolar switching: 0.0 below 50% duty cycle, 1.0 above. Phase advances by iot × noise_frequency_scale per grain trigger. Creates alternating on/off modulation patterns.
+
+
 Modulatable Parameters Include:
 
 
@@ -2709,10 +3117,28 @@ Gdelay​, gdelay_tone, moog_cutoff, moog_resonance, moog_mix​
 distortion​ (intensity), dist_emphasis_freq, dist_pregain, dist_curve_blend,​ dist​_drive_pos, dist_drive_neg, dist_poly_c1, dist_poly_c2, dist_poly_c3​
 
 
-Not​ modulatable:​
+●​  Fog​ (sampled per DSP block):​
 
 
-scanrate​ (no range implemented)​
+fog_mix​, fog_smear_bins, fog_smear_onset, fog_mag_cutoff, fog_mag_resonance,​ fog_phase_cutoff, fog_smf_onset​
+
+
+●​  Stut​ (sampled per DSP block):​
+
+
+stut_reps​
+
+
+●​  Bencina/PPG​ (sampled per DSP block):​
+
+
+bencina_iot​, bencina_grainsize​
+
+
+●​  Scan​ (sampled per DSP block):​
+
+
+scanrate​
 
 
 Messages​​
@@ -2736,7 +3162,8 @@ Example:​​ param​_range speed 1.0​→​ speed fixed at 1.0​
 
 
 ​○​  ​Types: rand_1...rand_4, perlin_1d_1...perlin_1d_4, perlin_2d_1...perlin_2d_4,​
-lorenz​_1...lorenz_4, nbody_1...nbody_4​
+lorenz​_1...lorenz_4, nbody_1...nbody_4, sphere_1...sphere_4,​
+saw​_1...saw_4, sine_1...sine_4, square_1...square_4​
 
 
       ○​  ​One-argument form: Sets all parameters to specified source.​​ Example:​

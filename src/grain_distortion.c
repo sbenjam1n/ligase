@@ -385,33 +385,17 @@ void grain_distortion_process_block(
         return;
     }
 
-    // Allocate/resize upsample buffers if needed
+    // Verify pre-allocated upsample buffers are large enough
+    // (buffers are allocated in grain_distortion_create for max size 8192*8)
     int required_size = blocksize * dist->oversample_factor;
-    if (dist->upsample_buffer_size < required_size) {
-        // Free old buffers
-        if (dist->upsample_buffer_left) free(dist->upsample_buffer_left);
-        if (dist->upsample_buffer_right) free(dist->upsample_buffer_right);
-
-        // Allocate new buffers
-        dist->upsample_buffer_left = (float*)calloc(required_size, sizeof(float));
-        dist->upsample_buffer_right = (float*)calloc(required_size, sizeof(float));
-
-        //  Check allocation success
-        if (!dist->upsample_buffer_left || !dist->upsample_buffer_right) {
-            fprintf(stderr, "grain_distortion_process_block: ERROR - buffer allocation failed\n");
-            // Disable oversampling and process without it
-            dist->oversample_factor = 1;
-            for (int i = 0; i < blocksize; i++) {
-                out_left[i] = grain_distortion_process_sample(dist, in_left[i], 0);
-                out_right[i] = grain_distortion_process_sample(dist, in_right[i], 1);
-            }
-            return;
+    if (!dist->upsample_buffer_left || !dist->upsample_buffer_right ||
+        dist->upsample_buffer_size < required_size) {
+        // Fallback: process without oversampling (no allocation on audio thread)
+        for (int i = 0; i < blocksize; i++) {
+            out_left[i] = grain_distortion_process_sample(dist, in_left[i], 0);
+            out_right[i] = grain_distortion_process_sample(dist, in_right[i], 1);
         }
-
-        dist->upsample_buffer_size = required_size;
-
-        // Update anti-aliasing filter coefficients for new oversample factor
-        update_antialias_coeffs(dist);
+        return;
     }
 
     // Temporary arrays for upsampled samples
@@ -680,11 +664,19 @@ grain_distortion_t* grain_distortion_create(int sample_rate) {
     // Initialize positioning and oversampling
     dist->position_mode = 1;          // Post-mix by default
     dist->oversample_factor = 4;      // 4x oversampling by default
-    dist->upsample_buffer_left = NULL;
-    dist->upsample_buffer_right = NULL;
-    dist->upsample_buffer_size = 0;
 
-    fprintf(stderr, "grain_distortion_create: Initializing (sr=%d, ptr=%p)\n", sample_rate, (void*)dist);
+    // Pre-allocate upsample buffers for max block size (8192) * max oversample (8)
+    // Avoids malloc/free on the audio thread
+    int prealloc_size = 8192 * 8;
+    dist->upsample_buffer_left = (float*)calloc(prealloc_size, sizeof(float));
+    dist->upsample_buffer_right = (float*)calloc(prealloc_size, sizeof(float));
+    if (!dist->upsample_buffer_left || !dist->upsample_buffer_right) {
+        free(dist->upsample_buffer_left);
+        free(dist->upsample_buffer_right);
+        free(dist);
+        return NULL;
+    }
+    dist->upsample_buffer_size = prealloc_size;
 
     // Initialize drive parameters
     update_drive_params(dist, 0.0f);

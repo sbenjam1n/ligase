@@ -711,4 +711,234 @@ void grain_fog_process_block(
 
 // @endregion:ligase_pd.core.grain.fog.process
 
+// @region:ligase_pd.core.grain.fog.pool Per-Grain Fog Pool Implementation
+
+// Read fog_pool_size from ligase.conf (same pattern as read_fog_config)
+static int read_fog_pool_size(void) {
+    int pool_size = FOG_POOL_DEFAULT_SLOTS;
+
+    FILE *f = fopen("ligase.conf", "r");
+    if (!f) return pool_size;
+
+    char line[256];
+    while (fgets(line, sizeof(line), f)) {
+        if (line[0] == '#' || line[0] == '\n' || line[0] == '\r') continue;
+        int value;
+        if (sscanf(line, " fog_pool_size = %d", &value) == 1) {
+            if (value >= 1 && value <= FOG_POOL_MAX_SLOTS) {
+                pool_size = value;
+                fprintf(stderr, "ligase~: Loaded fog_pool_size = %d from ligase.conf\n", value);
+            } else {
+                fprintf(stderr, "ligase~: Warning: fog_pool_size %d out of range (1-%d), using %d\n",
+                        value, FOG_POOL_MAX_SLOTS, FOG_POOL_DEFAULT_SLOTS);
+            }
+        }
+    }
+    fclose(f);
+    return pool_size;
+}
+
+fog_pool_t* fog_pool_create(int num_slots, int sample_rate, int fft_size, int overlap_factor) {
+    // Read from config if num_slots not specified
+    if (num_slots <= 0) num_slots = read_fog_pool_size();
+
+    // Clamp to valid range
+    if (num_slots < 1) num_slots = 1;
+    if (num_slots > FOG_POOL_MAX_SLOTS) num_slots = FOG_POOL_MAX_SLOTS;
+
+    fog_pool_t *pool = (fog_pool_t*)calloc(1, sizeof(fog_pool_t));
+    if (!pool) return NULL;
+
+    pool->num_slots = num_slots;
+    pool->next_slot = 0;
+    pool->position_mode = 1;  // Default: post-mix (existing behavior)
+
+    for (int i = 0; i < num_slots; i++) {
+        pool->slots[i].fog = grain_fog_create(sample_rate, fft_size, overlap_factor);
+        if (!pool->slots[i].fog) {
+            fprintf(stderr, "ligase~: ERROR: Failed to create fog instance for slot %d\n", i);
+            // Clean up already-created slots
+            for (int j = 0; j < i; j++) {
+                grain_fog_destroy(pool->slots[j].fog);
+            }
+            free(pool);
+            return NULL;
+        }
+        // Pre-allocate accumulators for max block size (avoids malloc on audio thread)
+        int prealloc_blocksize = 8192;
+        pool->slots[i].accum_left = (float*)calloc(prealloc_blocksize, sizeof(float));
+        pool->slots[i].accum_right = (float*)calloc(prealloc_blocksize, sizeof(float));
+        if (!pool->slots[i].accum_left || !pool->slots[i].accum_right) {
+            // Clean up on failure
+            for (int j = 0; j <= i; j++) {
+                if (pool->slots[j].fog) grain_fog_destroy(pool->slots[j].fog);
+                free(pool->slots[j].accum_left);
+                free(pool->slots[j].accum_right);
+            }
+            free(pool);
+            return NULL;
+        }
+        pool->slots[i].accum_size = prealloc_blocksize;
+    }
+
+    fprintf(stderr, "ligase~: fog pool created with %d slots (position_mode=post-mix)\n", num_slots);
+    return pool;
+}
+
+void fog_pool_destroy(fog_pool_t *pool) {
+    if (!pool) return;
+
+    for (int i = 0; i < pool->num_slots; i++) {
+        if (pool->slots[i].fog) grain_fog_destroy(pool->slots[i].fog);
+        free(pool->slots[i].accum_left);
+        free(pool->slots[i].accum_right);
+    }
+    free(pool);
+}
+
+void fog_pool_resize_accumulators(fog_pool_t *pool, int blocksize) {
+    if (!pool) return;
+
+    // Accumulators are pre-allocated in fog_pool_create for max block size (8192).
+    // This function is now a safety fallback only — no allocation should occur
+    // during normal operation since blocksize <= 8192 is enforced by ligase_perform.
+    for (int i = 0; i < pool->num_slots; i++) {
+        if (pool->slots[i].accum_size < blocksize) {
+            // Should not happen in normal operation — log and skip to avoid
+            // malloc on the audio thread
+            fprintf(stderr, "fog_pool_resize_accumulators: WARNING - blocksize %d exceeds pre-allocated %d\n",
+                    blocksize, pool->slots[i].accum_size);
+        }
+    }
+}
+
+void fog_pool_clear_accumulators(fog_pool_t *pool, int blocksize) {
+    if (!pool) return;
+
+    for (int i = 0; i < pool->num_slots; i++) {
+        if (pool->slots[i].accum_left) {
+            memset(pool->slots[i].accum_left, 0, blocksize * sizeof(float));
+        }
+        if (pool->slots[i].accum_right) {
+            memset(pool->slots[i].accum_right, 0, blocksize * sizeof(float));
+        }
+    }
+}
+
+void fog_pool_process(fog_pool_t *pool, float *out_left, float *out_right, int blocksize) {
+    if (!pool) return;
+
+    // Temporary buffers for each slot's fog output
+    float *temp_left = (float*)calloc(blocksize, sizeof(float));
+    float *temp_right = (float*)calloc(blocksize, sizeof(float));
+    if (!temp_left || !temp_right) {
+        free(temp_left);
+        free(temp_right);
+        return;
+    }
+
+    for (int i = 0; i < pool->num_slots; i++) {
+        fog_slot_t *slot = &pool->slots[i];
+        if (!slot->fog || !slot->accum_left || !slot->accum_right) continue;
+
+        // Process this slot's accumulated grain audio through its fog instance
+        grain_fog_process_block(slot->fog,
+                                slot->accum_left, slot->accum_right,
+                                temp_left, temp_right,
+                                blocksize);
+
+        // Sum into output
+        for (int j = 0; j < blocksize; j++) {
+            out_left[j] += temp_left[j];
+            out_right[j] += temp_right[j];
+        }
+    }
+
+    free(temp_left);
+    free(temp_right);
+}
+
+int fog_pool_assign_slot(fog_pool_t *pool) {
+    if (!pool || pool->num_slots <= 0) return -1;
+    int slot = pool->next_slot % pool->num_slots;
+    pool->next_slot++;
+    return slot;
+}
+
+// Parameter forwarding wrappers — apply setting to all fog instances in the pool
+
+void fog_pool_set_mix(fog_pool_t *pool, float mix) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_mix(pool->slots[i].fog, mix);
+}
+
+void fog_pool_set_smear_bins(fog_pool_t *pool, int bins) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_smear_bins(pool->slots[i].fog, bins);
+}
+
+void fog_pool_set_smear_enabled(fog_pool_t *pool, int enabled) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_smear_enabled(pool->slots[i].fog, enabled);
+}
+
+void fog_pool_set_smear_onset_curve(fog_pool_t *pool, fog_onset_curve_t curve) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_smear_onset_curve(pool->slots[i].fog, curve);
+}
+
+void fog_pool_set_smear_onset_amount(fog_pool_t *pool, float amount) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_smear_onset_amount(pool->slots[i].fog, amount);
+}
+
+void fog_pool_set_mag_cutoff(fog_pool_t *pool, float cutoff_hz) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_mag_cutoff(pool->slots[i].fog, cutoff_hz);
+}
+
+void fog_pool_set_mag_resonance(fog_pool_t *pool, float q) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_mag_resonance(pool->slots[i].fog, q);
+}
+
+void fog_pool_set_phase_cutoff(fog_pool_t *pool, float cutoff_hz) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_phase_cutoff(pool->slots[i].fog, cutoff_hz);
+}
+
+void fog_pool_set_specmagfilter_enabled(fog_pool_t *pool, int enabled) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_specmagfilter_enabled(pool->slots[i].fog, enabled);
+}
+
+void fog_pool_set_specmagfilter_onset_curve(fog_pool_t *pool, fog_onset_curve_t curve) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_specmagfilter_onset_curve(pool->slots[i].fog, curve);
+}
+
+void fog_pool_set_specmagfilter_onset_amount(fog_pool_t *pool, float amount) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_specmagfilter_onset_amount(pool->slots[i].fog, amount);
+}
+
+void fog_pool_set_stereo_filter_mode(fog_pool_t *pool, int independent) {
+    if (!pool) return;
+    for (int i = 0; i < pool->num_slots; i++)
+        grain_fog_set_stereo_filter_mode(pool->slots[i].fog, independent);
+}
+
+// @endregion:ligase_pd.core.grain.fog.pool
+
 // @endregion:ligase_pd.core.grain.fog

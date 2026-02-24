@@ -130,6 +130,9 @@ static void grain_delay_process_dd4(grain_delay_t *delay, float *in_left, float 
         float filtered_left = lpf_coeff * delayed_left + (1.0f - lpf_coeff) * delay->lpf_state_left;
         float filtered_right = lpf_coeff * delayed_right + (1.0f - lpf_coeff) * delay->lpf_state_right;
 
+        // Flush denormals to zero to prevent CPU spikes from subnormal floats
+        if (fabsf(filtered_left) < 1e-20f) filtered_left = 0.0f;
+        if (fabsf(filtered_right) < 1e-20f) filtered_right = 0.0f;
         delay->lpf_state_left = filtered_left;
         delay->lpf_state_right = filtered_right;
 
@@ -139,8 +142,15 @@ static void grain_delay_process_dd4(grain_delay_t *delay, float *in_left, float 
 
         // Write to delay buffer: input + feedback (sound-on-sound)
         // This is the DD-4 style feedback loop
-        delay->buffer_left[delay->write_pos] = in_left[i] + feedback_left;
-        delay->buffer_right[delay->write_pos] = in_right[i] + feedback_right;
+        // Soft-clip the buffer write to prevent unbounded feedback accumulation
+        float write_left = in_left[i] + feedback_left;
+        float write_right = in_right[i] + feedback_right;
+        if (write_left > 4.0f) write_left = 4.0f;
+        else if (write_left < -4.0f) write_left = -4.0f;
+        if (write_right > 4.0f) write_right = 4.0f;
+        else if (write_right < -4.0f) write_right = -4.0f;
+        delay->buffer_left[delay->write_pos] = write_left;
+        delay->buffer_right[delay->write_pos] = write_right;
 
         // Advance write position (circular buffer)
         delay->write_pos = (delay->write_pos + 1) % delay->buffer_size;
