@@ -304,91 +304,15 @@ static inline void constant_power_mix(
 // Debug flag - set to 0 to disable verbose logging
 #define LIGASE_DEBUG 0
 
-static t_int *ligase_perform(t_int *w) {
-    static int first_call = 1;
-    if (first_call && LIGASE_DEBUG) {
-        fprintf(stderr, "ligase_perform: FIRST CALL (w=%p)\n", (void*)w);
-        first_call = 0;
-    }
-
-    ligase_t *x = (ligase_t *)(w[1]);
-
-    if (!x) {
-        if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: ERROR - NULL x pointer!\n");
-        return (w + 27);
-    }
-
-    if (first_call && LIGASE_DEBUG) {
-        fprintf(stderr, "ligase_perform: x=%p, scheduler=%p, reel=%p, envelope=%p\n",
-                (void*)x, (void*)x->scheduler, (void*)x->reel, (void*)x->envelope);
-        fprintf(stderr, "ligase_perform: Extracting signal pointers...\n");
-    }
-
-    t_sample *in_left = (t_sample *)(w[2]);
-    t_sample *in_right = (t_sample *)(w[3]);
-    t_sample *grain_size_in = (t_sample *)(w[4]);
-    t_sample *grain_start_in = (t_sample *)(w[5]);
-    t_sample *speed_in = (t_sample *)(w[6]);
-    t_sample *organize_in = (t_sample *)(w[7]);
-    t_sample *scanrate_in = (t_sample *)(w[8]);
-    t_sample *sos_in = (t_sample *)(w[9]);
-    t_sample *iot_in = (t_sample *)(w[10]);
-    t_sample *maxgrains_in = (t_sample *)(w[11]);
-    t_sample *gdelay_time_in = (t_sample *)(w[12]);
-    t_sample *gdelay_feedback_in = (t_sample *)(w[13]);
-    t_sample *gdelay_tone_in = (t_sample *)(w[14]);
-    t_sample *gdelay_mix_in = (t_sample *)(w[15]);
-    t_sample *fog_in = (t_sample *)(w[16]);
-    t_sample *moog_cutoff_in = (t_sample *)(w[17]);
-    t_sample *moog_resonance_in = (t_sample *)(w[18]);
-    t_sample *moog_mix_in = (t_sample *)(w[19]);
-    t_sample *midi_in = (t_sample *)(w[20]);
-    t_sample *env_skew_in = (t_sample *)(w[21]);
-    t_sample *amplitude_in = (t_sample *)(w[22]);
-    t_sample *pan_in = (t_sample *)(w[23]);
-    t_sample *out_left = (t_sample *)(w[24]);
-    t_sample *out_right = (t_sample *)(w[25]);
-    int n = (int)(w[26]);
-
-    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Signal pointers extracted, blocksize=%d\n", n);
-
-    // Bounds check: ensure block size doesn't exceed fixed buffer size
-    if (n > 8192) {
-        pd_error(x, "ligase~: block size %d exceeds maximum 8192", n);
-        return (w + 27);
-    }
-
-    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Blocksize check passed, validating pointers...\n");
-
-    //  Validate all signal pointers before dereferencing
-    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Checking in_left...\n");
-    if (!in_left) goto null_ptr_error;
-    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Checking in_right...\n");
-    if (!in_right) goto null_ptr_error;
-    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Checking grain_size_in...\n");
-    if (!grain_size_in) goto null_ptr_error;
-    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Checking grain_start_in...\n");
-    if (!grain_start_in) goto null_ptr_error;
-    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: All input signal pointers OK\n");
-
-    if (!speed_in || !organize_in || !scanrate_in || !sos_in || !iot_in || !maxgrains_in ||
-        !gdelay_time_in || !gdelay_feedback_in || !gdelay_tone_in || !gdelay_mix_in ||
-        !fog_in || !moog_cutoff_in || !moog_resonance_in || !moog_mix_in ||
-        !midi_in || !env_skew_in || !amplitude_in || !pan_in || !out_left || !out_right) {
-null_ptr_error:
-        if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: ERROR - NULL signal pointer detected!\n");
-        if (LIGASE_DEBUG) fprintf(stderr, "  in_left=%p in_right=%p grain_size_in=%p\n",
-                (void*)in_left, (void*)in_right, (void*)grain_size_in);
-        // Zero output and return
-        for (int i = 0; i < n; i++) {
-            if (out_left) out_left[i] = 0.0f;
-            if (out_right) out_right[i] = 0.0f;
-        }
-        return (w + 27);
-    }
-
-    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: All signal pointers validated\n");
-
+static void ligase_update_inlets(ligase_t *x,
+    t_sample *grain_size_in, t_sample *grain_start_in,
+    t_sample *speed_in, t_sample *organize_in, t_sample *scanrate_in,
+    t_sample *sos_in, t_sample *iot_in, t_sample *maxgrains_in,
+    t_sample *gdelay_time_in, t_sample *gdelay_feedback_in,
+    t_sample *gdelay_tone_in, t_sample *gdelay_mix_in,
+    t_sample *fog_in, t_sample *moog_cutoff_in, t_sample *moog_resonance_in,
+    t_sample *moog_mix_in, t_sample *midi_in, t_sample *env_skew_in,
+    t_sample *amplitude_in, t_sample *pan_in, int n) {
     // Update parameters from inlets, with validation
     //  Only update if inlet has non-zero value (connected)
     // Unconnected inlets read 0 and should NOT overwrite stored values
@@ -920,6 +844,12 @@ null_ptr_error:
         // Distortion range sampling removed - distortion is now message-controlled only
     }
 
+}
+
+static void ligase_process_grains(ligase_t *x,
+    t_sample *in_left, t_sample *in_right,
+    t_sample *out_left, t_sample *out_right,
+    t_sample *sos_in, int n) {
     // Initialize output buffers to silence
     for (int i = 0; i < n; i++) {
         out_left[i] = 0.0f;
@@ -1056,7 +986,7 @@ null_ptr_error:
             // Playhead advances on clock bang, retriggering grains at fixed position otherwise
 
             // Determine grain length to use for playhead advance
-            float advance_grain_length = quantized_grain_size;  // Default to current/quantized grain size
+            float advance_grain_length = x->scheduler->grain_size;  // Default to current/quantized grain size
 
             //  Only use quantized if BPM is valid (prevent division by zero)
             if (x->clock_advance_use_quantized && x->gs_quant_grid_ms > 0.0f && x->bpm > 1.0) {
@@ -1295,6 +1225,10 @@ null_ptr_error:
         // Record Only mode: output remains silence (initialized above)
     }
 
+}
+
+static void ligase_process_effects(ligase_t *x,
+    t_sample *out_left, t_sample *out_right, int n) {
     // MONITORING EFFECTS: Fog, Distortion, and Moogladder applied after recording
     // Signal chain: Grains → Mix → Delay → [RECORDING] → FOG → DISTORTION → MOOGLADDER → Output
     // Prevents filter/distortion artifacts from accumulating in overdub recordings
@@ -1331,6 +1265,101 @@ null_ptr_error:
         grain_moogladder_process(x->moogladder, out_left, out_right, n);
     }
 
+}
+
+
+static t_int *ligase_perform(t_int *w) {
+    static int first_call = 1;
+    if (first_call && LIGASE_DEBUG) {
+        fprintf(stderr, "ligase_perform: FIRST CALL (w=%p)\n", (void*)w);
+        first_call = 0;
+    }
+
+    ligase_t *x = (ligase_t *)(w[1]);
+
+    if (!x) {
+        if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: ERROR - NULL x pointer!\n");
+        return (w + 27);
+    }
+
+    if (first_call && LIGASE_DEBUG) {
+        fprintf(stderr, "ligase_perform: x=%p, scheduler=%p, reel=%p, envelope=%p\n",
+                (void*)x, (void*)x->scheduler, (void*)x->reel, (void*)x->envelope);
+        fprintf(stderr, "ligase_perform: Extracting signal pointers...\n");
+    }
+
+    t_sample *in_left = (t_sample *)(w[2]);
+    t_sample *in_right = (t_sample *)(w[3]);
+    t_sample *grain_size_in = (t_sample *)(w[4]);
+    t_sample *grain_start_in = (t_sample *)(w[5]);
+    t_sample *speed_in = (t_sample *)(w[6]);
+    t_sample *organize_in = (t_sample *)(w[7]);
+    t_sample *scanrate_in = (t_sample *)(w[8]);
+    t_sample *sos_in = (t_sample *)(w[9]);
+    t_sample *iot_in = (t_sample *)(w[10]);
+    t_sample *maxgrains_in = (t_sample *)(w[11]);
+    t_sample *gdelay_time_in = (t_sample *)(w[12]);
+    t_sample *gdelay_feedback_in = (t_sample *)(w[13]);
+    t_sample *gdelay_tone_in = (t_sample *)(w[14]);
+    t_sample *gdelay_mix_in = (t_sample *)(w[15]);
+    t_sample *fog_in = (t_sample *)(w[16]);
+    t_sample *moog_cutoff_in = (t_sample *)(w[17]);
+    t_sample *moog_resonance_in = (t_sample *)(w[18]);
+    t_sample *moog_mix_in = (t_sample *)(w[19]);
+    t_sample *midi_in = (t_sample *)(w[20]);
+    t_sample *env_skew_in = (t_sample *)(w[21]);
+    t_sample *amplitude_in = (t_sample *)(w[22]);
+    t_sample *pan_in = (t_sample *)(w[23]);
+    t_sample *out_left = (t_sample *)(w[24]);
+    t_sample *out_right = (t_sample *)(w[25]);
+    int n = (int)(w[26]);
+
+    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Signal pointers extracted, blocksize=%d\n", n);
+
+    // Bounds check: ensure block size doesn't exceed fixed buffer size
+    if (n > 8192) {
+        pd_error(x, "ligase~: block size %d exceeds maximum 8192", n);
+        return (w + 27);
+    }
+
+    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Blocksize check passed, validating pointers...\n");
+
+    //  Validate all signal pointers before dereferencing
+    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Checking in_left...\n");
+    if (!in_left) goto null_ptr_error;
+    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Checking in_right...\n");
+    if (!in_right) goto null_ptr_error;
+    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Checking grain_size_in...\n");
+    if (!grain_size_in) goto null_ptr_error;
+    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Checking grain_start_in...\n");
+    if (!grain_start_in) goto null_ptr_error;
+    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: All input signal pointers OK\n");
+
+    if (!speed_in || !organize_in || !scanrate_in || !sos_in || !iot_in || !maxgrains_in ||
+        !gdelay_time_in || !gdelay_feedback_in || !gdelay_tone_in || !gdelay_mix_in ||
+        !fog_in || !moog_cutoff_in || !moog_resonance_in || !moog_mix_in ||
+        !midi_in || !env_skew_in || !amplitude_in || !pan_in || !out_left || !out_right) {
+null_ptr_error:
+        if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: ERROR - NULL signal pointer detected!\n");
+        if (LIGASE_DEBUG) fprintf(stderr, "  in_left=%p in_right=%p grain_size_in=%p\n",
+                (void*)in_left, (void*)in_right, (void*)grain_size_in);
+        // Zero output and return
+        for (int i = 0; i < n; i++) {
+            if (out_left) out_left[i] = 0.0f;
+            if (out_right) out_right[i] = 0.0f;
+        }
+        return (w + 27);
+    }
+
+    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: All signal pointers validated\n");
+
+    ligase_update_inlets(x, grain_size_in, grain_start_in, speed_in, organize_in,
+        scanrate_in, sos_in, iot_in, maxgrains_in,
+        gdelay_time_in, gdelay_feedback_in, gdelay_tone_in, gdelay_mix_in,
+        fog_in, moog_cutoff_in, moog_resonance_in, moog_mix_in,
+        midi_in, env_skew_in, amplitude_in, pan_in, n);
+    ligase_process_grains(x, in_left, in_right, out_left, out_right, sos_in, n);
+    ligase_process_effects(x, out_left, out_right, n);
     // @region:ligase_pd.pd_external.outlets.modulation Modulation Outlet Computation
     // Compute and output modulation values (control rate, once per DSP block)
     // Modulation outlets now use unified param_range system (same as internal parameters)
