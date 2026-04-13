@@ -67,6 +67,7 @@ See [ligase_manual.pdf](ligase_manual.pdf) for full documentation covering all i
 
 ## License
 
-Copyright (C) 2025 Steven Benjamin
+ GNU General Public License v2 
+ Copyright (C) 2025 Steven Benjamin
 
 
