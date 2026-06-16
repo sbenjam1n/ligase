@@ -1,0 +1,51 @@
+/* Print stylesheet for the ligase~ manual (pandoc --pdf-engine=weasyprint). */
+
+@page {
+  size: letter;
+  margin: 2.2cm 2cm 2.2cm 2cm;
+  @bottom-center { content: counter(page); color: #777; font-size: 9pt; }
+}
+
+body {
+  font-family: -apple-system, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.45;
+  color: #1a1a1a;
+}
+
+h1 {
+  font-size: 18pt;
+  border-bottom: 2px solid #333;
+  padding-bottom: 3pt;
+  margin-top: 1.6em;
+  page-break-after: avoid;
+  page-break-before: always;
+}
+h1:first-of-type { page-break-before: avoid; }
+h2 { font-size: 13.5pt; color: #222; margin-top: 1.1em; page-break-after: avoid; }
+h3 { font-size: 11.5pt; color: #333; page-break-after: avoid; }
+
+code, pre, kbd {
+  font-family: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 9.5pt;
+}
+code { background: #f2f2f2; padding: 0 2px; border-radius: 3px; }
+pre {
+  background: #f5f5f5;
+  padding: 8pt 10pt;
+  border-radius: 4pt;
+  border: 1px solid #e2e2e2;
+  white-space: pre-wrap;
+  page-break-inside: avoid;
+}
+
+table { border-collapse: collapse; width: 100%; margin: 0.6em 0; font-size: 9.5pt; }
+th, td { border: 1px solid #ccc; padding: 3pt 6pt; text-align: left; vertical-align: top; }
+th { background: #f0f0f0; }
+
+/* Title block + table of contents (pandoc) */
+header#title-block-header { page-break-after: always; padding-top: 4cm; text-align: center; }
+header#title-block-header .title { font-size: 30pt; }
+header#title-block-header .subtitle { font-size: 14pt; color: #555; }
+nav#TOC { page-break-after: always; }
+nav#TOC ul { list-style: none; padding-left: 1em; }

@@ -30,21 +30,34 @@ grains → delay → [RECORDING] → output → fog → Moog → distortion → 
 
 ## Building
 
-Compile as a Pure Data external for your platform:
+The simplest way is the included `Makefile`, which detects your OS and links the
+correct sources from `src/`:
+
+```bash
+make            # builds ligase~.pd_linux (Linux) or ligase~.pd_darwin (macOS)
+make install    # copies the external (+ help patch) to ~/Documents/Pd/externals
+```
+
+On Linux the Makefile expects Pd headers at `/usr/local/include/pd`; on macOS at
+`/Applications/Pd-0.53-2.app/Contents/Resources/src`. Adjust `PD_INCLUDE` in the
+`Makefile` if yours differ.
+
+To build by hand instead, compile every source in `src/`. The Pd API header
+`m_pd.h` is vendored there, so `-Isrc` is all the include path you need:
 
 **Linux:**
 ```bash
-gcc -fPIC -shared -o ligase~.pd_linux *.c -I. -lm
+gcc -fPIC -shared -o ligase~.pd_linux src/*.c -Isrc -lm
 ```
 
 **macOS:**
 ```bash
-cc -fPIC -bundle -undefined dynamic_lookup -o ligase~.pd_darwin *.c -I. -lm
+cc -bundle -undefined dynamic_lookup -o ligase~.pd_darwin src/*.c -Isrc -lm
 ```
 
 **Windows (MinGW):**
 ```bash
-gcc -shared -o ligase~.dll *.c -I. -lm -L<pd-path>/bin -lpd
+gcc -shared -o ligase~.dll src/*.c -Isrc -L<pd-path>/bin -lpd
 ```
 
 ## Installation

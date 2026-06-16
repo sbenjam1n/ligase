@@ -87,6 +87,14 @@ test_fog_build: test_fog.c src/grain_fog.o src/kiss_fft.o src/kiss_fftr.o
 test_fog: test_fog_build
 	./test_fog
 
-.PHONY: all clean install test_random test_pitch test_dist test_splice test_query test_fog
+# Regenerate the PDF manual from the Markdown master (docs/ligase_manual.md).
+# Requires: pandoc + weasyprint (pip install weasyprint).
+manual: docs/ligase_manual.md docs/manual.css
+	pandoc docs/ligase_manual.md --toc --toc-depth=1 -s \
+		--pdf-engine=weasyprint --css docs/manual.css \
+		-o ligase_manual.pdf
+	@echo "Regenerated ligase_manual.pdf"
+
+.PHONY: all clean install test_random test_pitch test_dist test_splice test_query test_fog manual
 
 # @endregion:erosion_pd.utils
