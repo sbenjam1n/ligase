@@ -718,19 +718,15 @@ Mode 1: Morphagene (default)
 
   - NaN/Inf protection via isfinite() check
 
-- Recording: captures output signal
+- Recording: what gets written depends on the record mode (see RECORDING CONFIGURATION):
 
-  - What you hear is what gets recorded
+  - recinput (INPUT_ONLY): the raw live input — SOS bypassed (the one non-VCA mode)
 
-  - Forces crossfade_mix = 1.0 during recording (replace mode)
+  - recsplice (NEW_SPLICE): the monitored output above — "what you hear" (the SOS crossfade of input and granular) — written to a new splice
 
-  - Restores original crossfade_mix after recording
+  - record (OVERDUB): Time Lag Accumulation into the current splice. The monitored output is fed back into the splice each pass (SOS sets the input-vs-feedback balance), so layers and pitch accumulate; held stable by a sub-unity feedback coefficient and a tanh soft-limiter
 
-- When no playback (reel length = 0):
-
-  - Output = input × sos (linear VCA behavior)
-
-  - Records scaled input
+- When no playback (reel length = 0): the monitored output is input × sos (linear VCA). recsplice/overdub capture that; recinput captures the raw input.
 
 Default: 1 (Morphagene mode)
 
