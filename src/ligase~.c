@@ -104,6 +104,11 @@ struct _ligase {
     // Dummy field for CLASS_MAINSIGNALIN (main inlet is audio input)
     t_float x_f;
 
+    // Patch canvas, captured at creation — used to resolve load/save paths relative to the
+    // patch directory (and search the Pd path). Without it, relative paths resolve against
+    // Pd's CWD, which on a Finder-launched Pd.app is "/" → load/save silently fail on macOS.
+    t_glist *x_canvas;
+
     // DSP inlets/outlets
     t_inlet *x_in_right;
     t_inlet *x_grain_size;
@@ -1734,18 +1739,55 @@ static void ligase_dsp(ligase_t *x, t_signal **sp) {
 // @region:ligase_pd.pd_external.methods Pd Methods
 
 static void ligase_load(ligase_t *x, t_symbol *s) {
-    if (reel_load_wav(x->reel, s->s_name) == 0) {
-        post("ligase~: loaded %s (%d samples)", s->s_name, x->reel->length);
+    if (!s || !s->s_name || !*s->s_name) {
+        pd_error(x, "ligase~: load needs a filename");
+        return;
+    }
+    // Resolve via Pd: searches the patch directory first, then the Pd search path; absolute
+    // paths open directly. (Raw fopen here resolved against Pd's CWD = "/" under a Finder-
+    // launched Pd.app, so relative loads failed on macOS.)
+    char dirbuf[MAXPDSTRING], *nameptr = NULL;
+    int fd = canvas_open(x->x_canvas, s->s_name, "", dirbuf, &nameptr, MAXPDSTRING, 1);
+    if (fd < 0) {
+        pd_error(x, "ligase~: load — file not found on patch/search path: %s", s->s_name);
+        return;
+    }
+    sys_close(fd);  // reel_load_wav reopens by path
+    char path[MAXPDSTRING];
+    int wrote = snprintf(path, MAXPDSTRING, "%s/%s", dirbuf, nameptr ? nameptr : s->s_name);
+    if (wrote < 0 || wrote >= MAXPDSTRING) {
+        pd_error(x, "ligase~: load — resolved path too long");
+        return;
+    }
+    if (reel_load_wav(x->reel, path) == 0) {
+        post("ligase~: loaded %s (%d samples)", path, x->reel->length);
     } else {
-        pd_error(x, "ligase~: failed to load %s", s->s_name);
+        pd_error(x, "ligase~: failed to load %s (need 48kHz 32-bit-float stereo WAV)", path);
     }
 }
 
 static void ligase_save(ligase_t *x, t_symbol *s) {
-    if (reel_save_wav(x->reel, s->s_name) == 0) {
-        post("ligase~: saved %s", s->s_name);
+    if (!s || !s->s_name || !*s->s_name) {
+        pd_error(x, "ligase~: save needs a filename");
+        return;
+    }
+    // Anchor a relative name to the patch directory (absolute paths pass through). Without
+    // this, a relative save resolved against Pd's CWD = "/" under a Finder-launched Pd.app.
+    char path[MAXPDSTRING];
+    canvas_makefilename(x->x_canvas, s->s_name, path, MAXPDSTRING);
+    // Ensure a .wav extension (case-insensitive)
+    size_t len = strlen(path);
+    int has_wav = (len >= 4 && path[len-4] == '.'
+                   && (path[len-3]=='w'||path[len-3]=='W')
+                   && (path[len-2]=='a'||path[len-2]=='A')
+                   && (path[len-1]=='v'||path[len-1]=='V'));
+    if (!has_wav && len + 4 < MAXPDSTRING) {
+        path[len] = '.'; path[len+1] = 'w'; path[len+2] = 'a'; path[len+3] = 'v'; path[len+4] = '\0';
+    }
+    if (reel_save_wav(x->reel, path) == 0) {
+        post("ligase~: saved %s", path);
     } else {
-        pd_error(x, "ligase~: failed to save %s", s->s_name);
+        pd_error(x, "ligase~: failed to save %s", path);
     }
 }
 
@@ -4365,6 +4407,9 @@ static void ligase_free(ligase_t *x) {
 
 static void *ligase_new(void) {
     ligase_t *x = (ligase_t *)pd_new(ligase_class);
+
+    // Remember the patch we live in, for resolving load/save paths
+    x->x_canvas = canvas_getcurrent();
 
     // Create signal inlets
     x->x_in_right = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);
