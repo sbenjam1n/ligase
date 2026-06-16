@@ -333,6 +333,17 @@ typedef struct {
     char filename[256];       // Current reel filename
 } reel_t;
 
+// Reel WAV I/O result (0 = OK, negatives are specific failures so the Pd layer can report them)
+typedef enum {
+    REEL_IO_OK         = 0,
+    REEL_IO_ERR_OPEN   = -1,  // cannot open file (not found / permission)
+    REEL_IO_ERR_BADWAV = -2,  // not a parseable RIFF/WAVE (missing fmt or data)
+    REEL_IO_ERR_FORMAT = -3,  // unsupported format (need stereo 16-bit PCM or 32-bit float)
+    REEL_IO_ERR_READ   = -4,  // truncated / short read or write
+    REEL_IO_ERR_MEM    = -5,  // out of memory
+    REEL_IO_ERR_EMPTY  = -6   // (save) nothing to write
+} reel_io_status_t;
+
 // @endregion:ligase_pd.core.types.reel
 
 // @region:ligase_pd.core.types.param_range Parameter Range Structure

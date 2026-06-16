@@ -68,6 +68,7 @@ extern void reel_set_sample_rate(reel_t *reel, int sample_rate);
 extern void reel_clear_except_splice(reel_t *reel, uint32_t splice_start, uint32_t splice_end);
 extern int reel_load_wav(reel_t *reel, const char *filename);
 extern int reel_save_wav(reel_t *reel, const char *filename);
+extern const char *reel_io_strerror(int status);
 
 extern recorder_t* recorder_create(reel_t *reel);
 extern void recorder_destroy(recorder_t *rec);
@@ -1761,10 +1762,11 @@ static void ligase_load(ligase_t *x, t_symbol *s) {
         pd_error(x, "ligase~: load — resolved path too long");
         return;
     }
-    if (reel_load_wav(x->reel, path) == 0) {
+    int rc = reel_load_wav(x->reel, path);
+    if (rc == REEL_IO_OK) {
         post("ligase~: loaded %s (%d samples)", path, x->reel->length);
     } else {
-        pd_error(x, "ligase~: failed to load %s (need 48kHz 32-bit-float stereo WAV)", path);
+        pd_error(x, "ligase~: load failed — %s: %s", reel_io_strerror(rc), path);
     }
 }
 
@@ -1786,10 +1788,11 @@ static void ligase_save(ligase_t *x, t_symbol *s) {
     if (!has_wav && len + 4 < MAXPDSTRING) {
         path[len] = '.'; path[len+1] = 'w'; path[len+2] = 'a'; path[len+3] = 'v'; path[len+4] = '\0';
     }
-    if (reel_save_wav(x->reel, path) == 0) {
+    int rc = reel_save_wav(x->reel, path);
+    if (rc == REEL_IO_OK) {
         post("ligase~: saved %s", path);
     } else {
-        pd_error(x, "ligase~: failed to save %s", path);
+        pd_error(x, "ligase~: save failed — %s: %s", reel_io_strerror(rc), path);
     }
 }
 

@@ -263,112 +263,138 @@ typedef struct {
 } cue_chunk_header_t;
 
 static int is_path_safe(const char *path) {
-    if (strstr(path, "..")) {
-        return 0; // Path contains ".."
-    }
+    // Block parent-directory traversal, but allow legit names like "my..mix.wav".
+    // (Paths arriving from ligase~ are already canvas-resolved, so this is a light guard.)
+    if (strstr(path, "../") || strstr(path, "..\\")) return 0;
     return 1;
+}
+
+// Human-readable reason for a reel_io_status_t (for the Pd layer to surface via pd_error).
+const char *reel_io_strerror(int status) {
+    switch (status) {
+        case REEL_IO_OK:         return "ok";
+        case REEL_IO_ERR_OPEN:   return "cannot open file (not found or unwritable)";
+        case REEL_IO_ERR_BADWAV: return "not a valid WAV (missing fmt/data chunk)";
+        case REEL_IO_ERR_FORMAT: return "unsupported format — need stereo 16-bit PCM or 32-bit float";
+        case REEL_IO_ERR_READ:   return "truncated file / short read or write";
+        case REEL_IO_ERR_MEM:    return "out of memory";
+        case REEL_IO_ERR_EMPTY:  return "buffer is empty — record or load audio first";
+        default:                 return "unknown error";
+    }
 }
 
 int reel_load_wav(reel_t *reel, const char *filename) {
     if (!is_path_safe(filename)) {
-        fprintf(stderr, "ligase~: ERROR - Path traversal detected in filename\n");
-        return -1;
+        fprintf(stderr, "ligase~: load - unsafe path: %s\n", filename);
+        return REEL_IO_ERR_OPEN;
     }
     FILE *f = fopen(filename, "rb");
-    if (!f) {
-        fprintf(stderr, "ligase~: ERROR - Cannot open file: %s\n", filename);
-        return -1;
-    }
+    if (!f) return REEL_IO_ERR_OPEN;
 
-    wav_header_t header;
-    if (fread(&header, sizeof(wav_header_t), 1, f) != 1) {
-        fprintf(stderr, "ligase~: ERROR - Invalid or corrupt WAV header\n");
+    // RIFF / WAVE container (little-endian; this build targets LE hosts)
+    char id[4];
+    uint32_t u32;
+    if (fread(id, 1, 4, f) != 4 || memcmp(id, "RIFF", 4) != 0 ||
+        fread(&u32, 4, 1, f) != 1 ||                              // RIFF size (ignored)
+        fread(id, 1, 4, f) != 4 || memcmp(id, "WAVE", 4) != 0) {
         fclose(f);
-        return -1;
+        return REEL_IO_ERR_BADWAV;
     }
 
-    //  Verify format with detailed error messages
-    if (header.format != 3) {
-        fprintf(stderr, "ligase~: ERROR - WAV must be 32-bit float format (format code 3), got format %d\n", header.format);
-        fclose(f);
-        return -1;
-    }
-    if (header.channels != 2) {
-        fprintf(stderr, "ligase~: ERROR - WAV must be stereo (2 channels), got %d channels\n", header.channels);
-        fclose(f);
-        return -1;
-    }
-    // Accept any sample rate: the reel plays at the host/engine rate. A file at a different
-    // rate still loads (no longer rejected) but will play at the engine rate — no resampler.
-    if ((int)header.sample_rate != reel->sample_rate) {
-        fprintf(stderr, "ligase~: NOTE - WAV is %d Hz, engine is %d Hz; loaded, but playback speed will differ (no resample)\n",
-                header.sample_rate, reel->sample_rate);
-    }
-
-    int num_samples = header.data_size / (header.channels * sizeof(float));
-    if (num_samples > reel->capacity) {
-        num_samples = reel->capacity;
-    }
-
-    // Read interleaved stereo samples
-    float *temp = (float*)malloc(num_samples * 2 * sizeof(float));
-    if (!temp) {
-        fprintf(stderr, "ligase~: ERROR - Out of memory loading WAV file (%d samples)\n", num_samples);
-        fclose(f);
-        return -1;
-    }
-    fread(temp, sizeof(float), num_samples * 2, f);
-
-    // Deinterleave
-    for (int i = 0; i < num_samples; i++) {
-        reel->buffer_left[i] = temp[i * 2];
-        reel->buffer_right[i] = temp[i * 2 + 1];
-    }
-
-    free(temp);
-
-    reel->length = num_samples;
-    strncpy(reel->filename, filename, sizeof(reel->filename) - 1);
-
-    // Clear existing splices before loading cue points
+    // Walk chunks: capture fmt fields, the data chunk location, and any cue points. This
+    // tolerates extra chunks (LIST/fact/bext), a non-16-byte fmt, and data-after-cue ordering.
+    uint16_t format = 0, channels = 0, bits = 0;
+    uint32_t sample_rate = 0, data_size = 0;
+    long data_pos = -1;
+    int have_fmt = 0;
     reel->splices.count = 0;
     reel->splices.current_splice = 0;
 
-    // Look for cue chunk after data chunk
-    char chunk_id[4];
-    uint32_t chunk_size;
+    uint32_t csize;
+    while (fread(id, 1, 4, f) == 4 && fread(&csize, 4, 1, f) == 1) {
+        long next = ftell(f) + (long)csize + (csize & 1);   // chunks are word-aligned
 
-    while (fread(chunk_id, 4, 1, f) == 1) {
-        if (fread(&chunk_size, 4, 1, f) != 1) break;
-
-        if (memcmp(chunk_id, "cue ", 4) == 0) {
-            // Found cue chunk - read cue points
+        if (memcmp(id, "fmt ", 4) == 0 && csize >= 16) {
+            uint32_t byte_rate; uint16_t block_align;
+            if (fread(&format, 2, 1, f) == 1 && fread(&channels, 2, 1, f) == 1 &&
+                fread(&sample_rate, 4, 1, f) == 1 && fread(&byte_rate, 4, 1, f) == 1 &&
+                fread(&block_align, 2, 1, f) == 1 && fread(&bits, 2, 1, f) == 1) {
+                have_fmt = 1;
+            }
+        } else if (memcmp(id, "data", 4) == 0) {
+            data_pos = ftell(f);
+            data_size = csize;
+        } else if (memcmp(id, "cue ", 4) == 0) {
             uint32_t num_cues;
-            if (fread(&num_cues, 4, 1, f) != 1) break;
-
-            // Limit to MAX_SPLICES
-            if (num_cues > MAX_SPLICES) num_cues = MAX_SPLICES;
-
-            for (uint32_t i = 0; i < num_cues; i++) {
-                cue_point_t cue;
-                if (fread(&cue, sizeof(cue_point_t), 1, f) != 1) break;
-
-                // Convert cue point to splice marker (cue.position is sample offset)
-                if (reel->splices.count < MAX_SPLICES) {
-                    reel->splices.markers[reel->splices.count].position = cue.position;
-                    reel->splices.markers[reel->splices.count].label[0] = '\0';
-                    reel->splices.count++;
+            if (fread(&num_cues, 4, 1, f) == 1) {
+                if (num_cues > MAX_SPLICES) num_cues = MAX_SPLICES;
+                for (uint32_t i = 0; i < num_cues; i++) {
+                    cue_point_t cue;
+                    if (fread(&cue, sizeof(cue_point_t), 1, f) != 1) break;
+                    if (reel->splices.count < MAX_SPLICES) {
+                        reel->splices.markers[reel->splices.count].position = cue.position;
+                        reel->splices.markers[reel->splices.count].label[0] = '\0';
+                        reel->splices.count++;
+                    }
                 }
             }
-            break;  // Found and processed cue chunk
-        } else {
-            // Skip unknown chunk
-            fseek(f, chunk_size, SEEK_CUR);
         }
+        fseek(f, next, SEEK_SET);   // advance to the next chunk regardless of what we read
     }
 
-    // If no cue points were found, create a default splice covering entire file
-    // This ensures playback works for standard WAV files without cue markers
+    if (!have_fmt || data_pos < 0) {
+        fclose(f);
+        return REEL_IO_ERR_BADWAV;
+    }
+    if (channels != 2) {
+        fprintf(stderr, "ligase~: load - WAV must be stereo, got %d channels\n", channels);
+        fclose(f);
+        return REEL_IO_ERR_FORMAT;
+    }
+    int is_float32 = (format == 3 && bits == 32);
+    int is_pcm16   = (format == 1 && bits == 16);
+    if (!is_float32 && !is_pcm16) {
+        fprintf(stderr, "ligase~: load - unsupported format %d, %d-bit (need 32-bit float or 16-bit PCM)\n", format, bits);
+        fclose(f);
+        return REEL_IO_ERR_FORMAT;
+    }
+    if ((int)sample_rate != reel->sample_rate) {
+        fprintf(stderr, "ligase~: load - WAV is %u Hz, engine is %d Hz; loaded but playback speed differs (no resample)\n",
+                sample_rate, reel->sample_rate);
+    }
+
+    int bytes_per = is_float32 ? 4 : 2;
+    int num_frames = (int)(data_size / (channels * bytes_per));
+    if (num_frames > reel->capacity) num_frames = reel->capacity;
+
+    fseek(f, data_pos, SEEK_SET);
+    int short_read = 0;
+    if (is_float32) {
+        float *temp = (float*)malloc((size_t)num_frames * 2 * sizeof(float));
+        if (!temp) { fclose(f); return REEL_IO_ERR_MEM; }
+        if (fread(temp, sizeof(float), (size_t)num_frames * 2, f) != (size_t)num_frames * 2) short_read = 1;
+        for (int i = 0; i < num_frames; i++) {
+            reel->buffer_left[i]  = temp[i * 2];
+            reel->buffer_right[i] = temp[i * 2 + 1];
+        }
+        free(temp);
+    } else {  // 16-bit PCM -> float
+        int16_t *temp = (int16_t*)malloc((size_t)num_frames * 2 * sizeof(int16_t));
+        if (!temp) { fclose(f); return REEL_IO_ERR_MEM; }
+        if (fread(temp, sizeof(int16_t), (size_t)num_frames * 2, f) != (size_t)num_frames * 2) short_read = 1;
+        const float inv = 1.0f / 32768.0f;
+        for (int i = 0; i < num_frames; i++) {
+            reel->buffer_left[i]  = temp[i * 2] * inv;
+            reel->buffer_right[i] = temp[i * 2 + 1] * inv;
+        }
+        free(temp);
+    }
+    fclose(f);
+
+    reel->length = num_frames;
+    strncpy(reel->filename, filename, sizeof(reel->filename) - 1);
+
+    // Default splice covering the whole file if no cue points were present
     if (reel->splices.count == 0 && reel->length > 0) {
         reel->splices.markers[0].position = 0;
         reel->splices.markers[0].label[0] = '\0';
@@ -376,27 +402,22 @@ int reel_load_wav(reel_t *reel, const char *filename) {
         reel->splices.current_splice = 0;
     }
 
-    fclose(f);
-    return 0;
+    return short_read ? REEL_IO_ERR_READ : REEL_IO_OK;
 }
 
 int reel_save_wav(reel_t *reel, const char *filename) {
     if (!is_path_safe(filename)) {
-        fprintf(stderr, "ligase~: ERROR - Path contains illegal '..' sequence: %s\n", filename);
-        return -1; // Path traversal attempt
+        fprintf(stderr, "ligase~: save - unsafe path: %s\n", filename);
+        return REEL_IO_ERR_OPEN;
     }
-
-    // Check if there's any audio to save
     if (reel->length == 0) {
-        fprintf(stderr, "ligase~: ERROR - Cannot save empty buffer (record or load audio first)\n");
-        return -1;
+        return REEL_IO_ERR_EMPTY;
     }
 
     FILE *f = fopen(filename, "wb");
     if (!f) {
-        fprintf(stderr, "ligase~: ERROR - Cannot open file for writing: %s (errno: %d)\n", filename, errno);
-        fprintf(stderr, "          Hint: Use absolute path like /tmp/out.wav or check directory exists\n");
-        return -1;
+        fprintf(stderr, "ligase~: save - cannot open for writing: %s (errno %d)\n", filename, errno);
+        return REEL_IO_ERR_OPEN;
     }
 
     // Calculate cue chunk size
@@ -427,13 +448,13 @@ int reel_save_wav(reel_t *reel, const char *filename) {
         header.file_size += 8 + cue_chunk_size;  // chunk header + chunk data
     }
 
-    fwrite(&header, sizeof(wav_header_t), 1, f);
+    int wrote_ok = (fwrite(&header, sizeof(wav_header_t), 1, f) == 1);
 
     // Write interleaved stereo samples
-    float *temp = (float*)malloc(reel->length * 2 * sizeof(float));
+    float *temp = (float*)malloc((size_t)reel->length * 2 * sizeof(float));
     if (!temp) {
         fclose(f);
-        return -1;  // Memory allocation failed
+        return REEL_IO_ERR_MEM;
     }
 
     for (int i = 0; i < reel->length; i++) {
@@ -441,7 +462,7 @@ int reel_save_wav(reel_t *reel, const char *filename) {
         temp[i * 2 + 1] = reel->buffer_right[i];
     }
 
-    fwrite(temp, sizeof(float), reel->length * 2, f);
+    if (fwrite(temp, sizeof(float), (size_t)reel->length * 2, f) != (size_t)reel->length * 2) wrote_ok = 0;
     free(temp);
 
     // Write cue chunk if splices exist (Morphagene compatibility)
@@ -469,8 +490,9 @@ int reel_save_wav(reel_t *reel, const char *filename) {
 
     fclose(f);
 
+    if (!wrote_ok) return REEL_IO_ERR_READ;
     strncpy(reel->filename, filename, sizeof(reel->filename) - 1);
-    return 0;
+    return REEL_IO_OK;
 }
 
 // @endregion:ligase_pd.core.buffer.wav
