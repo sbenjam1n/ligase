@@ -33,6 +33,18 @@ grain_delay_bencina_t* grain_delay_bencina_create(envelope_t *envelope, int samp
     return bencina;
 }
 
+// Update sample rate: recompute the trigger period (it was frozen at the construction-time
+// rate) and clear active grains, whose read offsets reference the shared delay buffer that
+// may have just been resized. Call from the dsp method (main thread).
+void grain_delay_bencina_set_sample_rate(grain_delay_bencina_t *bencina, int sample_rate) {
+    if (!bencina || sample_rate <= 0) return;
+    bencina->sample_rate = sample_rate;
+    bencina->trigger_period_samples = (int)((bencina->grain_spacing_ms / 1000.0f) * sample_rate);
+    bencina->samples_until_next_grain = 0;
+    bencina->num_active_grains = 0;
+    memset(bencina->grain_pool, 0, sizeof(bencina->grain_pool));
+}
+
 // Destroy bencina mode processor
 void grain_delay_bencina_destroy(grain_delay_bencina_t *bencina) {
     if (bencina) {

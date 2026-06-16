@@ -55,6 +55,38 @@ grain_delay_t* grain_delay_create(int sample_rate) {
     return delay;
 }
 
+// Reallocate the delay line for a new sample rate so it always holds 9.5 s of delay
+// (the buffer was previously sized once at the construction-time rate, so long delays
+// were silently clamped at non-48k rates). Resets transient state. Call from the dsp
+// method (main thread), never the audio thread.
+void grain_delay_set_sample_rate(grain_delay_t *delay, int sample_rate) {
+    if (!delay || sample_rate <= 0) return;
+    if (sample_rate == delay->sample_rate && delay->buffer_left && delay->buffer_right) return;
+
+    int new_size = (int)(9.5f * sample_rate);
+    float *nl = (float*)calloc(new_size, sizeof(float));
+    float *nr = (float*)calloc(new_size, sizeof(float));
+    if (!nl || !nr) {
+        // Allocation failed: keep the existing buffer, only update the rate scalar
+        free(nl);
+        free(nr);
+        delay->sample_rate = sample_rate;
+        return;
+    }
+    free(delay->buffer_left);
+    free(delay->buffer_right);
+    delay->buffer_left = nl;
+    delay->buffer_right = nr;
+    delay->buffer_size = new_size;
+    delay->sample_rate = sample_rate;
+
+    // Old read offsets / feedback tail are invalid against the resized buffer
+    delay->write_pos = 0;
+    delay->current_delay_samples = delay->delay_time * sample_rate;
+    delay->lpf_state_left = 0.0f;
+    delay->lpf_state_right = 0.0f;
+}
+
 // Set delay mode
 void grain_delay_set_mode(grain_delay_t *delay, grain_delay_mode_t mode) {
     if (delay) {

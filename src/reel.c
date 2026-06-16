@@ -136,10 +136,14 @@ void recorder_process(recorder_t *rec, float *in_left, float *in_right, int bloc
             rec->record_position = rec->record_position % max_samples;
         }
 
-        // Check splice bounds for overdub mode only
-        if (rec->mode == RECORD_MODE_OVERDUB && rec->record_position >= rec->current_splice_end) {
-            // Don't loop - let it continue into next splice for cross-splice recording
-            // This allows recording across splice boundaries when shifting
+        // Overdub: loop the record head WITHIN the current splice, so each pass re-records the
+        // same region = Time Lag Accumulation. Cross-splice recording is done by SHIFTING the
+        // current splice (which moves current_splice_start/end), not by running off the end —
+        // so overdub never extends the reel bounds.
+        if (rec->mode == RECORD_MODE_OVERDUB &&
+            rec->current_splice_end > rec->current_splice_start &&
+            rec->record_position >= rec->current_splice_end) {
+            rec->record_position = rec->current_splice_start;
         }
 
         // Recording logic based on mode

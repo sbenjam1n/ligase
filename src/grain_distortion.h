@@ -26,6 +26,9 @@ void grain_distortion_set_enabled(grain_distortion_t *dist, int enabled);
 // Oversampling function (no-op, kept for API compatibility)
 void grain_distortion_set_oversampling(grain_distortion_t *dist, int enabled);
 
+// Recompute SR-dependent coefficients + reset filter state on a host sample-rate change.
+void grain_distortion_set_sample_rate(grain_distortion_t *dist, int sample_rate);
+
 // Process a single sample through waveshaper with filters (per-grain mode)
 // channel: 0 = left, 1 = right
 float grain_distortion_process_sample(grain_distortion_t *dist, float input, int channel);

@@ -35,6 +35,7 @@ extern void grain_delay_set_tone(grain_delay_t *delay, float tone);
 extern void grain_delay_set_mix(grain_delay_t *delay, float mix);
 extern void grain_delay_clear(grain_delay_t *delay);
 extern void grain_delay_set_mode(grain_delay_t *delay, grain_delay_mode_t mode);
+extern void grain_delay_set_sample_rate(grain_delay_t *delay, int sample_rate);
 
 extern grain_delay_stut_t* grain_delay_stut_create(int sample_rate);
 extern void grain_delay_stut_destroy(grain_delay_stut_t *stut);
@@ -50,6 +51,7 @@ extern void grain_delay_bencina_set_spacing(grain_delay_bencina_t *bencina, floa
 extern void grain_delay_bencina_set_grain_size(grain_delay_bencina_t *bencina, float size_seconds);
 extern void grain_delay_bencina_set_wrap_mode(grain_delay_bencina_t *bencina, int mode);
 extern void grain_delay_bencina_clear(grain_delay_bencina_t *bencina);
+extern void grain_delay_bencina_set_sample_rate(grain_delay_bencina_t *bencina, int sample_rate);
 
 extern grain_moogladder_t* grain_moogladder_create(int sample_rate);
 extern void grain_moogladder_destroy(grain_moogladder_t *filter);
@@ -313,6 +315,11 @@ static inline void constant_power_mix(
 
 // Debug flag - set to 0 to disable verbose logging
 #define LIGASE_DEBUG 0
+
+// Overdub Time Lag Accumulation: maximum feedback coefficient for the re-recorded granular
+// playback. Kept just below unity so the loop sustains (long decay) at the "freeze" end of SOS
+// without growing unbounded; a tanh soft-limiter is the hard ceiling on top of this. Tunable.
+#define TLA_FEEDBACK_MAX 0.95f
 
 static void ligase_update_inlets(ligase_t *x,
     t_sample *grain_size_in, t_sample *grain_start_in,
@@ -1275,28 +1282,53 @@ static void ligase_process_grains(ligase_t *x,
                              x->delayed_left, x->delayed_right,
                              sos_mix, n);
 
-            // Morphagene mode: Recording behavior depends on mode
+            // Morphagene mode — what gets written into the reel:
+            //   recinput  (INPUT_ONLY): raw input, SOS bypassed — the one non-VCA mode.
+            //   recsplice (NEW_SPLICE): "what is heard" (out_*) into a NEW splice.
+            //   overdub   (OVERDUB):    "what is heard" (out_*) into the CURRENT splice. Because the
+            //                           splice being recorded is also the one being granulated, this
+            //                           re-records the playback every pass = Time Lag Accumulation:
+            //                           the SOS balance baked into out_* sets the feedback, and
+            //                           pitch/grain settings accumulate across successive loops.
+            // SOS bypassed only for INPUT_ONLY; the SOS VCA/feedback is already applied in out_*.
             if (x->recorder) {
-                // Always record raw input (not the pre-mixed monitoring signal)
+                // INPUT_ONLY: raw input (SOS bypassed).
+                // NEW_SPLICE: what is heard (out_*) into a fresh splice — no feedback loop.
+                // OVERDUB:    Time Lag Accumulation. Re-record the granular playback into the
+                //   current splice, fed back with a SUB-UNITY coefficient so the loop sustains/
+                //   decays instead of growing, plus a tanh soft-limiter so it can never rail.
+                //   Same input/feedback balance as the monitor mix (sin/cos), feedback capped.
+                float theta = sos_mix * (float)(M_PI / 2.0);
+                float in_gain = sinf(theta);
+                float fb_gain = cosf(theta) * TLA_FEEDBACK_MAX;
                 for (int i = 0; i < n; i++) {
-                    x->rec_left[i] = in_left[i];
-                    x->rec_right[i] = in_right[i];
+                    switch (x->recorder->mode) {
+                    case RECORD_MODE_INPUT_ONLY:
+                        x->rec_left[i]  = in_left[i];
+                        x->rec_right[i] = in_right[i];
+                        break;
+                    case RECORD_MODE_OVERDUB: {
+                        // Bound the granular feedback to +-1 BEFORE the sub-unity coefficient, so the
+                        // loop gain stays < 1 no matter the grain density (the grain engine has no gain
+                        // compensation, so delayed_* can be several x unity). tanh on the sum is the
+                        // final ceiling. Without this clamp the loop drives delayed_* huge and saturates.
+                        float fl = x->delayed_left[i];
+                        float fr = x->delayed_right[i];
+                        fl = (fl >  1.0f) ?  1.0f : (fl < -1.0f ? -1.0f : fl);
+                        fr = (fr >  1.0f) ?  1.0f : (fr < -1.0f ? -1.0f : fr);
+                        x->rec_left[i]  = tanhf(in_gain * in_left[i]  + fb_gain * fl);
+                        x->rec_right[i] = tanhf(in_gain * in_right[i] + fb_gain * fr);
+                        break;
+                    }
+                    default:  // RECORD_MODE_NEW_SPLICE
+                        x->rec_left[i]  = out_left[i];
+                        x->rec_right[i] = out_right[i];
+                        break;
+                    }
                 }
 
                 float original_mix = x->recorder->crossfade_mix;
-
-                // SOS function depends on recording mode:
-                if (x->recorder->mode == RECORD_MODE_OVERDUB) {
-                    // TLA (Time Lag Accumulation): SOS controls FEEDBACK amount
-                    // SOS = 0.0 (CCW): New input dominates (crossfade_mix ≈ 1.0), existing fades quickly
-                    // SOS = 1.0 (CW): Existing preserved (crossfade_mix ≈ 0.0), minimal new input
-                    x->recorder->crossfade_mix = 1.0f - sos_mix;
-                } else {
-                    // NEW_SPLICE or INPUT_ONLY: SOS only controls monitoring (output mix)
-                    // Recording captures clean input with full replacement
-                    x->recorder->crossfade_mix = 1.0f;
-                }
-
+                x->recorder->crossfade_mix = 1.0f;  // full write; input/feedback balance is in the signal above
                 recorder_process(x->recorder, x->rec_left, x->rec_right, n);
                 x->recorder->crossfade_mix = original_mix;  // Restore
             }
@@ -1367,10 +1399,17 @@ static void ligase_process_grains(ligase_t *x,
                 if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Recorder exists, copying to rec buffers...\n");
                 if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: x->rec_left=%p, x->rec_right=%p\n",
                         (void*)x->rec_left, (void*)x->rec_right);
-                // Record raw input (not the scaled output) for initial recording
+                // No existing content yet (empty reel), so there's nothing to feed back here.
+                // recinput writes raw input; recsplice/overdub write what is heard (out_*, = in*sos
+                // with no playback). recorder_process fully replaces regardless.
                 for (int i = 0; i < n; i++) {
-                    x->rec_left[i] = in_left[i];
-                    x->rec_right[i] = in_right[i];
+                    if (x->recorder->mode == RECORD_MODE_INPUT_ONLY) {
+                        x->rec_left[i]  = in_left[i];
+                        x->rec_right[i] = in_right[i];
+                    } else {
+                        x->rec_left[i]  = out_left[i];
+                        x->rec_right[i] = out_right[i];
+                    }
                 }
                 if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Buffers copied, calling recorder_process...\n");
                 float original_mix = x->recorder->crossfade_mix;
@@ -1496,6 +1535,10 @@ static t_int *ligase_perform(t_int *w) {
     // Bounds check: ensure block size doesn't exceed fixed buffer size
     if (n > 8192) {
         pd_error(x, "ligase~: block size %d exceeds maximum 8192", n);
+        // Emit silence rather than leaving the output buffers untouched (which would feed
+        // stale/garbage downstream as a dropout burst).
+        if (out_left)  memset(out_left, 0, sizeof(t_sample) * n);
+        if (out_right) memset(out_right, 0, sizeof(t_sample) * n);
         return (w + 27);
     }
 
@@ -1593,6 +1636,27 @@ null_ptr_error:
     return (w + 27);
 }
 
+// Propagate a host sample-rate change to every subsystem, reallocating buffers and
+// recomputing any value derived from the previous rate. Called from ligase_dsp (main
+// thread, dsp graph locked) ONLY when the rate actually changes — never from the audio
+// thread, and not on every dsp re-add (which would needlessly wipe the delay line).
+static void ligase_set_sample_rate(ligase_t *x, int sr) {
+    if (sr <= 0) return;
+    x->sample_rate = sr;
+
+    // SR-dependent values computed live each block/trigger — scalar update suffices
+    if (x->scheduler)  x->scheduler->sample_rate = sr;   // grain length computed per-trigger
+    if (x->moogladder) x->moogladder->sample_rate = sr;  // cutoff normalized per-block
+    if (x->delay_stut) x->delay_stut->sample_rate = sr;  // stut spacing computed per-trigger
+    if (x->fog)        x->fog->sample_rate = sr;         // FFT frame-rate computed per-frame
+
+    // Subsystems that cache derived state — must reallocate / recompute
+    if (x->grain_delay)   grain_delay_set_sample_rate(x->grain_delay, sr);            // realloc 9.5 s line
+    if (x->delay_bencina) grain_delay_bencina_set_sample_rate(x->delay_bencina, sr);  // recompute trigger period
+    if (x->scheduler && x->scheduler->distortion)
+        grain_distortion_set_sample_rate(x->scheduler->distortion, sr);              // recompute IIR coeffs + reset
+}
+
 static void ligase_dsp(ligase_t *x, t_signal **sp) {
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_dsp: CALLED (x=%p, sp=%p)\n", (void*)x, (void*)sp);
 
@@ -1624,39 +1688,12 @@ static void ligase_dsp(ligase_t *x, t_signal **sp) {
         }
     }
 
-    x->sample_rate = (int)sp[0]->s_sr;
-
-    // Update scheduler sample rate
-    if (x->scheduler) {
-        x->scheduler->sample_rate = x->sample_rate;
-    }
-
-    // Update grain_delay sample rate
-    if (x->grain_delay) {
-        x->grain_delay->sample_rate = x->sample_rate;
-    }
-
-    // Update moogladder sample rate
-    if (x->moogladder) {
-        x->moogladder->sample_rate = x->sample_rate;
-    }
-
-    // Update delay sub-component sample rates
-    if (x->delay_stut) {
-        x->delay_stut->sample_rate = x->sample_rate;
-    }
-    if (x->delay_bencina) {
-        x->delay_bencina->sample_rate = x->sample_rate;
-    }
-
-    // Update fog sample rate
-    if (x->fog) {
-        x->fog->sample_rate = x->sample_rate;
-    }
-
-    // Update distortion sample rate
-    if (x->scheduler && x->scheduler->distortion) {
-        x->scheduler->distortion->sample_rate = x->sample_rate;
+    // Re-initialize subsystems only when the host sample rate actually changes. Pd re-calls
+    // this method on any DSP graph / SR / blocksize change, so this is the correct re-init
+    // hook. Gating on change avoids reallocating (and wiping) the delay line every restart.
+    int new_sr = (int)sp[0]->s_sr;
+    if (new_sr > 0 && new_sr != x->sample_rate) {
+        ligase_set_sample_rate(x, new_sr);
     }
 
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_dsp: Adding perform callback (sr=%d, blocksize=%d)\n",

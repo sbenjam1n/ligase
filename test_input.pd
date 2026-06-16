@@ -1,0 +1,12 @@
+#N canvas 100 100 460 320 12;
+#X text 30 20 Input sanity check (no ligase~). Make sound at your input;
+#X text 30 36 the number should jump well above 0 (toward 60-100 dB).;
+#X text 30 52 If it stays near 0 with sound present -> Pd is getting NO;
+#X text 30 68 input (mic permission / device / channels), not ligase.;
+#X obj 40 120 adc~;
+#X obj 40 160 env~;
+#X floatatom 40 200 9 0 0 0 input-dB - - 0;
+#X obj 160 200 print INPUT_dB;
+#X connect 4 0 5 0;
+#X connect 5 0 6 0;
+#X connect 5 0 7 0;

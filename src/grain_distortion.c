@@ -748,6 +748,38 @@ void grain_distortion_set_oversampling(grain_distortion_t *dist, int enabled) {
     (void)enabled;
 }
 
+// Recompute every sample-rate-dependent filter coefficient and reset filter state.
+// Previously these coefficients were computed once at the construction-time rate and never
+// updated, so at non-48k rates the IIR stages detuned and resonant/notch poles could
+// destabilize into clipping/dropouts. Call when the host sample rate changes (see ligase_dsp).
+void grain_distortion_set_sample_rate(grain_distortion_t *dist, int sample_rate) {
+    if (!dist) return;
+    if (sample_rate <= 0 || sample_rate > 384000) {
+        fprintf(stderr, "grain_distortion_set_sample_rate: invalid rate %d\n", sample_rate);
+        return;
+    }
+    dist->sample_rate = sample_rate;
+
+    // Recompute all SR-dependent coefficients
+    update_highpass_coeffs(dist);
+    update_lowpass_coeffs(dist);
+    update_notch_coeffs(dist);
+    update_emphasis_coeffs(dist);
+    update_antialias_coeffs(dist);
+
+    // Reset IIR state to avoid a transient blow-up from the coefficient discontinuity
+    dist->pre_hp_z1_left = dist->pre_hp_z1_right = 0.0f;
+    dist->pre_hp_y1_left = dist->pre_hp_y1_right = 0.0f;
+    dist->post_lp_z1_left = dist->post_lp_z2_left = dist->post_lp_y1_left = dist->post_lp_y2_left = 0.0f;
+    dist->post_lp_z1_right = dist->post_lp_z2_right = dist->post_lp_y1_right = dist->post_lp_y2_right = 0.0f;
+    dist->notch_z1_left = dist->notch_z2_left = dist->notch_y1_left = dist->notch_y2_left = 0.0f;
+    dist->notch_z1_right = dist->notch_z2_right = dist->notch_y1_right = dist->notch_y2_right = 0.0f;
+    dist->preemph_z1_left = dist->preemph_z1_right = dist->preemph_y1_left = dist->preemph_y1_right = 0.0f;
+    dist->deemph_z1_left = dist->deemph_z1_right = dist->deemph_y1_left = dist->deemph_y1_right = 0.0f;
+    dist->antialias_z1_left = dist->antialias_z2_left = dist->antialias_y1_left = dist->antialias_y2_left = 0.0f;
+    dist->antialias_z1_right = dist->antialias_z2_right = dist->antialias_y1_right = dist->antialias_y2_right = 0.0f;
+}
+
 // OUTER pre-hp filter setters
 void grain_distortion_set_pre_hp_freq(grain_distortion_t *dist, float freq) {
     if (!dist) return;
