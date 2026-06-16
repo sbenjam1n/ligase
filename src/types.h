@@ -327,6 +327,8 @@ typedef struct {
     float *buffer_left;       // Left channel audio
     float *buffer_right;      // Right channel audio
     int length;               // Length in samples
+    int sample_rate;          // Rate the reel is sized/recorded at (follows the host rate)
+    int capacity;             // Allocated samples per channel (= MAX_REEL_SECONDS * sample_rate)
     splice_array_t splices;   // Splice markers
     char filename[256];       // Current reel filename
 } reel_t;

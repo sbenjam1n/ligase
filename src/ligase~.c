@@ -64,6 +64,7 @@ extern void grain_moogladder_set_enabled(grain_moogladder_t *filter, int enabled
 extern reel_t* reel_create();
 extern void reel_destroy(reel_t *reel);
 extern void reel_clear(reel_t *reel);
+extern void reel_set_sample_rate(reel_t *reel, int sample_rate);
 extern void reel_clear_except_splice(reel_t *reel, uint32_t splice_start, uint32_t splice_end);
 extern int reel_load_wav(reel_t *reel, const char *filename);
 extern int reel_save_wav(reel_t *reel, const char *filename);
@@ -1656,6 +1657,7 @@ static void ligase_set_sample_rate(ligase_t *x, int sr) {
     if (x->fog)        x->fog->sample_rate = sr;         // FFT frame-rate computed per-frame
 
     // Subsystems that cache derived state — must reallocate / recompute
+    if (x->reel)          reel_set_sample_rate(x->reel, sr);                          // resize 10-min reel to rate
     if (x->grain_delay)   grain_delay_set_sample_rate(x->grain_delay, sr);            // realloc 9.5 s line
     if (x->delay_bencina) grain_delay_bencina_set_sample_rate(x->delay_bencina, sr);  // recompute trigger period
     if (x->scheduler && x->scheduler->distortion)

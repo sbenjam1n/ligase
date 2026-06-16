@@ -16,7 +16,7 @@
 
 # QUEUE.md — Authoritative Work Queue
 
-**Queue Seq:** 11
+**Queue Seq:** 12
 **Set by:** SLB (planner)
 **Date:** 2026-06-16
 **Relationship to other coordination files:** `MESSAGE.md` = tactical, per-turn handoff (nuance, the current catch). **QUEUE.md = the standing ordering** (survives turns). When they differ on *what's next*, QUEUE.md wins; MESSAGE.md carries the *how/why* of the top item.
@@ -37,7 +37,7 @@ DONE; content edits = on deck) drops below the bug fixes.
 
 | Objective | Status | Lane | Source |
 |-----------|--------|------|--------|
-| **B1 — Sample-rate-agnostic engine & consistent buffering** | IN-PROGRESS (Step 1 done; GATE B) | AGENT | `Plans/sample_rate_buffering.md` |
+| **B1 — Sample-rate-agnostic engine & consistent buffering** | Steps 1+2 DONE; Tier-2 audible (user) pending | AGENT | `Plans/sample_rate_buffering.md` |
 | **B2 — Reel load/save on macOS** | CORE FIXED (path resolution); robust-parser follow-ups optional | AGENT | `Plans/reel_io_macos.md` |
 | Manual content edits (code-accuracy pass) | ON-DECK | AGENT | `Plans/manual_content_edits.md` |
 | Manual on a single source of truth + reproducible PDF build | DONE | AGENT | `Plans/pdf_manual_regeneration.md` |
@@ -55,11 +55,11 @@ DONE; content edits = on deck) drops below the bug fixes.
 ## §1. ACTIVE QUEUE (ordered; the agent runs the top UNBLOCKED item in the AGENT lane)
 
 ### AGENT lane
-_Top unblocked item: **B1 Step 2** (reel/WAV runtime sample-rate) — blocked on the reel-sizing decision. B2 core fixed; record modes (B4/B5) done; B1 Step 1 done._
+_All scoped bug work implemented. Remaining is user-side: B1 Tier-2 audible Focusrite check, and optional B2 parser/header follow-ups. Manual content edits (§2) still on deck._
 
 | # | Item | Status | Gate to stop at | Plan |
 |---|------|--------|-----------------|------|
-| B1 | Sample-rate-agnostic engine & consistent buffering (delay dead + clicks/dropouts off-48k) | **IN-PROGRESS — Step 1 verified (Tier-1)** | Step 1 (F1/F2/F3/F6 + SR dispatch) DONE; headless Tier-1 PASS at 44.1/48/96 kHz (delay tap correct via `test_delay.pd`; distortion bounded via `test_dist.pd`). Remaining: Tier-2 Focusrite audible tests (user) + Step 2 reel/WAV SR (needs reel-sizing decision). | `Plans/sample_rate_buffering.md` |
+| B1 | Sample-rate-agnostic engine & consistent buffering (delay dead + clicks/dropouts off-48k) | **Steps 1+2 DONE; Tier-2 (user) pending** | Step 1 (delay/distortion/bencina SR re-init) + Step 2 (reel capacity reallocs to host rate via `reel_set_sample_rate`; WAV header writes real rate; load accepts any rate) DONE. Headless Tier-1 PASS at 44.1/48/96 kHz: delay tap correct, distortion bounded, reel duration consistent + header rate correct, 96 k round-trip intact. Remaining: Tier-2 audible Focusrite check (user). | `Plans/sample_rate_buffering.md` |
 | B2 | Reel load/save on macOS | **CORE FIXED (2026-06-16)** | `load`/`save` now resolve via the patch canvas (`canvas_makefilename` for save, `canvas_open` for load) instead of raw `fopen` against Pd's CWD. Verified headless with cwd≠patchdir (Finder scenario): relative save lands in the patch dir, not cwd; round-trip intact. Optional follow-ups (own plan): robust chunk-walking WAV parser, write/accept non-48k header (ties to B1 Step 2), route reel.c stderr → pd_error. | `Plans/reel_io_macos.md` |
 | B3 | "Empty splices" report (OVERDUB silent at high SOS) | **CLOSED — NOT A BUG (reverted)** | OVERDUB `input×(1−sos)` is DESIGNED SOS attenuation (incl. initial pass — confirmed by owner 2026-06-16). My virgin-territory "fix" altered designed SOS behavior and was fully reverted (`reel.c`/`types.h` back to original). | (n/a) |
 | B5 | Overdub Time Lag Accumulation | **DONE — hardware-confirmed (2026-06-16)** | Record head loops within current splice + records granular playback fed back (SOS-coeff capped 0.95 + ±1 feedback clamp + tanh ceiling). Owner confirmed "expected splice behavior" on the Focusrite. `TLA_FEEDBACK_MAX` tunable. | (inline; `test_tla.pd`) |
@@ -116,6 +116,7 @@ _Top unblocked item: **B1 Step 2** (reel/WAV runtime sample-rate) — blocked on
 | 2026-06-16 | 6 | B1 Step 1 functionally verified headless (Tier-1) at 44.1/48/96 kHz: `test_delay.pd` (6 s tap correct, 96 k clamp gone) + `test_dist.pd` (resonant distortion bounded, no NaN). Focusrite (Scarlett 2i2) now enumerated. Remaining: Tier-2 audible tests (user) + Step 2 reel/WAV SR (reel-sizing decision still open). | SLB |
 | 2026-06-16 | 7 | B3 added + FIXED: empty-reel OVERDUB recorded silence when SOS up (recorded `input×(1−sos)`; pre-existing, NOT a B1 regression — recording code untouched by B1). Fix in `reel.c`: per-record `initial_length`; virgin samples capture full input regardless of SOS, SOS-crossfade only for genuine overdub onto existing content. Verified headless (sos 1.0 silent→full). Tests `test_rec.pd`, `test_input.pd` added. Awaiting user hardware confirmation (live input via Focusrite, `record 1` with SOS up). | SLB |
 | 2026-06-16 | 8 | B3 CLOSED — NOT A BUG. Owner confirmed SOS is designed to attenuate the initial recording too; OVERDUB `input×(1−sos)` is intended. Seq-7 "fix" reverted in full (`reel.c`/`types.h` restored). Build clean; B1 changes remain intact and untouched. | SLB |
+| 2026-06-16 | 12 | B1 Step 2 DONE (reel-sizing = reallocate-by-runtime-SR, owner-approved): reel capacity now sized to the host rate and reallocated on SR change (`reel_set_sample_rate`, wired into `ligase_dsp`); WAV save writes the real rate; load accepts any rate (was 48k-only) with a speed-mismatch note. `reel_clear`/`recorder_process` use `reel->capacity`. Verified at 44.1/48/96 kHz: header rate correct, duration consistent, 96 k round-trip intact. B1 fully implemented; only Tier-2 audible (user) remains. | SLB |
 | 2026-06-16 | 11 | B2 CORE FIXED: reel `load`/`save` resolve via the patch canvas (`canvas_makefilename`/`canvas_open`) — relative paths now anchor to the patch dir, not Pd's CWD; fixes silent load/save under a Finder-launched Pd.app. Stores `x_canvas` from `canvas_getcurrent()`. Verified headless with cwd≠patchdir; round-trip intact. Robust-parser/header-SR/error-routing follow-ups remain optional. | SLB |
 | 2026-06-16 | 10 | B5 IMPLEMENTED (owner-directed): overdub Time Lag Accumulation. (1) Record head now loops WITHIN the current splice (`reel.c` — was running off splice_end and extending the reel); cross-splice is via `shift`. (2) Overdub records the granular playback fed back (so pitch/grain settings compound), with a sub-unity SOS-scaled feedback coefficient (`TLA_FEEDBACK_MAX=0.95`), the granular feedback clamped to ±1 before the coefficient (grain engine has no gain-comp), and a tanh output ceiling — stable, no runaway. Verified headless: loops in splice (reel stays 0.3 s), bounded (max 0.66, RMS 0.28, no rail); recinput/recsplice unaffected. Grounded in Morphagene TLA research. Ear test on hardware pending; `TLA_FEEDBACK_MAX` tunable. | SLB |
 | 2026-06-16 | 9 | B4 FIXED: `recsplice` (NEW_SPLICE) now honors SOS-as-VCA. It had been merged with INPUT_ONLY (recorded raw input, SOS bypassed), contradicting design + manual. Both `sos_mode==1` record sites in `ligase~.c` now record the SOS-mixed monitor output (`out_*`) for NEW_SPLICE; `recinput` (raw) and `sos_mode==0` left untouched; OVERDUB unchanged. Verified headless (recsplice sos-VCA constant-power; recinput raw; overdub `1−sos`). Owner-confirmed intended behavior. | SLB |

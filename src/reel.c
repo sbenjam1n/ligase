@@ -12,15 +12,16 @@ reel_t* reel_create() {
     reel_t *reel = (reel_t*)malloc(sizeof(reel_t));
     if (!reel) return NULL;  // Memory allocation failed
 
-    int max_samples = MAX_REEL_SECONDS * SAMPLE_RATE;
+    reel->sample_rate = SAMPLE_RATE;                       // default; updated to the host rate in dsp
+    reel->capacity = MAX_REEL_SECONDS * reel->sample_rate;
 
-    reel->buffer_left = (float*)calloc(max_samples, sizeof(float));
+    reel->buffer_left = (float*)calloc(reel->capacity, sizeof(float));
     if (!reel->buffer_left) {
         free(reel);
         return NULL;  // Left buffer allocation failed
     }
 
-    reel->buffer_right = (float*)calloc(max_samples, sizeof(float));
+    reel->buffer_right = (float*)calloc(reel->capacity, sizeof(float));
     if (!reel->buffer_right) {
         free(reel->buffer_left);
         free(reel);
@@ -43,9 +44,35 @@ void reel_destroy(reel_t *reel) {
     }
 }
 
+// Resize the reel for a new host sample rate so capacity = MAX_REEL_SECONDS at that rate
+// (keeps a full 10-minute reel and consistent timing at any rate). Existing audio was sampled
+// at the old rate, so it is dropped on change. Called from the dsp method (main thread) only.
+void reel_set_sample_rate(reel_t *reel, int sample_rate) {
+    if (!reel || sample_rate <= 0) return;
+    if (sample_rate == reel->sample_rate && reel->buffer_left && reel->buffer_right) return;
+
+    int new_cap = MAX_REEL_SECONDS * sample_rate;
+    float *nl = (float*)calloc(new_cap, sizeof(float));
+    float *nr = (float*)calloc(new_cap, sizeof(float));
+    if (!nl || !nr) {
+        free(nl);
+        free(nr);
+        return;  // allocation failed: keep the existing buffer/rate
+    }
+    free(reel->buffer_left);
+    free(reel->buffer_right);
+    reel->buffer_left = nl;
+    reel->buffer_right = nr;
+    reel->capacity = new_cap;
+    reel->sample_rate = sample_rate;
+    reel->length = 0;
+    reel->splices.count = 0;
+    reel->splices.current_splice = 0;
+}
+
 void reel_clear(reel_t *reel) {
     if (!reel) return;
-    int max_samples = MAX_REEL_SECONDS * SAMPLE_RATE;
+    int max_samples = reel->capacity;
     memset(reel->buffer_left, 0, max_samples * sizeof(float));
     memset(reel->buffer_right, 0, max_samples * sizeof(float));
     reel->length = 0;
@@ -65,8 +92,8 @@ void reel_clear_except_splice(reel_t *reel, uint32_t splice_start, uint32_t spli
     }
 
     // Clear everything after the splice
-    int max_samples = MAX_REEL_SECONDS * SAMPLE_RATE;
-    if (splice_length < max_samples) {
+    int max_samples = reel->capacity;
+    if (splice_length < (uint32_t)max_samples) {
         memset(reel->buffer_left + splice_length, 0, (max_samples - splice_length) * sizeof(float));
         memset(reel->buffer_right + splice_length, 0, (max_samples - splice_length) * sizeof(float));
     }
@@ -127,7 +154,7 @@ void recorder_set_mode(recorder_t *rec, record_mode_t mode) {
 void recorder_process(recorder_t *rec, float *in_left, float *in_right, int blocksize) {
     if (!rec->is_recording) return;
 
-    int max_samples = MAX_REEL_SECONDS * SAMPLE_RATE;
+    int max_samples = rec->reel->capacity;
 
     for (int i = 0; i < blocksize; i++) {
         // Circular buffer: wrap around when reaching capacity
@@ -271,15 +298,16 @@ int reel_load_wav(reel_t *reel, const char *filename) {
         fclose(f);
         return -1;
     }
-    if (header.sample_rate != SAMPLE_RATE) {
-        fprintf(stderr, "ligase~: ERROR - WAV must be %d Hz, got %d Hz\n", SAMPLE_RATE, header.sample_rate);
-        fclose(f);
-        return -1;
+    // Accept any sample rate: the reel plays at the host/engine rate. A file at a different
+    // rate still loads (no longer rejected) but will play at the engine rate — no resampler.
+    if ((int)header.sample_rate != reel->sample_rate) {
+        fprintf(stderr, "ligase~: NOTE - WAV is %d Hz, engine is %d Hz; loaded, but playback speed will differ (no resample)\n",
+                header.sample_rate, reel->sample_rate);
     }
 
     int num_samples = header.data_size / (header.channels * sizeof(float));
-    if (num_samples > MAX_REEL_SECONDS * SAMPLE_RATE) {
-        num_samples = MAX_REEL_SECONDS * SAMPLE_RATE;
+    if (num_samples > reel->capacity) {
+        num_samples = reel->capacity;
     }
 
     // Read interleaved stereo samples
@@ -386,7 +414,7 @@ int reel_save_wav(reel_t *reel, const char *filename) {
     header.fmt_size = 16;
     header.format = 3;  // IEEE float
     header.channels = 2;
-    header.sample_rate = SAMPLE_RATE;
+    header.sample_rate = reel->sample_rate;
     header.bits_per_sample = 32;
     header.block_align = header.channels * (header.bits_per_sample / 8);
     header.byte_rate = header.sample_rate * header.block_align;
