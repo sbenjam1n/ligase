@@ -9,7 +9,7 @@ date: "© 2025 · GNU General Public License v2"
 
 ligase~ is a granular synthesizer/sampler/looper/delay with real-time recording, reel/splice management, spectral fog, filter, distortion and chaotic parameter modulation inspired by features of the Morphagene, Audiomulch’s DLGranulator and Tidalcycles.
 
-ligase~ implements asynchronous granular synthesis with splice-based sample organization. The engine operates on a fixed-size stereo buffer (10 minutes at 48kHz) divided into segments called splices.
+ligase~ implements asynchronous granular synthesis with splice-based sample organization. The engine operates on a fixed-size stereo buffer (10 minutes at the host sample rate) divided into segments called splices.
 
 Components
 
@@ -113,7 +113,7 @@ Zero values from unconnected inlets do not overwrite stored parameters.
 
 File Operations
 
-load <filename> - Load 48kHz 32-bit stereo WAV
+load <filename> - Load a 32-bit float stereo WAV (any rate; plays at the host rate). Resolved relative to the patch directory.
 save <filename> - Save current reel to WAV
 
 Playback Control
@@ -274,6 +274,9 @@ Parameter Ranging
 param_range <param> <min> <max> - Set parameter range
 rand_type <type_instance> <param> - Assign generator
 param_lock <param1> <param2> <param3>... - Disable modulation and lock parameter(s) at their current modulated value.
+param_invert <param> <0|1> - Invert a parameter's modulation output (mirror around its range).
+param_slew <param> <0-1> - Exponential smoothing on a parameter's modulation output.
+param_base_value <param> <value> - Set the PERLIN_2D Y-coordinate (decorrelation) for a parameter.
 
 Generators
 
@@ -289,8 +292,11 @@ square_1, square_2, square_3, square_4
 
 Generator Modulation Outlet Send
 
-modout<N>_source <type> <instance>
-modout<N>_range <min> <max>
+The four send outlets (modout1–modout4) are configured like any modulatable parameter — by
+addressing the param name modoutN with the unified messages. There are no dedicated
+modout_source/modout_range commands:
+  rand_type <type_instance> modoutN   - assign a generator to outlet N
+  param_range modoutN <min> <max>     - set the outlet's output range
 
 Noise Frequency
 
@@ -435,7 +441,7 @@ pool_size: 200 grains (configurable via ligase.conf)
 
 Buffer
 
-Sample rate: 48000 Hz (fixed)
+Sample rate: follows the host (Pd) rate — the reel capacity and saved WAVs use it (44.1/48/96 kHz etc.)
 Max length: 600 seconds
 Channels: 2 (stereo)
 
@@ -461,27 +467,24 @@ When stopped:
 
 Default: 0 (stopped)
 
-record <float> Overdub recording. Argument: 0 stops,non-zero starts.
+record <float> Overdub into the CURRENT splice — Time Lag Accumulation. Argument: 0 stops, non-zero starts.
 
-Start:Sets RECORD_MODE_OVERDUB, begins recording.
+The record head loops within the current splice bounds, re-recording what is heard (the granular playback of the splice, mixed with the live input) back into the same splice. Because the splice being recorded is also the one being granulated, successive passes accumulate — layers build and any pitch transposition compounds across loops. SOS sets the input-vs-feedback balance (the feedback amount); the feedback is held just below unity and soft-limited so it sustains/decays rather than running away. Cross-splice recording is done by shifting the current splice (which moves the bounds) — overdub never extends the reel.
 
-Stop:If mode was NEW_SPLICE or INPUT_ONLY, createssplice at recorded segment boundary.
+- Sets RECORD_MODE_OVERDUB; record head wraps within the current splice
+- Stop: posts "recording stopped" (no new splice created)
 
-recsplice <band> Record with splice creation on stop.
+recsplice  Record a NEW splice of what is heard.
 
 - Sets RECORD_MODE_NEW_SPLICE
+- Records the SOS-mixed monitor signal (live input crossfaded with the granular playback, per SOS) — i.e. "what you hear". SOS acts as a VCA on the recorded signal.
+- Posts starting position (current reel length); creates the splice when recording stops
 
-- Posts starting position (current reel length)
-
-- Creates splice when recording stops
-
-recinput  Record input only, no sound-on-soundmixing.
+recinput  Record the live INPUT only — the one mode where SOS does NOT act as a VCA.
 
 - Sets RECORD_MODE_INPUT_ONLY
-
-- Ignores sos parameter during recording
-
-- Creates splice when stopped
+- Captures the raw input directly (no SOS, no feedback); ignores the sos parameter
+- Creates a splice when stopped
 
 Playhead Modes
 
@@ -1485,7 +1488,7 @@ MIDI mode "latches" to the last valid note until pitch_mode changes. Switching b
 
 # DELAY
 
-Delay effect applied to the mixed grain output before recording. Three modes available: DD-4 (analog-style), Bencina (pitch-preserving granular), and Stut (quantized rhythmic). All modes share a 9.5-second stereo circular buffer (at 48kHz) and common control parameters (time, feedback, tone, mix). Mode-specific parameters are set via messages.
+Delay effect applied to the mixed grain output before recording. Three modes available: DD-4 (analog-style), Bencina (pitch-preserving granular), and Stut (quantized rhythmic). All modes share a 9.5-second stereo circular buffer (sized to the host rate) and common control parameters (time, feedback, tone, mix). Mode-specific parameters are set via messages.
 
 Parameters
 
@@ -2007,7 +2010,7 @@ When disabled or mix = 0.0, filter bypasses without processing.
 
 # PARAMETER RANGES & MODULATION
 
-Per-grain parameter variation system. Each synthesis parameter can vary within a specified range using five modulation sources. Supports 21 modulatable parameters across grain synthesis, effects, and distortion.
+Per-grain parameter variation system. Each parameter can vary within a specified range driven by one of nine generator types (rand, Perlin 1D/2D, Lorenz, N-body, sphere, saw, sine, square — four instances each). ~37 parameters across grain synthesis, timing/playback, delay, distortion, fog, and the modulation outlets are modulatable.
 
 Modulation Sources
 
@@ -2069,15 +2072,15 @@ Modulatable Parameters Include:
 
 - Grain synthesis (sampled per grain trigger):
 
-speed, grainsize, grainstart, amplitude, pan, maxgrains
+speed, grainsize, grainstart, amplitude, pan, maxgrains, env_skew
 
-- Timing (sampled per DSP block):
+- Timing / playback (sampled per DSP block):
 
-iot (interonset time)
+iot (interonset time), scanrate, organize (splice select), sos (sound-on-sound)
 
 - Effects (sampled per DSP block):
 
-Gdelay, gdelay_tone, moog_cutoff, moog_resonance, moog_mix
+gdelay (delay time), gdelay_feed, gdelay_tone, gdelay_mix, moog_cutoff, moog_resonance, moog_mix
 
 - Distortion:
 
@@ -2095,9 +2098,9 @@ stut_reps
 
 bencina_iot, bencina_grainsize
 
-- Scan (sampled per DSP block):
+- Modulation outlets (the four send outlets are themselves modulatable targets):
 
-scanrate
+modout1, modout2, modout3, modout4
 
 Messages
 
@@ -2248,17 +2251,13 @@ Output value: min + random_value × (max - min). Linear mapping using normalized
 
 Generator Outlet Sends
 
-Modout<N>_source <type> <instance>
+The four modulation outlets (modout1–modout4) are first-class modulatable parameters. Configure
+them with the same unified messages used for any parameter, addressing them by name
+(modout1…modout4); there are no separate modout_source/modout_range commands:
 
-N: outlet number (1-4)
-
-type: rand | perlin_1d | perlin_2d | lorenz | nbody
-
-instance: 1-4
-
-Set Range
-
-modout<N>_range <min> <max>
+  rand_type <type_instance> modoutN   - assign a generator (any of the nine types, instance 1-4) to outlet N
+  param_range modoutN <min> <max>     - set the outlet's output range
+  param_slew / param_invert modoutN   - smooth / invert the outlet, as for any parameter
 
 Per-Outlet Base Value
 

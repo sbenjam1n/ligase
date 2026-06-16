@@ -16,7 +16,7 @@
 
 # QUEUE.md — Authoritative Work Queue
 
-**Queue Seq:** 12
+**Queue Seq:** 13
 **Set by:** SLB (planner)
 **Date:** 2026-06-16
 **Relationship to other coordination files:** `MESSAGE.md` = tactical, per-turn handoff (nuance, the current catch). **QUEUE.md = the standing ordering** (survives turns). When they differ on *what's next*, QUEUE.md wins; MESSAGE.md carries the *how/why* of the top item.
@@ -39,7 +39,7 @@ DONE; content edits = on deck) drops below the bug fixes.
 |-----------|--------|------|--------|
 | **B1 — Sample-rate-agnostic engine & consistent buffering** | Steps 1+2 DONE; Tier-2 audible (user) pending | AGENT | `Plans/sample_rate_buffering.md` |
 | **B2 — Reel load/save on macOS** | CORE FIXED (path resolution); robust-parser follow-ups optional | AGENT | `Plans/reel_io_macos.md` |
-| Manual content edits (code-accuracy pass) | ON-DECK | AGENT | `Plans/manual_content_edits.md` |
+| Manual content edits (code-accuracy pass) | MOSTLY DONE (Worklist A + engine/record-mode updates); deep SOS-mechanics prose optional | AGENT | `Plans/manual_content_edits.md` |
 | Manual on a single source of truth + reproducible PDF build | DONE | AGENT | `Plans/pdf_manual_regeneration.md` |
 | Stale-artifact / build-naming cleanup (`erosion` leftovers) | BACKLOG | AGENT | §4 |
 | Core external (build, fog, modulation engine) | DONE | — | `README.md`, `TODO.md` |
@@ -55,7 +55,7 @@ DONE; content edits = on deck) drops below the bug fixes.
 ## §1. ACTIVE QUEUE (ordered; the agent runs the top UNBLOCKED item in the AGENT lane)
 
 ### AGENT lane
-_All scoped bug work implemented. Remaining is user-side: B1 Tier-2 audible Focusrite check, and optional B2 parser/header follow-ups. Manual content edits (§2) still on deck._
+_All scoped bug work implemented + manual updated to match. B1 Tier-2 short Focusrite test: no clicks (owner, 2026-06-16) — dropout symptom gone; full delay-at-96k listen still optional. Remaining: optional B2 parser/header follow-ups + deep SOS-mechanics prose in the manual._
 
 | # | Item | Status | Gate to stop at | Plan |
 |---|------|--------|-----------------|------|
@@ -91,7 +91,7 @@ _All scoped bug work implemented. Remaining is user-side: B1 Tier-2 audible Focu
 | B1 Sample-rate / buffering | `Plans/sample_rate_buffering.md` | ✓ |
 | B2 Reel load/save on macOS | `Plans/reel_io_macos.md` | ✓ |
 | M1 PDF manual regeneration | `Plans/pdf_manual_regeneration.md` | ✓ |
-| Manual content edits | `Plans/manual_content_edits.md` | ◐ stub (Worklist A seeded; stream 1 TBD) |
+| Manual content edits | `Plans/manual_content_edits.md` | ◐ Worklist A + engine/record-mode updates done; deep SOS prose optional |
 | Build-naming cleanup | _(none; backlog stub)_ | — |
 
 ## §5. HOW THE AGENT USES THIS (read-only protocol)
@@ -116,6 +116,7 @@ _All scoped bug work implemented. Remaining is user-side: B1 Tier-2 audible Focu
 | 2026-06-16 | 6 | B1 Step 1 functionally verified headless (Tier-1) at 44.1/48/96 kHz: `test_delay.pd` (6 s tap correct, 96 k clamp gone) + `test_dist.pd` (resonant distortion bounded, no NaN). Focusrite (Scarlett 2i2) now enumerated. Remaining: Tier-2 audible tests (user) + Step 2 reel/WAV SR (reel-sizing decision still open). | SLB |
 | 2026-06-16 | 7 | B3 added + FIXED: empty-reel OVERDUB recorded silence when SOS up (recorded `input×(1−sos)`; pre-existing, NOT a B1 regression — recording code untouched by B1). Fix in `reel.c`: per-record `initial_length`; virgin samples capture full input regardless of SOS, SOS-crossfade only for genuine overdub onto existing content. Verified headless (sos 1.0 silent→full). Tests `test_rec.pd`, `test_input.pd` added. Awaiting user hardware confirmation (live input via Focusrite, `record 1` with SOS up). | SLB |
 | 2026-06-16 | 8 | B3 CLOSED — NOT A BUG. Owner confirmed SOS is designed to attenuate the initial recording too; OVERDUB `input×(1−sos)` is intended. Seq-7 "fix" reverted in full (`reel.c`/`types.h` restored). Build clean; B1 changes remain intact and untouched. | SLB |
+| 2026-06-16 | 13 | Manual content pass + B1 Tier-2 note. Updated `docs/ligase_manual.md` to match the engine/record-mode changes (dropped "48 kHz fixed" → host-rate; rewrote recinput/recsplice/overdub-TLA; load notes any-rate + patch-relative) and applied Worklist A (added organize/sos/env_skew/gdelay_feed/gdelay_mix + modout1-4 targets; documented param_invert/param_slew/param_base_value; removed phantom modout_source/range; fixed source/param counts). Regenerated `ligase_manual.pdf`. B1 Tier-2: owner reports no clicks on a short Focusrite test (dropout symptom gone). | SLB |
 | 2026-06-16 | 12 | B1 Step 2 DONE (reel-sizing = reallocate-by-runtime-SR, owner-approved): reel capacity now sized to the host rate and reallocated on SR change (`reel_set_sample_rate`, wired into `ligase_dsp`); WAV save writes the real rate; load accepts any rate (was 48k-only) with a speed-mismatch note. `reel_clear`/`recorder_process` use `reel->capacity`. Verified at 44.1/48/96 kHz: header rate correct, duration consistent, 96 k round-trip intact. B1 fully implemented; only Tier-2 audible (user) remains. | SLB |
 | 2026-06-16 | 11 | B2 CORE FIXED: reel `load`/`save` resolve via the patch canvas (`canvas_makefilename`/`canvas_open`) — relative paths now anchor to the patch dir, not Pd's CWD; fixes silent load/save under a Finder-launched Pd.app. Stores `x_canvas` from `canvas_getcurrent()`. Verified headless with cwd≠patchdir; round-trip intact. Robust-parser/header-SR/error-routing follow-ups remain optional. | SLB |
 | 2026-06-16 | 10 | B5 IMPLEMENTED (owner-directed): overdub Time Lag Accumulation. (1) Record head now loops WITHIN the current splice (`reel.c` — was running off splice_end and extending the reel); cross-splice is via `shift`. (2) Overdub records the granular playback fed back (so pitch/grain settings compound), with a sub-unity SOS-scaled feedback coefficient (`TLA_FEEDBACK_MAX=0.95`), the granular feedback clamped to ±1 before the coefficient (grain engine has no gain-comp), and a tanh output ceiling — stable, no runaway. Verified headless: loops in splice (reel stays 0.3 s), bounded (max 0.66, RMS 0.28, no rail); recinput/recsplice unaffected. Grounded in Morphagene TLA research. Ear test on hardware pending; `TLA_FEEDBACK_MAX` tunable. | SLB |
