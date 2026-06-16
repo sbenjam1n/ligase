@@ -1,0 +1,8 @@
+# Build artifacts
+*.o
+*.pd_darwin
+*.pd_linux
+*.dll
+
+# macOS
+.DS_Store
