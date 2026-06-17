@@ -107,9 +107,16 @@ static void filter_magnitudes(grain_fog_t *fog, float amount, float *z1, float *
         //   z2[n] = b2*x[n] - a2*y[n]
         float filtered = fog->mag_b0 * x_n + z1[i];
 
-        // Apply soft limiting to prevent magnitude explosion
-        // tanhf provides soft knee compression to tame resonance peaks
-        filtered = tanhf(filtered * 0.5f) * 2.0f;
+        // Soft-limit RELATIVE to this bin's input magnitude so a high-Q
+        // resonance can't run away, while staying ~transparent when there is no
+        // resonant boost. The old fixed `tanh(f*0.5)*2` capped every bin at a
+        // magnitude of 2.0 — but un-normalized FFT magnitudes for a hot signal
+        // are routinely 5-10, so it crushed the entire wet path by ~12 dB
+        // (the reported "fog drops output volume"). Scaling the knee to 8x the
+        // input keeps the lowpass passband at unity (tanh(1/8)*8 ≈ 0.995) and
+        // only engages when the resonant feedback overshoots the input bin.
+        float ceil_mag = 8.0f * x_n + 1e-6f;
+        filtered = ceil_mag * tanhf(filtered / ceil_mag);
 
         // Update state variables (Direct Form II Transposed)
         z1[i] = fog->mag_b1 * x_n - fog->mag_a1 * filtered + z2[i];
@@ -352,6 +359,11 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size, int overlap_factor)
     fog->samples_until_process = fft_size;  // Process after filling first full frame
     fog->output_read_pos = 0;
     fog->frames_processed = 0;  // No valid output yet
+
+    // Initialize wet/dry level-matching state (makeup gain starts at unity)
+    fog->lvl_dry = 0.0f;
+    fog->lvl_wet = 0.0f;
+    fog->makeup = 1.0f;
 
     // Create kissfft configuration objects
     fog->fft_forward = kiss_fftr_alloc(fft_size, 0, NULL, NULL);  // 0 = forward FFT
@@ -614,6 +626,13 @@ void grain_fog_process_block(
 
     const int hop_size = fog->hop_size;
 
+    // Wet/dry level-match coefficients, derived from the host sample rate.
+    // The level follower averages |signal| over ~80ms; the makeup gain is
+    // smoothed over ~250ms so it tracks loudness without audible pumping.
+    float fs = (fog->sample_rate > 0) ? (float)fog->sample_rate : 48000.0f;
+    float level_alpha  = 1.0f - expf(-1.0f / (0.080f * fs));
+    float makeup_alpha = 1.0f - expf(-1.0f / (0.250f * fs));
+
     // Process each sample in the block
     for (int i = 0; i < blocksize; i++) {
         // 1. WRITE INPUT: Add sample to input buffer
@@ -713,6 +732,31 @@ void grain_fog_process_block(
 
             // Track that we've processed a frame
             fog->frames_processed++;
+        }
+
+        // 5b. LEVEL MATCH: the spectral smear + magnitude limiter make the wet
+        // path quieter than dry, so the crossfade dips at high mix. Track dry
+        // and wet levels and apply a smoothed, clamped makeup gain to the wet
+        // signal so full-wet loudness roughly equals full-dry. Measure raw wet
+        // (pre-makeup) to avoid a feedback loop.
+        {
+            float d = fabsf(in_left[i]) + fabsf(in_right[i]);
+            float w = fabsf(wet_left) + fabsf(wet_right);
+            fog->lvl_dry += level_alpha * (d - fog->lvl_dry);
+            fog->lvl_wet += level_alpha * (w - fog->lvl_wet);
+            float target = fog->makeup;  // hold makeup steady through near-silence
+            if (fog->lvl_wet > 1e-4f) {
+                target = fog->lvl_dry / fog->lvl_wet;
+                target = fmaxf(0.5f, fminf(4.0f, target));
+            }
+            fog->makeup += makeup_alpha * (target - fog->makeup);
+            fog->makeup = fmaxf(0.5f, fminf(4.0f, fog->makeup));
+            wet_left  *= fog->makeup;
+            wet_right *= fog->makeup;
+            // Final safety clamp after makeup (smeared wet has a low crest
+            // factor, so this rarely engages on musical material).
+            wet_left  = fmaxf(-1.0f, fminf(1.0f, wet_left));
+            wet_right = fmaxf(-1.0f, fminf(1.0f, wet_right));
         }
 
         // 6. CROSSFADE: Mix dry and wet
