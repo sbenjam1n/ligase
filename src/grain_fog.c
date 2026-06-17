@@ -793,6 +793,22 @@ fog_pool_t* fog_pool_create(int num_slots, int sample_rate, int fft_size, int ov
         pool->slots[i].accum_size = prealloc_blocksize;
     }
 
+    // Pre-allocate the per-block mixing scratch once (was calloc/free per block).
+    pool->temp_left  = (float*)calloc(8192, sizeof(float));
+    pool->temp_right = (float*)calloc(8192, sizeof(float));
+    if (!pool->temp_left || !pool->temp_right) {
+        for (int j = 0; j < num_slots; j++) {
+            if (pool->slots[j].fog) grain_fog_destroy(pool->slots[j].fog);
+            free(pool->slots[j].accum_left);
+            free(pool->slots[j].accum_right);
+        }
+        free(pool->temp_left);
+        free(pool->temp_right);
+        free(pool);
+        return NULL;
+    }
+    pool->temp_size = 8192;
+
     fprintf(stderr, "ligase~: fog pool created with %d slots (position_mode=post-mix)\n", num_slots);
     return pool;
 }
@@ -805,6 +821,8 @@ void fog_pool_destroy(fog_pool_t *pool) {
         free(pool->slots[i].accum_left);
         free(pool->slots[i].accum_right);
     }
+    free(pool->temp_left);
+    free(pool->temp_right);
     free(pool);
 }
 
@@ -840,14 +858,11 @@ void fog_pool_clear_accumulators(fog_pool_t *pool, int blocksize) {
 void fog_pool_process(fog_pool_t *pool, float *out_left, float *out_right, int blocksize) {
     if (!pool) return;
 
-    // Temporary buffers for each slot's fog output
-    float *temp_left = (float*)calloc(blocksize, sizeof(float));
-    float *temp_right = (float*)calloc(blocksize, sizeof(float));
-    if (!temp_left || !temp_right) {
-        free(temp_left);
-        free(temp_right);
-        return;
-    }
+    // Pre-allocated scratch (no per-block malloc on the audio thread). Guard the
+    // size; ligase_perform caps blocksize at 8192, so this never bails in practice.
+    if (!pool->temp_left || !pool->temp_right || blocksize > pool->temp_size) return;
+    float *temp_left = pool->temp_left;
+    float *temp_right = pool->temp_right;
 
     for (int i = 0; i < pool->num_slots; i++) {
         fog_slot_t *slot = &pool->slots[i];
@@ -865,9 +880,6 @@ void fog_pool_process(fog_pool_t *pool, float *out_left, float *out_right, int b
             out_right[j] += temp_right[j];
         }
     }
-
-    free(temp_left);
-    free(temp_right);
 }
 
 int fog_pool_assign_slot(fog_pool_t *pool) {

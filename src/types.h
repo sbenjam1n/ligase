@@ -734,6 +734,11 @@ struct fog_pool {
     int num_slots;
     int next_slot;       // round-robin counter
     int position_mode;   // 0=per-grain, 1=post-mix (default)
+    // Pre-allocated scratch for fog_pool_process (avoids malloc/free on the audio
+    // thread every block — that allocation churn added CPU and caused crackle).
+    float *temp_left;
+    float *temp_right;
+    int temp_size;
 };
 
 // @endregion:ligase_pd.core.types.fog_pool
