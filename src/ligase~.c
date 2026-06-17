@@ -23,6 +23,16 @@
 #define LIGASE_FLUSH_DENORMALS() ((void)0)
 #endif
 
+// Export ONLY the Pd entry point; everything else stays hidden (paired with -fvisibility=hidden)
+// so ligase's internal symbols (kiss_fft, grain_*, reel_*, …) don't collide in Pd's flat
+// namespace with other externals that vendor the same code — e.g. fftease, which also uses
+// kiss_fft. Without this, loading ligase~ blocks fftease and can hijack fog's own FFT calls.
+#if defined(__GNUC__) || defined(__clang__)
+#define LIGASE_PUBLIC __attribute__((visibility("default")))
+#else
+#define LIGASE_PUBLIC
+#endif
+
 // Forward declarations
 typedef struct _ligase ligase_t;
 static void ligase_send_current_splice_msg(ligase_t *x);
@@ -4618,7 +4628,7 @@ static void *ligase_new(void) {
 
 // @region:ligase_pd.pd_external.setup Setup Function
 
-void ligase_tilde_setup(void) {
+LIGASE_PUBLIC void ligase_tilde_setup(void) {
     ligase_class = class_new(gensym("ligase~"),
         (t_newmethod)ligase_new,
         (t_method)ligase_free,

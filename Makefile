@@ -1,7 +1,7 @@
 # @region:erosion_pd.utils Utilities
 
 CC = gcc
-CFLAGS = -Wall -O2
+CFLAGS = -Wall -O2 -fvisibility=hidden
 PD_INCLUDE = /usr/local/include/pd
 
 # Determine OS and set extension
