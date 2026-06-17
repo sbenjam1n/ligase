@@ -659,14 +659,10 @@ typedef struct {
     // @endregion:ligase_pd.core.grain.fog.specmagfilter.magnitude_filter
 
     // @region:ligase_pd.core.grain.fog.specmagfilter.phase_filter Phase Filter State
-    // Per-bin filter state for phase temporal filtering
-    float *phase_prev;           // Left channel: previous phase value per bin
-    float *phase_delta_z1;       // Left channel: phase delta at T-1
-    float *phase_prev_right;     // Right channel: previous phase value per bin (independent mode)
-    float *phase_delta_z1_right; // Right channel: phase delta at T-1 (independent mode)
-
-    // Pre-computed filter coefficient for phase lowpass (1-pole)
-    float phase_lp_coeff;
+    // Fog leaves the analysis phase untouched (see filter_phases), so there is no
+    // per-bin phase state. phase_lp_coeff is retained because the fog_phase_cutoff
+    // message still computes it, but it no longer affects the audio.
+    float phase_lp_coeff;        // computed from fog_phase_cutoff; currently inert
     // @endregion:ligase_pd.core.grain.fog.specmagfilter.phase_filter
 
     // Stereo filter mode:

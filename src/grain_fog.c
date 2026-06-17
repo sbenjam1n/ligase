@@ -37,9 +37,14 @@ static void smear_magnitudes(grain_fog_t *fog, float amount) {
         run_count++;
     }
 
+    double e_in = 0.0, e_out = 0.0;   // spectral energy before/after smear
     for (int i = 0; i < num_bins; i++) {
         float smeared = run_sum / (float)run_count;
-        fog->smeared_mags[i] = fog->magnitudes[i] * (1.0f - amount) + smeared * amount;
+        float m = fog->magnitudes[i];
+        float s = m * (1.0f - amount) + smeared * amount;
+        fog->smeared_mags[i] = s;
+        e_in  += (double)m * m;
+        e_out += (double)s * s;
 
         // Slide right: add new right-edge bin, remove old left-edge bin
         int new_right = i + 1 + bins;
@@ -52,6 +57,17 @@ static void smear_magnitudes(grain_fog_t *fog, float amount) {
             run_sum -= fog->magnitudes[old_left];
             run_count--;
         }
+    }
+
+    // Energy-preserving smear: averaging neighbouring magnitudes blurs the
+    // spectral SHAPE (the audible smear) but lowers total energy — for a tone
+    // ~8 dB. Rescale so the smeared spectrum carries the same energy as the
+    // input, so the blur no longer drops the wet level. Bounded gain guards a
+    // near-silent frame from exploding.
+    if (e_out > 1e-20) {
+        float g = sqrtf((float)(e_in / e_out));
+        g = fminf(g, 8.0f);
+        for (int i = 0; i < num_bins; i++) fog->smeared_mags[i] *= g;
     }
 }
 
@@ -150,50 +166,25 @@ static void update_phase_filter_coefficient(grain_fog_t *fog) {
     fog->phase_lp_coeff = expf(-omega);
 }
 
-// Apply lowpass filtering to phase deltas (vertical/temporal axis).
-// phase_prev/phase_delta_z1 are the per-bin state arrays for the channel being
-// processed; callers pass the appropriate left or right arrays.
-static void filter_phases(grain_fog_t *fog, float amount,
-                          float *phase_prev, float *phase_delta_z1) {
-    if (!fog->specmagfilter_enabled || amount < 0.001f) {
-        // No filtering - copy phases directly
-        memcpy(fog->filtered_phases, fog->phases, fog->num_bins * sizeof(float));
-        return;
-    }
-
-    // Apply phase delta lowpass filtering
-    for (int i = 0; i < fog->num_bins; i++) {
-        float current_phase = fog->phases[i];
-        float prev_phase = phase_prev[i];
-
-        // Calculate phase delta (unwrapped)
-        float delta = current_phase - prev_phase;
-
-        // Wrap delta to [-pi, pi] in O(1). The old while-loops hung the audio thread at 100% CPU
-        // if delta ever became Inf (Inf - 2*pi == Inf, so the loop never terminated).
-        if (!isfinite(delta)) delta = 0.0f;
-        delta -= 2.0f * M_PI * floorf((delta + (float)M_PI) * (float)(1.0 / (2.0 * M_PI)));
-
-        // Lowpass filter the delta
-        float filtered_delta = delta * (1.0f - fog->phase_lp_coeff) +
-                              phase_delta_z1[i] * fog->phase_lp_coeff;
-
-        // Reconstruct filtered phase, kept wrapped to [-pi, pi] so this per-bin accumulator can
-        // never drift to a huge magnitude or Inf (which would re-trip the unwrap above).
-        float filtered_phase = prev_phase + filtered_delta;
-        filtered_phase -= 2.0f * M_PI * floorf((filtered_phase + (float)M_PI) * (float)(1.0 / (2.0 * M_PI)));
-        if (!isfinite(filtered_phase)) filtered_phase = 0.0f;
-
-        // Update state
-        phase_delta_z1[i] = filtered_delta;
-        phase_prev[i] = filtered_phase;
-
-        // Flush denormals / non-finite to prevent CPU spikes and a stuck NaN
-        if (!isfinite(phase_delta_z1[i]) || fabsf(phase_delta_z1[i]) < 1e-15f) phase_delta_z1[i] = 0.0f;
-
-        // Blend between unfiltered and filtered based on amount
-        fog->filtered_phases[i] = current_phase * (1.0f - amount) + filtered_phase * amount;
-    }
+// Fog keeps each frame's ORIGINAL analysis phases unchanged.
+//
+// Per-bin phase MODIFICATION is fundamentally incompatible with a volume-matched
+// wet signal here. The original code lowpassed the raw phase value; a phase-
+// vocoder rewrite (propagating a smeared instantaneous frequency) was also tried.
+// Both break overlap-add phase coherence across the 4x-overlapping frames: for
+// coherent/tonal material the frames cancel, dropping the wet level. The vocoder
+// version was worse still — because each bin propagates from an arbitrary start
+// phase, the INTER-BIN relationships of a leaked tone lock in differently every
+// run, so the cancellation was intermittent (matched most runs, collapsed ~20 dB
+// in others). An effect that randomly drops 20 dB is unacceptable.
+//
+// With the analysis phase left intact, overlap-add reconstructs coherently at full,
+// DETERMINISTIC level. The "fog" haze now comes entirely from the magnitude domain:
+// the energy-preserving spectral smear (blurs timbre) + the temporal magnitude
+// filter (smooths magnitude over time). A phase-locked vocoder could reintroduce a
+// watery character without cancellation, but that is a larger, separate effort.
+static void filter_phases(grain_fog_t *fog) {
+    memcpy(fog->filtered_phases, fog->phases, fog->num_bins * sizeof(float));
 }
 
 // @endregion:ligase_pd.core.grain.fog.specmagfilter.phase_filter
@@ -301,12 +292,8 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size, int overlap_factor)
     // switched at runtime without reallocation)
     fog->mag_z1 = (float*)calloc(fog->num_bins, sizeof(float));
     fog->mag_z2 = (float*)calloc(fog->num_bins, sizeof(float));
-    fog->phase_prev = (float*)calloc(fog->num_bins, sizeof(float));
-    fog->phase_delta_z1 = (float*)calloc(fog->num_bins, sizeof(float));
     fog->mag_z1_right = (float*)calloc(fog->num_bins, sizeof(float));
     fog->mag_z2_right = (float*)calloc(fog->num_bins, sizeof(float));
-    fog->phase_prev_right = (float*)calloc(fog->num_bins, sizeof(float));
-    fog->phase_delta_z1_right = (float*)calloc(fog->num_bins, sizeof(float));
 
     fog->stereo_filter_independent = 1;  // default: independent L/R spectral state = stereo width
 
@@ -385,12 +372,8 @@ void grain_fog_destroy(grain_fog_t *fog) {
 
     free(fog->mag_z1);
     free(fog->mag_z2);
-    free(fog->phase_prev);
-    free(fog->phase_delta_z1);
     free(fog->mag_z1_right);
     free(fog->mag_z2_right);
-    free(fog->phase_prev_right);
-    free(fog->phase_delta_z1_right);
     free(fog->magnitudes);
     free(fog->phases);
     free(fog->smeared_mags);
@@ -556,21 +539,17 @@ static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
         float specmag_amt = calculate_onset_amount(fog->mix,
             fog->specmagfilter_onset_curve, fog->specmagfilter_onset_amount);
 
-        float *mag_z1, *mag_z2, *ph_prev, *ph_delta;
+        float *mag_z1, *mag_z2;
         if (fog->stereo_filter_independent && channel == 1) {
-            mag_z1   = fog->mag_z1_right;
-            mag_z2   = fog->mag_z2_right;
-            ph_prev  = fog->phase_prev_right;
-            ph_delta = fog->phase_delta_z1_right;
+            mag_z1 = fog->mag_z1_right;
+            mag_z2 = fog->mag_z2_right;
         } else {
-            mag_z1   = fog->mag_z1;
-            mag_z2   = fog->mag_z2;
-            ph_prev  = fog->phase_prev;
-            ph_delta = fog->phase_delta_z1;
+            mag_z1 = fog->mag_z1;
+            mag_z2 = fog->mag_z2;
         }
 
         filter_magnitudes(fog, specmag_amt, mag_z1, mag_z2);
-        filter_phases(fog, specmag_amt, ph_prev, ph_delta);
+        filter_phases(fog);
     } else {
         memcpy(fog->filtered_mags, fog->smeared_mags, fog->num_bins * sizeof(float));
         memcpy(fog->filtered_phases, fog->phases, fog->num_bins * sizeof(float));
@@ -734,11 +713,14 @@ void grain_fog_process_block(
             fog->frames_processed++;
         }
 
-        // 5b. LEVEL MATCH: the spectral smear + magnitude limiter make the wet
-        // path quieter than dry, so the crossfade dips at high mix. Track dry
-        // and wet levels and apply a smoothed, clamped makeup gain to the wet
-        // signal so full-wet loudness roughly equals full-dry. Measure raw wet
-        // (pre-makeup) to avoid a feedback loop.
+        // 5b. LEVEL MATCH: with the destructive phase filter gone and the smear
+        // energy-preserving, the only residual loss is the temporal magnitude
+        // filter, which smooths each bin's magnitude over time and so removes
+        // energy in proportion to how much that magnitude fluctuates (a few dB on
+        // noisy/dense material, ~none on steady tones). Track dry and wet levels
+        // and apply a smoothed, clamped makeup gain so full-wet loudness roughly
+        // equals full-dry across material. Measure raw wet (pre-makeup) to avoid
+        // a feedback loop.
         {
             float d = fabsf(in_left[i]) + fabsf(in_right[i]);
             float w = fabsf(wet_left) + fabsf(wet_right);
@@ -747,10 +729,10 @@ void grain_fog_process_block(
             float target = fog->makeup;  // hold makeup steady through near-silence
             if (fog->lvl_wet > 1e-4f) {
                 target = fog->lvl_dry / fog->lvl_wet;
-                target = fmaxf(0.5f, fminf(4.0f, target));
+                target = fmaxf(0.5f, fminf(6.0f, target));
             }
             fog->makeup += makeup_alpha * (target - fog->makeup);
-            fog->makeup = fmaxf(0.5f, fminf(4.0f, fog->makeup));
+            fog->makeup = fmaxf(0.5f, fminf(6.0f, fog->makeup));
             wet_left  *= fog->makeup;
             wet_right *= fog->makeup;
             // Final safety clamp after makeup (smeared wet has a low crest
