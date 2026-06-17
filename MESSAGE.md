@@ -37,6 +37,5 @@ full-wet RMS was 0.087 vs dry 0.438 (≈14 dB down, even after a 4× makeup clam
 - If the ~0.5 s ease-in feels slow when sweeping the fog inlet, I can shorten the
   makeup time constant.
 
-> Proposal for planner: this closes the "fog drops volume" item; suggest logging as a
-> new sub-item under the fog lane (limiter normalization + level-match). Queue edit is
-> yours — I did not touch QUEUE.md.
+> Reconciled into QUEUE.md as **B9** (Seq 20): FIXED, owner ear-test pending. §0 map +
+> §1 AGENT lane updated; agent backlog remains empty (user hardware/ear sign-off + push/PR).
