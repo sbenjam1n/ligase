@@ -709,14 +709,6 @@ typedef struct {
     // Complex FFT buffers (kiss_fft_cpx format for kissfft API)
     kiss_fft_cpx *fft_bins_left;   // 513 complex bins
     kiss_fft_cpx *fft_bins_right;  // 513 complex bins
-
-    // Wet/dry level matching: the spectral smear + magnitude limiter make the
-    // wet path quieter than dry, so the crossfade audibly dips at high mix.
-    // Track dry/wet levels with one-pole followers and apply a smoothed,
-    // clamped makeup gain to the wet signal so full-wet ~= full-dry loudness.
-    float lvl_dry;                 // Envelope of |dry| (one-pole follower)
-    float lvl_wet;                 // Envelope of |wet| (one-pole follower)
-    float makeup;                  // Smoothed wet makeup gain (clamped)
     // @endregion:ligase_pd.core.grain.fog.process
 
 } grain_fog_t;

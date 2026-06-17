@@ -37,14 +37,9 @@ static void smear_magnitudes(grain_fog_t *fog, float amount) {
         run_count++;
     }
 
-    double e_in = 0.0, e_out = 0.0;   // spectral energy before/after smear
     for (int i = 0; i < num_bins; i++) {
         float smeared = run_sum / (float)run_count;
-        float m = fog->magnitudes[i];
-        float s = m * (1.0f - amount) + smeared * amount;
-        fog->smeared_mags[i] = s;
-        e_in  += (double)m * m;
-        e_out += (double)s * s;
+        fog->smeared_mags[i] = fog->magnitudes[i] * (1.0f - amount) + smeared * amount;
 
         // Slide right: add new right-edge bin, remove old left-edge bin
         int new_right = i + 1 + bins;
@@ -58,17 +53,8 @@ static void smear_magnitudes(grain_fog_t *fog, float amount) {
             run_count--;
         }
     }
-
-    // Energy-preserving smear: averaging neighbouring magnitudes blurs the
-    // spectral SHAPE (the audible smear) but lowers total energy — for a tone
-    // ~8 dB. Rescale so the smeared spectrum carries the same energy as the
-    // input, so the blur no longer drops the wet level. Bounded gain guards a
-    // near-silent frame from exploding.
-    if (e_out > 1e-20) {
-        float g = sqrtf((float)(e_in / e_out));
-        g = fminf(g, 8.0f);
-        for (int i = 0; i < num_bins; i++) fog->smeared_mags[i] *= g;
-    }
+    // Energy lost to the averaging (the blur drops the level) is restored later by
+    // the per-frame spectral-energy normalisation in process_fft_frame.
 }
 
 // @endregion:ligase_pd.core.grain.fog.smear
@@ -347,11 +333,6 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size, int overlap_factor)
     fog->output_read_pos = 0;
     fog->frames_processed = 0;  // No valid output yet
 
-    // Initialize wet/dry level-matching state (makeup gain starts at unity)
-    fog->lvl_dry = 0.0f;
-    fog->lvl_wet = 0.0f;
-    fog->makeup = 1.0f;
-
     // Create kissfft configuration objects
     fog->fft_forward = kiss_fftr_alloc(fft_size, 0, NULL, NULL);  // 0 = forward FFT
     fog->fft_inverse = kiss_fftr_alloc(fft_size, 1, NULL, NULL);  // 1 = inverse FFT
@@ -555,6 +536,28 @@ static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
         memcpy(fog->filtered_phases, fog->phases, fog->num_bins * sizeof(float));
     }
 
+    // Per-frame spectral-energy normalisation: rescale the processed magnitudes so
+    // this frame carries the same total energy as the input frame. The smear and the
+    // temporal magnitude filter both remove energy (the filter most of all, since it
+    // smooths the magnitude fluctuations of the grain stream that fog always sees) —
+    // which is what made fog far quieter than dry in real use. With the analysis phase
+    // left intact, equal per-frame magnitude energy + coherent overlap-add reconstructs
+    // at the dry level, DETERMINISTICALLY (no slow makeup-gain convergence to mistrack).
+    {
+        double e_in = 0.0, e_out = 0.0;
+        for (int i = 0; i < fog->num_bins; i++) {
+            float a = fog->magnitudes[i];
+            float b = fog->filtered_mags[i];
+            e_in  += (double)a * a;
+            e_out += (double)b * b;
+        }
+        if (e_out > 1e-20) {
+            float g = sqrtf((float)(e_in / e_out));
+            g = fminf(g, 16.0f);   // bound the boost for a near-cancelled frame
+            for (int i = 0; i < fog->num_bins; i++) fog->filtered_mags[i] *= g;
+        }
+    }
+
     // Convert back to Cartesian (real/imag)
     polar_to_complex(fog, bins, fog->filtered_mags, fog->filtered_phases);
 
@@ -604,13 +607,6 @@ void grain_fog_process_block(
     float dry_gain = cosf(theta);
 
     const int hop_size = fog->hop_size;
-
-    // Wet/dry level-match coefficients, derived from the host sample rate.
-    // The level follower averages |signal| over ~80ms; the makeup gain is
-    // smoothed over ~250ms so it tracks loudness without audible pumping.
-    float fs = (fog->sample_rate > 0) ? (float)fog->sample_rate : 48000.0f;
-    float level_alpha  = 1.0f - expf(-1.0f / (0.080f * fs));
-    float makeup_alpha = 1.0f - expf(-1.0f / (0.250f * fs));
 
     // Process each sample in the block
     for (int i = 0; i < blocksize; i++) {
@@ -713,33 +709,10 @@ void grain_fog_process_block(
             fog->frames_processed++;
         }
 
-        // 5b. LEVEL MATCH: with the destructive phase filter gone and the smear
-        // energy-preserving, the only residual loss is the temporal magnitude
-        // filter, which smooths each bin's magnitude over time and so removes
-        // energy in proportion to how much that magnitude fluctuates (a few dB on
-        // noisy/dense material, ~none on steady tones). Track dry and wet levels
-        // and apply a smoothed, clamped makeup gain so full-wet loudness roughly
-        // equals full-dry across material. Measure raw wet (pre-makeup) to avoid
-        // a feedback loop.
-        {
-            float d = fabsf(in_left[i]) + fabsf(in_right[i]);
-            float w = fabsf(wet_left) + fabsf(wet_right);
-            fog->lvl_dry += level_alpha * (d - fog->lvl_dry);
-            fog->lvl_wet += level_alpha * (w - fog->lvl_wet);
-            float target = fog->makeup;  // hold makeup steady through near-silence
-            if (fog->lvl_wet > 1e-4f) {
-                target = fog->lvl_dry / fog->lvl_wet;
-                target = fmaxf(0.5f, fminf(6.0f, target));
-            }
-            fog->makeup += makeup_alpha * (target - fog->makeup);
-            fog->makeup = fmaxf(0.5f, fminf(6.0f, fog->makeup));
-            wet_left  *= fog->makeup;
-            wet_right *= fog->makeup;
-            // Final safety clamp after makeup (smeared wet has a low crest
-            // factor, so this rarely engages on musical material).
-            wet_left  = fmaxf(-1.0f, fminf(1.0f, wet_left));
-            wet_right = fmaxf(-1.0f, fminf(1.0f, wet_right));
-        }
+        // Safety clamp (wet level now matches dry via per-frame energy
+        // normalisation in process_fft_frame, so this rarely engages).
+        wet_left  = fmaxf(-1.0f, fminf(1.0f, wet_left));
+        wet_right = fmaxf(-1.0f, fminf(1.0f, wet_right));
 
         // 6. CROSSFADE: Mix dry and wet
         out_left[i] = in_left[i] * dry_gain + wet_left * wet_gain;
