@@ -2860,11 +2860,15 @@ static void ligase_bencina_clear(ligase_t *x) {
 
 // @region:ligase_pd.core.grain.fog.messages Fog Effect Message Handlers
 
+// NOTE: these handlers must NOT post() — they fire on every value of a GUI slider
+// drag (hundreds/sec). In the Pd GUI each post() repaints the console, so spamming
+// them chokes the main thread and spikes CPU on "any fog adjustment" (it doesn't
+// show up headless, where stderr is cheap). Parameter sets are silent.
+
 // Smear parameters
 static void ligase_fog_smear_bins(ligase_t *x, t_floatarg bins) {
     if (x->fog) {
         grain_fog_set_smear_bins(x->fog, (int)bins);
-        post("ligase~: fog smear bins set to %d", (int)bins);
     }
     if (x->scheduler && x->scheduler->fog_pool) {
         fog_pool_set_smear_bins(x->scheduler->fog_pool, (int)bins);
@@ -2874,7 +2878,6 @@ static void ligase_fog_smear_bins(ligase_t *x, t_floatarg bins) {
 static void ligase_fog_smear_enable(ligase_t *x, t_floatarg enable) {
     if (x->fog) {
         grain_fog_set_smear_enabled(x->fog, (int)enable);
-        post("ligase~: fog smear %s", (int)enable ? "enabled" : "disabled");
     }
     if (x->scheduler && x->scheduler->fog_pool) {
         fog_pool_set_smear_enabled(x->scheduler->fog_pool, (int)enable);
@@ -2887,8 +2890,6 @@ static void ligase_fog_smear_onset_curve(ligase_t *x, t_floatarg curve) {
     if (curve_int > 2) curve_int = 2;
     if (x->fog) {
         grain_fog_set_smear_onset_curve(x->fog, (fog_onset_curve_t)curve_int);
-        const char *curve_names[] = {"linear", "exponential", "logarithmic"};
-        post("ligase~: fog smear onset curve set to %s", curve_names[curve_int]);
     }
     if (x->scheduler && x->scheduler->fog_pool) {
         fog_pool_set_smear_onset_curve(x->scheduler->fog_pool, (fog_onset_curve_t)curve_int);
@@ -2898,7 +2899,6 @@ static void ligase_fog_smear_onset_curve(ligase_t *x, t_floatarg curve) {
 static void ligase_fog_smear_onset_amount(ligase_t *x, t_floatarg amount) {
     if (x->fog) {
         grain_fog_set_smear_onset_amount(x->fog, amount);
-        post("ligase~: fog smear onset amount set to %.2f", amount);
     }
     if (x->scheduler && x->scheduler->fog_pool) {
         fog_pool_set_smear_onset_amount(x->scheduler->fog_pool, amount);
@@ -2909,7 +2909,6 @@ static void ligase_fog_smear_onset_amount(ligase_t *x, t_floatarg amount) {
 static void ligase_fog_mag_cutoff(ligase_t *x, t_floatarg cutoff_hz) {
     if (x->fog) {
         grain_fog_set_mag_cutoff(x->fog, cutoff_hz);
-        post("ligase~: fog magnitude cutoff set to %.2f Hz", cutoff_hz);
     }
     if (x->scheduler && x->scheduler->fog_pool) {
         fog_pool_set_mag_cutoff(x->scheduler->fog_pool, cutoff_hz);
@@ -2919,7 +2918,6 @@ static void ligase_fog_mag_cutoff(ligase_t *x, t_floatarg cutoff_hz) {
 static void ligase_fog_mag_resonance(ligase_t *x, t_floatarg q) {
     if (x->fog) {
         grain_fog_set_mag_resonance(x->fog, q);
-        post("ligase~: fog magnitude resonance set to %.2f", q);
     }
     if (x->scheduler && x->scheduler->fog_pool) {
         fog_pool_set_mag_resonance(x->scheduler->fog_pool, q);
@@ -2929,7 +2927,6 @@ static void ligase_fog_mag_resonance(ligase_t *x, t_floatarg q) {
 static void ligase_fog_phase_cutoff(ligase_t *x, t_floatarg cutoff_hz) {
     if (x->fog) {
         grain_fog_set_phase_cutoff(x->fog, cutoff_hz);
-        post("ligase~: fog phase cutoff set to %.2f Hz", cutoff_hz);
     }
     if (x->scheduler && x->scheduler->fog_pool) {
         fog_pool_set_phase_cutoff(x->scheduler->fog_pool, cutoff_hz);
@@ -2939,7 +2936,6 @@ static void ligase_fog_phase_cutoff(ligase_t *x, t_floatarg cutoff_hz) {
 static void ligase_fog_specmagfilter_enable(ligase_t *x, t_floatarg enable) {
     if (x->fog) {
         grain_fog_set_specmagfilter_enabled(x->fog, (int)enable);
-        post("ligase~: fog specmagfilter %s", (int)enable ? "enabled" : "disabled");
     }
     if (x->scheduler && x->scheduler->fog_pool) {
         fog_pool_set_specmagfilter_enabled(x->scheduler->fog_pool, (int)enable);
@@ -2952,8 +2948,6 @@ static void ligase_fog_specmagfilter_onset_curve(ligase_t *x, t_floatarg curve) 
     if (curve_int > 2) curve_int = 2;
     if (x->fog) {
         grain_fog_set_specmagfilter_onset_curve(x->fog, (fog_onset_curve_t)curve_int);
-        const char *curve_names[] = {"linear", "exponential", "logarithmic"};
-        post("ligase~: fog specmagfilter onset curve set to %s", curve_names[curve_int]);
     }
     if (x->scheduler && x->scheduler->fog_pool) {
         fog_pool_set_specmagfilter_onset_curve(x->scheduler->fog_pool, (fog_onset_curve_t)curve_int);
@@ -2963,7 +2957,6 @@ static void ligase_fog_specmagfilter_onset_curve(ligase_t *x, t_floatarg curve) 
 static void ligase_fog_specmagfilter_onset_amount(ligase_t *x, t_floatarg amount) {
     if (x->fog) {
         grain_fog_set_specmagfilter_onset_amount(x->fog, amount);
-        post("ligase~: fog specmagfilter onset amount set to %.2f", amount);
     }
     if (x->scheduler && x->scheduler->fog_pool) {
         fog_pool_set_specmagfilter_onset_amount(x->scheduler->fog_pool, amount);
@@ -2973,8 +2966,6 @@ static void ligase_fog_specmagfilter_onset_amount(ligase_t *x, t_floatarg amount
 static void ligase_fog_stereo_filter_mode(ligase_t *x, t_floatarg mode) {
     if (x->fog) {
         grain_fog_set_stereo_filter_mode(x->fog, (int)mode);
-        post("ligase~: fog stereo filter mode set to %s",
-             (int)mode ? "independent" : "shared");
     }
     if (x->scheduler && x->scheduler->fog_pool) {
         fog_pool_set_stereo_filter_mode(x->scheduler->fog_pool, (int)mode);
@@ -2989,8 +2980,6 @@ static void ligase_fog_position(ligase_t *x, t_floatarg mode) {
         if (m < 0) m = 0;
         if (m > 1) m = 1;
         x->scheduler->fog_pool->position_mode = m;
-        post("ligase~: fog position mode set to %s",
-             m == 0 ? "per-grain" : "post-mix");
     }
 }
 
