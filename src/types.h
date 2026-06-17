@@ -645,13 +645,26 @@ typedef struct {
     float specmagfilter_onset_amount;  // 0.0-1.0
     // @endregion:ligase_pd.core.grain.fog.specmagfilter
 
-    // @region:ligase_pd.core.grain.fog.specmagfilter.magnitude_filter Magnitude Filter State
-    // Per-bin filter state for magnitude temporal filtering (vertical axis)
-    // 2-pole IIR resonant lowpass filter for each bin
-    float *mag_z1;               // Left channel: magnitude state T-1
-    float *mag_z2;               // Left channel: magnitude state T-2
-    float *mag_z1_right;         // Right channel: magnitude state T-1 (independent mode)
-    float *mag_z2_right;         // Right channel: magnitude state T-2 (independent mode)
+    // @region:ligase_pd.core.grain.fog.specmagfilter.magnitude_filter Spectral Filter State
+    // Per-bin 2-pole resonant-lowpass state. The filter runs on the COMPLEX FFT
+    // channel (real and imaginary parts, same coefficients) across successive
+    // frames — a linear, phase-coherent operation that smooths spectral evolution
+    // cleanly (Grainstorm-style), unlike filtering magnitude/phase separately.
+    float *mag_z1;               // Left: REAL-part state T-1
+    float *mag_z2;               // Left: REAL-part state T-2
+    float *im_z1;                // Left: IMAG-part state T-1
+    float *im_z2;                // Left: IMAG-part state T-2
+    float *mag_z1_right;         // Right: REAL-part state T-1 (independent mode)
+    float *mag_z2_right;         // Right: REAL-part state T-2 (independent mode)
+    float *im_z1_right;          // Right: IMAG-part state T-1 (independent mode)
+    float *im_z2_right;          // Right: IMAG-part state T-2 (independent mode)
+
+    // Per-bin accumulated heterodyne phase. With overlap the raw complex bins spin
+    // at their centre frequency frame-to-frame, so a lowpass on them would kill
+    // everything. We rotate each bin to baseband (remove this phase) before
+    // filtering and restore it after — so a steady component is DC (preserved) and
+    // only genuine spectral EVOLUTION is smoothed. Advanced once per hop.
+    float *het_phase;            // num_bins; shared L/R (signal-independent)
 
     // Pre-computed filter coefficients (updated when cutoff/resonance changes)
     float mag_a1, mag_a2;        // IIR feedback coefficients
@@ -673,13 +686,6 @@ typedef struct {
     int stereo_filter_independent;
 
     // @region:ligase_pd.core.grain.fog.process Temporary Processing Buffers
-    // Buffers for FFT/spectral processing
-    float *magnitudes;           // Current frame magnitudes
-    float *phases;               // Current frame phases
-    float *smeared_mags;         // After horizontal smear
-    float *filtered_mags;        // After vertical magnitude filter
-    float *filtered_phases;      // After vertical phase filter
-
     // FFT buffers (real/imaginary, per channel)
     float *fft_real_left;
     float *fft_imag_left;
@@ -709,10 +715,6 @@ typedef struct {
     // Complex FFT buffers (kiss_fft_cpx format for kissfft API)
     kiss_fft_cpx *fft_bins_left;   // 513 complex bins
     kiss_fft_cpx *fft_bins_right;  // 513 complex bins
-
-    // Spectral-motion LFO phase (a magnitude ripple swept across the spectrum,
-    // advanced once per hop) — gives the haze movement without touching phase.
-    float motion_phase;
     // @endregion:ligase_pd.core.grain.fog.process
 
 } grain_fog_t;

@@ -13,57 +13,12 @@
 
 #define FOG_MAGIC 0xF06BEEF0
 
-// @region:ligase_pd.core.grain.fog.smear Smear (Horizontal Spectral Blurring)
-
-// Apply magnitude smearing across frequency bins (horizontal axis)
-static void smear_magnitudes(grain_fog_t *fog, float amount) {
-    if (!fog->smear_enabled || amount < 0.001f || fog->smear_bins < 1) {
-        // No smearing - copy magnitudes directly
-        memcpy(fog->smeared_mags, fog->magnitudes, fog->num_bins * sizeof(float));
-        return;
-    }
-
-    // Sliding-window average: O(num_bins) regardless of smear_bins width.
-    // Maintain a running sum and count; add the incoming right edge, drop the
-    // outgoing left edge as the window slides across the bin array.
-    int bins = fog->smear_bins;
-    int num_bins = fog->num_bins;
-
-    // Initialise window centred at bin 0: covers [0, bins] (left side clipped)
-    float run_sum = 0.0f;
-    int   run_count = 0;
-    for (int j = 0; j <= bins && j < num_bins; j++) {
-        run_sum += fog->magnitudes[j];
-        run_count++;
-    }
-
-    for (int i = 0; i < num_bins; i++) {
-        float smeared = run_sum / (float)run_count;
-        fog->smeared_mags[i] = fog->magnitudes[i] * (1.0f - amount) + smeared * amount;
-
-        // Slide right: add new right-edge bin, remove old left-edge bin
-        int new_right = i + 1 + bins;
-        if (new_right < num_bins) {
-            run_sum += fog->magnitudes[new_right];
-            run_count++;
-        }
-        int old_left = i - bins;
-        if (old_left >= 0) {
-            run_sum -= fog->magnitudes[old_left];
-            run_count--;
-        }
-    }
-    // Energy lost to the averaging (the blur drops the level) is restored later by
-    // the per-frame spectral-energy normalisation in process_fft_frame.
-}
-
-// @endregion:ligase_pd.core.grain.fog.smear
-
-// @region:ligase_pd.core.grain.fog.specmagfilter SpecMagFilter (Vertical Temporal Filtering)
+// @region:ligase_pd.core.grain.fog.specmagfilter SpecMagFilter (Spectral Filter)
 
 // @region:ligase_pd.core.grain.fog.specmagfilter.resonance Resonance Control
 
-// Update magnitude filter coefficients (2-pole resonant lowpass)
+// Update spectral-filter coefficients (2-pole resonant lowpass, runs per FFT
+// channel across frames at the hop rate)
 static void update_magnitude_filter_coefficients(grain_fog_t *fog) {
     // Design a 2-pole resonant lowpass filter (biquad)
     // Using cookbook formulas for resonant lowpass
@@ -85,120 +40,19 @@ static void update_magnitude_filter_coefficients(grain_fog_t *fog) {
 
 // @endregion:ligase_pd.core.grain.fog.specmagfilter.resonance
 
-// @region:ligase_pd.core.grain.fog.specmagfilter.magnitude_filter Magnitude Filter
+// @region:ligase_pd.core.grain.fog.specmagfilter.phase_filter Phase Cutoff (inert)
 
-// Apply resonant lowpass filtering to magnitudes (vertical/temporal axis).
-// z1/z2 are the per-bin IIR state arrays for the channel being processed;
-// callers pass the appropriate left or right arrays.
-static void filter_magnitudes(grain_fog_t *fog, float amount, float *z1, float *z2) {
-    if (!fog->specmagfilter_enabled || amount < 0.001f) {
-        // No filtering - copy smeared mags directly
-        memcpy(fog->filtered_mags, fog->smeared_mags, fog->num_bins * sizeof(float));
-        return;
-    }
-
-    // Apply 2-pole IIR filter to each bin's magnitude using Direct Form II Transposed
-    // This form uses both feedforward (b0,b1,b2) and feedback (a1,a2) coefficients
-    // and requires only 2 state variables per bin (z1, z2)
-    for (int i = 0; i < fog->num_bins; i++) {
-        float x_n = fog->smeared_mags[i];
-
-        // Direct Form II Transposed:
-        //   y[n] = b0*x[n] + z1[n-1]
-        //   z1[n] = b1*x[n] - a1*y[n] + z2[n-1]
-        //   z2[n] = b2*x[n] - a2*y[n]
-        float filtered = fog->mag_b0 * x_n + z1[i];
-
-        // Soft-limit RELATIVE to this bin's input magnitude so a high-Q
-        // resonance can't run away, while staying ~transparent when there is no
-        // resonant boost. The old fixed `tanh(f*0.5)*2` capped every bin at a
-        // magnitude of 2.0 — but un-normalized FFT magnitudes for a hot signal
-        // are routinely 5-10, so it crushed the entire wet path by ~12 dB
-        // (the reported "fog drops output volume"). Scaling the knee to 8x the
-        // input keeps the lowpass passband at unity (tanh(1/8)*8 ≈ 0.995) and
-        // only engages when the resonant feedback overshoots the input bin.
-        float ceil_mag = 8.0f * x_n + 1e-6f;
-        filtered = ceil_mag * tanhf(filtered / ceil_mag);
-
-        // Update state variables (Direct Form II Transposed)
-        z1[i] = fog->mag_b1 * x_n - fog->mag_a1 * filtered + z2[i];
-        z2[i] = fog->mag_b2 * x_n - fog->mag_a2 * filtered;
-
-        // Bound + sanitize the STATE (the tanh above limits only the output): a high-Q resonance
-        // or a stray NaN/Inf could otherwise let the per-bin state run away and flood the FFT/CPU.
-        if (!isfinite(z1[i])) z1[i] = 0.0f; else if (z1[i] > 1.0e4f) z1[i] = 1.0e4f; else if (z1[i] < -1.0e4f) z1[i] = -1.0e4f;
-        if (!isfinite(z2[i])) z2[i] = 0.0f; else if (z2[i] > 1.0e4f) z2[i] = 1.0e4f; else if (z2[i] < -1.0e4f) z2[i] = -1.0e4f;
-        // Flush denormals to prevent CPU spikes
-        if (fabsf(z1[i]) < 1e-15f) z1[i] = 0.0f;
-        if (fabsf(z2[i]) < 1e-15f) z2[i] = 0.0f;
-
-        // Blend between unfiltered and filtered based on amount
-        fog->filtered_mags[i] = fog->smeared_mags[i] * (1.0f - amount) + filtered * amount;
-    }
-}
-
-// @endregion:ligase_pd.core.grain.fog.specmagfilter.magnitude_filter
-
-// @region:ligase_pd.core.grain.fog.specmagfilter.phase_filter Phase Lowpass Filter
-
-// Update phase filter coefficient (1-pole lowpass)
+// Update phase filter coefficient (retained because fog_phase_cutoff still calls
+// it; the value is currently unused by the complex spectral filter).
 static void update_phase_filter_coefficient(grain_fog_t *fog) {
-    // Simple 1-pole lowpass: y[n] = (1-a)*x[n] + a*y[n-1]
-    // where a = exp(-2*pi*fc/fs)
-    // Note: filter runs at the FFT hop rate, not the audio sample rate
     float frame_rate = (float)fog->sample_rate / (float)fog->hop_size;
-
     float omega = 2.0f * M_PI * fog->phase_cutoff_hz / frame_rate;
     fog->phase_lp_coeff = expf(-omega);
-}
-
-// Fog keeps each frame's ORIGINAL analysis phases unchanged.
-//
-// Per-bin phase MODIFICATION is fundamentally incompatible with a volume-matched
-// wet signal here. The original code lowpassed the raw phase value; a phase-
-// vocoder rewrite (propagating a smeared instantaneous frequency) was also tried.
-// Both break overlap-add phase coherence across the 4x-overlapping frames: for
-// coherent/tonal material the frames cancel, dropping the wet level. The vocoder
-// version was worse still — because each bin propagates from an arbitrary start
-// phase, the INTER-BIN relationships of a leaked tone lock in differently every
-// run, so the cancellation was intermittent (matched most runs, collapsed ~20 dB
-// in others). An effect that randomly drops 20 dB is unacceptable.
-//
-// With the analysis phase left intact, overlap-add reconstructs coherently at full,
-// DETERMINISTIC level. The "fog" haze now comes entirely from the magnitude domain:
-// the energy-preserving spectral smear (blurs timbre) + the temporal magnitude
-// filter (smooths magnitude over time). A phase-locked vocoder could reintroduce a
-// watery character without cancellation, but that is a larger, separate effort.
-static void filter_phases(grain_fog_t *fog) {
-    memcpy(fog->filtered_phases, fog->phases, fog->num_bins * sizeof(float));
 }
 
 // @endregion:ligase_pd.core.grain.fog.specmagfilter.phase_filter
 
 // @endregion:ligase_pd.core.grain.fog.specmagfilter
-
-// @region:ligase_pd.core.grain.fog.coordinate_conversion Cartesian ↔ Polar Conversion
-
-// Convert complex FFT bins to magnitude/phase representation
-static void complex_to_polar(grain_fog_t *fog, kiss_fft_cpx *bins) {
-    for (int i = 0; i < fog->num_bins; i++) {
-        float re = bins[i].r;
-        float im = bins[i].i;
-        fog->magnitudes[i] = sqrtf(re*re + im*im);
-        fog->phases[i] = atan2f(im, re);
-    }
-}
-
-// Convert magnitude/phase back to complex FFT bins
-static void polar_to_complex(grain_fog_t *fog, kiss_fft_cpx *bins,
-                             float *mags, float *phases) {
-    for (int i = 0; i < fog->num_bins; i++) {
-        bins[i].r = mags[i] * cosf(phases[i]);
-        bins[i].i = mags[i] * sinf(phases[i]);
-    }
-}
-
-// @endregion:ligase_pd.core.grain.fog.coordinate_conversion
 
 // @region:ligase_pd.core.grain.fog.api Public API
 
@@ -278,17 +132,15 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size, int overlap_factor)
     // switched at runtime without reallocation)
     fog->mag_z1 = (float*)calloc(fog->num_bins, sizeof(float));
     fog->mag_z2 = (float*)calloc(fog->num_bins, sizeof(float));
+    fog->im_z1 = (float*)calloc(fog->num_bins, sizeof(float));
+    fog->im_z2 = (float*)calloc(fog->num_bins, sizeof(float));
     fog->mag_z1_right = (float*)calloc(fog->num_bins, sizeof(float));
     fog->mag_z2_right = (float*)calloc(fog->num_bins, sizeof(float));
+    fog->im_z1_right = (float*)calloc(fog->num_bins, sizeof(float));
+    fog->im_z2_right = (float*)calloc(fog->num_bins, sizeof(float));
+    fog->het_phase = (float*)calloc(fog->num_bins, sizeof(float));
 
     fog->stereo_filter_independent = 1;  // default: independent L/R spectral state = stereo width
-
-    // Allocate temporary processing buffers
-    fog->magnitudes = (float*)calloc(fog->num_bins, sizeof(float));
-    fog->phases = (float*)calloc(fog->num_bins, sizeof(float));
-    fog->smeared_mags = (float*)calloc(fog->num_bins, sizeof(float));
-    fog->filtered_mags = (float*)calloc(fog->num_bins, sizeof(float));
-    fog->filtered_phases = (float*)calloc(fog->num_bins, sizeof(float));
 
     // Allocate FFT buffers
     fog->fft_real_left = (float*)calloc(fft_size, sizeof(float));
@@ -332,7 +184,6 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size, int overlap_factor)
     fog->samples_until_process = fft_size;  // Process after filling first full frame
     fog->output_read_pos = 0;
     fog->frames_processed = 0;  // No valid output yet
-    fog->motion_phase = 0.0f;   // spectral-motion LFO
 
     // Create kissfft configuration objects
     fog->fft_forward = kiss_fftr_alloc(fft_size, 0, NULL, NULL);  // 0 = forward FFT
@@ -354,13 +205,13 @@ void grain_fog_destroy(grain_fog_t *fog) {
 
     free(fog->mag_z1);
     free(fog->mag_z2);
+    free(fog->im_z1);
+    free(fog->im_z2);
     free(fog->mag_z1_right);
     free(fog->mag_z2_right);
-    free(fog->magnitudes);
-    free(fog->phases);
-    free(fog->smeared_mags);
-    free(fog->filtered_mags);
-    free(fog->filtered_phases);
+    free(fog->im_z1_right);
+    free(fog->im_z2_right);
+    free(fog->het_phase);
     free(fog->fft_real_left);
     free(fog->fft_imag_left);
     free(fog->fft_real_right);
@@ -502,90 +353,87 @@ static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
     // Forward FFT (real → complex)
     kiss_fftr(fog->fft_forward, scratch, bins);
 
-    // Convert to polar (magnitude/phase)
-    complex_to_polar(fog, bins);
-
-    // Stage 1: Horizontal smear (frequency-axis magnitude averaging)
-    if (fog->smear_enabled) {
-        float smear_amt = calculate_onset_amount(fog->mix,
-            fog->smear_onset_curve, fog->smear_onset_amount);
-        smear_magnitudes(fog, smear_amt);
-    } else {
-        memcpy(fog->smeared_mags, fog->magnitudes, fog->num_bins * sizeof(float));
-    }
-
-    // Stage 2: Vertical filter (time-axis resonant lowpass on magnitudes + phase smoothing).
-    // In independent mode each channel uses its own state arrays; in shared mode both
-    // channels use the left-channel arrays (preserving the original interleaved behaviour).
+    // SPECTRAL FILTER (Grainstorm-style): filter each FFT channel's COMPLEX value
+    // — real and imaginary, with the same resonant-lowpass coefficients — across
+    // successive frames. Filtering the complex bins is LINEAR and phase-coherent,
+    // so it smooths spectral evolution cleanly and preserves level (unity DC gain),
+    // unlike the old magnitude/phase (polar) processing, which was nonlinear, broke
+    // magnitude↔phase consistency, and produced the cancellation/quietness/bad sound.
     if (fog->specmagfilter_enabled) {
-        float specmag_amt = calculate_onset_amount(fog->mix,
+        float amt = calculate_onset_amount(fog->mix,
             fog->specmagfilter_onset_curve, fog->specmagfilter_onset_amount);
 
-        float *mag_z1, *mag_z2;
+        float *rz1, *rz2, *iz1, *iz2;
         if (fog->stereo_filter_independent && channel == 1) {
-            mag_z1 = fog->mag_z1_right;
-            mag_z2 = fog->mag_z2_right;
+            rz1 = fog->mag_z1_right; rz2 = fog->mag_z2_right;
+            iz1 = fog->im_z1_right;  iz2 = fog->im_z2_right;
         } else {
-            mag_z1 = fog->mag_z1;
-            mag_z2 = fog->mag_z2;
+            rz1 = fog->mag_z1; rz2 = fog->mag_z2;
+            iz1 = fog->im_z1;  iz2 = fog->im_z2;
         }
-
-        filter_magnitudes(fog, specmag_amt, mag_z1, mag_z2);
-        filter_phases(fog);
-    } else {
-        memcpy(fog->filtered_mags, fog->smeared_mags, fog->num_bins * sizeof(float));
-        memcpy(fog->filtered_phases, fog->phases, fog->num_bins * sizeof(float));
-    }
-
-    // Spectral MOTION: a gentle ripple swept slowly across the magnitude spectrum
-    // gives the haze life/movement (a phaser-like shimmer). It is purely in the
-    // magnitude domain — phase is left untouched so overlap-add stays coherent and
-    // the level stays matched: the per-frame normalisation just below holds total
-    // energy constant, so the ripple becomes timbral MOTION, not level wobble. The
-    // LFO advances once per hop (channel 0); the right channel is offset for width.
-    {
-        const float two_pi  = 2.0f * (float)M_PI;
-        const float depth   = 0.30f;   // ripple amount (±, magnitude domain)
-        const float ripples = 2.5f;    // ripple cycles across the spectrum (broad = audible sweep)
-        const float rate_hz = 0.15f;   // sweep speed
-        float chan_off = (channel == 1) ? 1.2f : 0.0f;   // L/R offset = stereo width
-        float inv_bins = 1.0f / (float)fog->num_bins;
+        const float b0 = fog->mag_b0, b1 = fog->mag_b1, b2 = fog->mag_b2;
+        const float a1 = fog->mag_a1, a2 = fog->mag_a2;
+        const float two_pi = 2.0f * (float)M_PI;
+        const float hop_over_n = (float)fog->hop_size / (float)fog->fft_size;
+        float *hp = fog->het_phase;
+        double e_in = 0.0, e_out = 0.0;   // spectral energy, for level restore
         for (int i = 0; i < fog->num_bins; i++) {
-            float g = 1.0f + depth * sinf(two_pi * ripples * (float)i * inv_bins
-                                          + fog->motion_phase + chan_off);
-            fog->filtered_mags[i] *= g;
-        }
-        if (channel == 0) {
-            float fs = (fog->sample_rate > 0) ? (float)fog->sample_rate : 48000.0f;
-            fog->motion_phase += two_pi * rate_hz * (float)fog->hop_size / fs;
-            if (fog->motion_phase > two_pi) fog->motion_phase -= two_pi;
-        }
-    }
+            float th = hp[i];
+            float c = cosf(th), s = sinf(th);
 
-    // Per-frame spectral-energy normalisation: rescale the processed magnitudes so
-    // this frame carries the same total energy as the input frame. The smear and the
-    // temporal magnitude filter both remove energy (the filter most of all, since it
-    // smooths the magnitude fluctuations of the grain stream that fog always sees) —
-    // which is what made fog far quieter than dry in real use. With the analysis phase
-    // left intact, equal per-frame magnitude energy + coherent overlap-add reconstructs
-    // at the dry level, DETERMINISTICALLY (no slow makeup-gain convergence to mistrack).
-    {
-        double e_in = 0.0, e_out = 0.0;
-        for (int i = 0; i < fog->num_bins; i++) {
-            float a = fog->magnitudes[i];
-            float b = fog->filtered_mags[i];
-            e_in  += (double)a * a;
-            e_out += (double)b * b;
+            // Heterodyne the bin to baseband: B = X * e^{-j th} (undo the spin).
+            float xr = bins[i].r, xi = bins[i].i;
+            e_in += (double)xr * xr + (double)xi * xi;
+            float br =  xr * c + xi * s;
+            float bi = -xr * s + xi * c;
+
+            // Resonant lowpass (Direct Form II Transposed) on each baseband part —
+            // same real coefficients, so this is a linear filter on the complex
+            // bin. DC (a steady component) passes at unity; only evolution is smoothed.
+            float yr = b0 * br + rz1[i];
+            rz1[i] = b1 * br - a1 * yr + rz2[i];
+            rz2[i] = b2 * br - a2 * yr;
+            float yi = b0 * bi + iz1[i];
+            iz1[i] = b1 * bi - a1 * yi + iz2[i];
+            iz2[i] = b2 * bi - a2 * yi;
+
+            // Bound/sanitize state + denormal flush (resonance/NaN runaway guard).
+            if (!isfinite(rz1[i]) || fabsf(rz1[i]) < 1e-15f) rz1[i] = 0.0f; else rz1[i] = fmaxf(-1e6f, fminf(1e6f, rz1[i]));
+            if (!isfinite(rz2[i]) || fabsf(rz2[i]) < 1e-15f) rz2[i] = 0.0f; else rz2[i] = fmaxf(-1e6f, fminf(1e6f, rz2[i]));
+            if (!isfinite(iz1[i]) || fabsf(iz1[i]) < 1e-15f) iz1[i] = 0.0f; else iz1[i] = fmaxf(-1e6f, fminf(1e6f, iz1[i]));
+            if (!isfinite(iz2[i]) || fabsf(iz2[i]) < 1e-15f) iz2[i] = 0.0f; else iz2[i] = fmaxf(-1e6f, fminf(1e6f, iz2[i]));
+
+            // Blend dry/filtered in baseband (linear), then re-modulate back up:
+            // bins = (B(1-amt) + Y*amt) * e^{+j th}.
+            float fr = br * (1.0f - amt) + yr * amt;
+            float fi = bi * (1.0f - amt) + yi * amt;
+            float or_ = fr * c - fi * s;
+            float oi  = fr * s + fi * c;
+            e_out += (double)or_ * or_ + (double)oi * oi;
+            bins[i].r = or_;
+            bins[i].i = oi;
         }
+
+        // Restore the frame's spectral energy: the lowpass averages out the
+        // (pulsing, granular) spectral evolution, which removes energy. Because the
+        // signal is phase-coherent here, scaling it straight back to the input
+        // energy is artifact-free — it keeps the smoothed character at the dry level.
         if (e_out > 1e-20) {
             float g = sqrtf((float)(e_in / e_out));
-            g = fminf(g, 16.0f);   // bound the boost for a near-cancelled frame
-            for (int i = 0; i < fog->num_bins; i++) fog->filtered_mags[i] *= g;
+            g = fminf(g, 16.0f);
+            for (int i = 0; i < fog->num_bins; i++) { bins[i].r *= g; bins[i].i *= g; }
+        }
+
+        // Advance the per-bin heterodyne phase once per hop (after the right
+        // channel — always the last processed — so L and R use the same rotation).
+        if (channel == 1) {
+            for (int i = 0; i < fog->num_bins; i++) {
+                float p = hp[i] + two_pi * (float)i * hop_over_n;
+                p -= two_pi * floorf(p * (float)(1.0 / (2.0 * M_PI)));  // wrap [0,2pi)
+                hp[i] = p;
+            }
         }
     }
-
-    // Convert back to Cartesian (real/imag)
-    polar_to_complex(fog, bins, fog->filtered_mags, fog->filtered_phases);
 
     // Inverse FFT (complex → real), reuse scratch buffer
     kiss_fftri(fog->fft_inverse, bins, scratch);
