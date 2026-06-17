@@ -9,15 +9,28 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdint.h>
 
-// x86 denormal handling: subnormal floats are ~100x slower on Intel and accumulate in the
-// effect feedback states as audio decays toward silence, making CPU creep up over minutes.
+// Denormal handling: subnormal floats are ~10-100x slower than normals and pile up in the
+// effect feedback/FFT states as audio decays toward silence — e.g. bringing fog up with
+// no signal playing makes its filter + overlap-add buffers decay into the subnormal range —
+// which makes CPU count up over time (~1%/sec). We force flush-to-zero per audio callback.
+//
+// x86: FTZ + DAZ via MXCSR. ARM64 (Apple Silicon): the FZ bit (24) of FPCR. The previous
+// code only handled x86, so on Apple Silicon denormals were NEVER flushed and fog crept to
+// 100%. FP control regs are per-thread, so we set it at the top of every perform call.
 #if defined(__SSE__) || defined(__x86_64__) || defined(_M_X64)
 #include <xmmintrin.h>
 #include <pmmintrin.h>
 #define LIGASE_FLUSH_DENORMALS() do { \
     _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);        \
     _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON); \
+} while (0)
+#elif defined(__aarch64__) || defined(__arm64__)
+#define LIGASE_FLUSH_DENORMALS() do {                          \
+    uint64_t _fpcr;                                            \
+    __asm__ volatile("mrs %0, fpcr" : "=r"(_fpcr));            \
+    __asm__ volatile("msr fpcr, %0" :: "r"(_fpcr | (1ULL << 24))); \
 } while (0)
 #else
 #define LIGASE_FLUSH_DENORMALS() ((void)0)
