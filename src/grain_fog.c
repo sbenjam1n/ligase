@@ -274,17 +274,18 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size, int overlap_factor)
     fog->hop_size = fft_size / overlap_factor;
     fog->num_bins = fft_size / 2 + 1;
 
-    // Default parameters
+    // Default parameters — tuned for a smooth, lush "dreamy fog": a gentle spectral haze with
+    // ghostly (not ringy) sustain and stereo width. Off (mix 0) until the fog inlet is raised.
     fog->mix = 0.0f;
     fog->smear_enabled = 1;
-    fog->smear_bins = 8;  // Wider blur for more diffuse, hazy timbre
+    fog->smear_bins = 3;             // gentle frequency haze (8 was a washy ~750 Hz blur)
     fog->smear_onset_curve = FOG_ONSET_LOGARITHMIC;
-    fog->smear_onset_amount = 1.0f;
+    fog->smear_onset_amount = 0.8f;  // lush at full mix without smearing to mush
 
     fog->specmagfilter_enabled = 1;
-    fog->mag_cutoff_hz = 2.0f;
-    fog->mag_resonance = 1.0f;  // Gentle resonance for ghostly spectral persistence
-    fog->phase_cutoff_hz = 2.0f;
+    fog->mag_cutoff_hz = 2.5f;       // slow magnitude tracking = spectral sustain (the "fog")
+    fog->mag_resonance = 0.5f;       // low Q: smooth ghostly persistence, no metallic ring
+    fog->phase_cutoff_hz = 3.0f;     // slight phase motion so it isn't frozen/static
     fog->specmagfilter_onset_curve = FOG_ONSET_LOGARITHMIC;
     fog->specmagfilter_onset_amount = 1.0f;
 
@@ -300,7 +301,7 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size, int overlap_factor)
     fog->phase_prev_right = (float*)calloc(fog->num_bins, sizeof(float));
     fog->phase_delta_z1_right = (float*)calloc(fog->num_bins, sizeof(float));
 
-    fog->stereo_filter_independent = 0;  // default: shared state
+    fog->stereo_filter_independent = 1;  // default: independent L/R spectral state = stereo width
 
     // Allocate temporary processing buffers
     fog->magnitudes = (float*)calloc(fog->num_bins, sizeof(float));

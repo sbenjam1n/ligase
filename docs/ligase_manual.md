@@ -369,17 +369,17 @@ split: 0 (allow split)
 Effects
 
 fog_mix: 0.0 (dry)
-fog_smear_bins: 8
+fog_smear_bins: 3
 fog_smear_enable: 1
 fog_smear_onset_curve: 2 (logarithmic)
-fog_smear_onset_amount: 1.0
-fog_mag_cutoff: 2.0 Hz
-fog_mag_resonance: 1.0
-fog_phase_cutoff: 2.0 Hz
+fog_smear_onset_amount: 0.8
+fog_mag_cutoff: 2.5 Hz
+fog_mag_resonance: 0.5
+fog_phase_cutoff: 3.0 Hz
 fog_specmagfilter_enable: 1
 fog_specmagfilter_onset_curve: 2 (logarithmic)
 fog_specmagfilter_onset_amount: 1.0
-fog_stereo_filter_mode: 0 (shared)
+fog_stereo_filter_mode: 1 (independent)
 fog_position: 1 (post-mix)
 fog_pool_size: 4 (configurable via ligase.conf)
 gdelay_time: 0.0 (off)
