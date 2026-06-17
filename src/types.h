@@ -709,6 +709,10 @@ typedef struct {
     // Complex FFT buffers (kiss_fft_cpx format for kissfft API)
     kiss_fft_cpx *fft_bins_left;   // 513 complex bins
     kiss_fft_cpx *fft_bins_right;  // 513 complex bins
+
+    // Spectral-motion LFO phase (a magnitude ripple swept across the spectrum,
+    // advanced once per hop) — gives the haze movement without touching phase.
+    float motion_phase;
     // @endregion:ligase_pd.core.grain.fog.process
 
 } grain_fog_t;

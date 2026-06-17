@@ -332,6 +332,7 @@ grain_fog_t* grain_fog_create(int sample_rate, int fft_size, int overlap_factor)
     fog->samples_until_process = fft_size;  // Process after filling first full frame
     fog->output_read_pos = 0;
     fog->frames_processed = 0;  // No valid output yet
+    fog->motion_phase = 0.0f;   // spectral-motion LFO
 
     // Create kissfft configuration objects
     fog->fft_forward = kiss_fftr_alloc(fft_size, 0, NULL, NULL);  // 0 = forward FFT
@@ -534,6 +535,31 @@ static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
     } else {
         memcpy(fog->filtered_mags, fog->smeared_mags, fog->num_bins * sizeof(float));
         memcpy(fog->filtered_phases, fog->phases, fog->num_bins * sizeof(float));
+    }
+
+    // Spectral MOTION: a gentle ripple swept slowly across the magnitude spectrum
+    // gives the haze life/movement (a phaser-like shimmer). It is purely in the
+    // magnitude domain — phase is left untouched so overlap-add stays coherent and
+    // the level stays matched: the per-frame normalisation just below holds total
+    // energy constant, so the ripple becomes timbral MOTION, not level wobble. The
+    // LFO advances once per hop (channel 0); the right channel is offset for width.
+    {
+        const float two_pi  = 2.0f * (float)M_PI;
+        const float depth   = 0.30f;   // ripple amount (±, magnitude domain)
+        const float ripples = 2.5f;    // ripple cycles across the spectrum (broad = audible sweep)
+        const float rate_hz = 0.15f;   // sweep speed
+        float chan_off = (channel == 1) ? 1.2f : 0.0f;   // L/R offset = stereo width
+        float inv_bins = 1.0f / (float)fog->num_bins;
+        for (int i = 0; i < fog->num_bins; i++) {
+            float g = 1.0f + depth * sinf(two_pi * ripples * (float)i * inv_bins
+                                          + fog->motion_phase + chan_off);
+            fog->filtered_mags[i] *= g;
+        }
+        if (channel == 0) {
+            float fs = (fog->sample_rate > 0) ? (float)fog->sample_rate : 48000.0f;
+            fog->motion_phase += two_pi * rate_hz * (float)fog->hop_size / fs;
+            if (fog->motion_phase > two_pi) fog->motion_phase -= two_pi;
+        }
     }
 
     // Per-frame spectral-energy normalisation: rescale the processed magnitudes so
