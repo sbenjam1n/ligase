@@ -10,6 +10,19 @@
 #include <string.h>
 #include <math.h>
 
+// x86 denormal handling: subnormal floats are ~100x slower on Intel and accumulate in the
+// effect feedback states as audio decays toward silence, making CPU creep up over minutes.
+#if defined(__SSE__) || defined(__x86_64__) || defined(_M_X64)
+#include <xmmintrin.h>
+#include <pmmintrin.h>
+#define LIGASE_FLUSH_DENORMALS() do { \
+    _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);        \
+    _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON); \
+} while (0)
+#else
+#define LIGASE_FLUSH_DENORMALS() ((void)0)
+#endif
+
 // Forward declarations
 typedef struct _ligase ligase_t;
 static void ligase_send_current_splice_msg(ligase_t *x);
@@ -1492,6 +1505,11 @@ static void ligase_process_effects(ligase_t *x,
 
 
 static t_int *ligase_perform(t_int *w) {
+    // Flush denormals to zero for this audio callback (FPU mode is per-thread). Prevents the
+    // gradual CPU climb from subnormal floats piling up in delay/moog/distortion/fog feedback
+    // states when the granular output decays toward silence.
+    LIGASE_FLUSH_DENORMALS();
+
     static int first_call = 1;
     if (first_call && LIGASE_DEBUG) {
         fprintf(stderr, "ligase_perform: FIRST CALL (w=%p)\n", (void*)w);
