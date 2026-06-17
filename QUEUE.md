@@ -16,7 +16,7 @@
 
 # QUEUE.md — Authoritative Work Queue
 
-**Queue Seq:** 18
+**Queue Seq:** 19
 **Set by:** SLB (planner)
 **Date:** 2026-06-16
 **Relationship to other coordination files:** `MESSAGE.md` = tactical, per-turn handoff (nuance, the current catch). **QUEUE.md = the standing ordering** (survives turns). When they differ on *what's next*, QUEUE.md wins; MESSAGE.md carries the *how/why* of the top item.
@@ -28,19 +28,19 @@
 
 ## §0. STRATEGIC MAP — where the project is, where it's going
 
-ligase~ is a Pure Data granular synthesizer/sampler/looper/delay external (C, GPL-v2). The
-feature set is complete, but two **major runtime bugs** were reported 2026-06-16 and are now
-the top priority: (B1) effects/buffering break at non-48 kHz sample rates (delay dead, audio
-clips/drops out with external interfaces like a Focusrite); (B2) reel load/save is broken on
-macOS. Both are scoped with verified root causes. Documentation work (manual single-source =
-DONE; content edits = on deck) drops below the bug fixes.
+ligase~ is a Pure Data granular synthesizer/sampler/looper/delay external (C, GPL-v2). A
+2026-06-16 session fixed every reported runtime bug and refreshed the docs. All work is
+**implemented and verified headless** on branch `fix/audio-engine-and-manual` (unpushed). The
+only thing left for the AGENT is none — remaining items are **user hardware sign-off + a push/PR**.
 
 | Objective | Status | Lane | Source |
 |-----------|--------|------|--------|
-| **B1 — Sample-rate-agnostic engine & consistent buffering** | Steps 1+2 DONE; Tier-2 audible (user) pending | AGENT | `Plans/sample_rate_buffering.md` |
+| **B1 — Sample-rate-agnostic engine & consistent buffering** | DONE (Steps 1+2); Tier-2 audible = user | AGENT | `Plans/sample_rate_buffering.md` |
 | **B2 — Reel load/save on macOS** | DONE (canvas paths + robust parser + 16-bit + error routing) | AGENT | `Plans/reel_io_macos.md` |
-| Manual content edits (code-accuracy pass) | DONE (engine/record-mode + Worklist A + SOS-mechanics prose) | AGENT | `Plans/manual_content_edits.md` |
-| Manual on a single source of truth + reproducible PDF build | DONE | AGENT | `Plans/pdf_manual_regeneration.md` |
+| **Record modes (B4 recsplice SOS-VCA, B5 overdub TLA)** | DONE — hardware-confirmed | AGENT | §1 |
+| **Runtime stability (B6 denormals, B7 fftease symbol collision, B8 CPU runaways)** | DONE; long-session/coexistence sign-off = user | AGENT | §1 |
+| **Fog default retune (musical)** | DONE; ear-test = user | AGENT | §1 / §6 Seq 18 |
+| Manual: single source + `make manual` + content/SOS/modulation accuracy | DONE | AGENT | `Plans/pdf_manual_regeneration.md`, `Plans/manual_content_edits.md` |
 | Stale-artifact / build-naming cleanup (`erosion` leftovers) | BACKLOG | AGENT | §4 |
 | Core external (build, fog, modulation engine) | DONE | — | `README.md`, `TODO.md` |
 
@@ -55,7 +55,7 @@ DONE; content edits = on deck) drops below the bug fixes.
 ## §1. ACTIVE QUEUE (ordered; the agent runs the top UNBLOCKED item in the AGENT lane)
 
 ### AGENT lane
-_All scoped bug work (B1, B2 incl. polish, B4/B5, B6 denormal/CPU) implemented and verified headless; manual fully updated. User-side verification pending: B1 Tier-2 (longer Focusrite listen) and B6 (CPU stays flat over a few minutes in playhead 3 + quant). Branch unpushed._
+_Nothing left for the agent — all bug work (B1, B2+polish, B4/B5, B6, B7, B8) + manual + fog retune is implemented and verified headless. Pending = USER hardware sign-off (B1 Tier-2 audible @44.1/96 k; B6/B8 long-session CPU stays flat under scanning+delay+fog; B7 fftease coexists; fog ear-test) and a push/PR. Branch `fix/audio-engine-and-manual`, 13 commits, unpushed._
 
 | # | Item | Status | Gate to stop at | Plan |
 |---|------|--------|-----------------|------|
@@ -119,6 +119,7 @@ _All scoped bug work (B1, B2 incl. polish, B4/B5, B6 denormal/CPU) implemented a
 | 2026-06-16 | 6 | B1 Step 1 functionally verified headless (Tier-1) at 44.1/48/96 kHz: `test_delay.pd` (6 s tap correct, 96 k clamp gone) + `test_dist.pd` (resonant distortion bounded, no NaN). Focusrite (Scarlett 2i2) now enumerated. Remaining: Tier-2 audible tests (user) + Step 2 reel/WAV SR (reel-sizing decision still open). | SLB |
 | 2026-06-16 | 7 | B3 added + FIXED: empty-reel OVERDUB recorded silence when SOS up (recorded `input×(1−sos)`; pre-existing, NOT a B1 regression — recording code untouched by B1). Fix in `reel.c`: per-record `initial_length`; virgin samples capture full input regardless of SOS, SOS-crossfade only for genuine overdub onto existing content. Verified headless (sos 1.0 silent→full). Tests `test_rec.pd`, `test_input.pd` added. Awaiting user hardware confirmation (live input via Focusrite, `record 1` with SOS up). | SLB |
 | 2026-06-16 | 8 | B3 CLOSED — NOT A BUG. Owner confirmed SOS is designed to attenuate the initial recording too; OVERDUB `input×(1−sos)` is intended. Seq-7 "fix" reverted in full (`reel.c`/`types.h` restored). Build clean; B1 changes remain intact and untouched. | SLB |
+| 2026-06-16 | 19 | Refreshed §0 strategic map + §1 AGENT-lane summary to reflect reality: all bug work (B1/B2/B4/B5/B6/B7/B8) + manual + fog retune DONE and verified headless; agent backlog empty; remaining is user hardware sign-off + push/PR. (Per-item rows + §6 were already current; only the top blurb was stale.) | SLB |
 | 2026-06-16 | 18 | Fog defaults retuned for musicality (smear_bins 8->3, smear_onset 1.0->0.8, mag_cutoff 2.0->2.5 Hz, mag_resonance 1.0->0.5, phase_cutoff 2.0->3.0 Hz, stereo shared->independent) — a smooth, lush, dreamy haze vs the old washy/ringy/mono-ish default. Manual defaults synced + PDF regenerated. Aesthetic; owner to confirm by ear. | SLB |
 | 2026-06-16 | 17 | B8 added + FIXED: persistent 100% CPU traced (3-agent hunt: playhead/delay/fog) to unbounded audio-thread `while`-wraps + unbounded filter state. Replaced playhead wraps with O(1) `wrap_to_splice` (kills the zero-length-splice scanning hang); added delay `buffer_size<=0` guard + fmodf read-pos + NaN flush (incl. Bencina lpf); replaced fog phase-unwrap `while` with an fmodf fold (kills the Inf-delta infinite loop), bounded `phase_prev` + mag-filter state, and added an isfinite firewall before the OLA buffer. Builds; delay/TLA regression clean. Probable true cause of the stuck-100% (supersedes B6). | SLB |
 | 2026-06-16 | 16 | B7 added + FIXED: fftease load conflict + fog malfunction + fog-inlet CPU spike traced to a symbol collision — ligase exported all non-static functions (incl. vendored `kiss_fft`) into Pd's flat namespace. Fix: `-fvisibility=hidden` + export only `ligase_tilde_setup`. Verified only `_ligase_tilde_setup` exported (0 internal leaks); loads/runs. This is the likely real cause of the fog CPU spike (B6's distortion-denormal attribution was probably wrong; B6's FTZ/DAZ retained as general denormal hygiene). Owner verifies on hardware. | SLB |
