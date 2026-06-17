@@ -33,6 +33,19 @@
 #define LIGASE_PUBLIC
 #endif
 
+// Replace any non-finite (NaN/Inf) sample in a stereo pair with 0. Used at the
+// boundaries of the grain/delay path and before the reel write: a single NaN in
+// the granular signal otherwise poisons the output (constant_power_mix does
+// in*a + granular*b, and NaN*0 == NaN, so it kills even the 100%-dry monitor) and,
+// if written into the reel/effect buffers, self-sustains (x + NaN == NaN) — which
+// is the "silence and no monitor after recording, nothing restores it" failure.
+static inline void ligase_sanitize_pair(float *a, float *b, int n) {
+    for (int i = 0; i < n; i++) {
+        if (!isfinite(a[i])) a[i] = 0.0f;
+        if (!isfinite(b[i])) b[i] = 0.0f;
+    }
+}
+
 // Forward declarations
 typedef struct _ligase ligase_t;
 static void ligase_send_current_splice_msg(ligase_t *x);
@@ -1270,6 +1283,7 @@ static void ligase_process_grains(ligase_t *x,
                 x->reel->length, n);
         scheduler_process(x->scheduler, x->reel, x->temp_left, x->temp_right, n);
         if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: scheduler_process returned\n");
+        ligase_sanitize_pair(x->temp_left, x->temp_right, n);  // never let a bad grain read spread
 
         // Get current splice bounds for delay modes that need it
         uint32_t delay_splice_start, delay_splice_end;
@@ -1280,6 +1294,11 @@ static void ligase_process_grains(ligase_t *x,
         grain_delay_process(x->grain_delay, x->delay_stut, x->delay_bencina,
                            x->temp_left, x->temp_right, x->delayed_left, x->delayed_right,
                            n, delay_splice_start, delay_splice_end);
+        // Firewall the granular signal before it reaches the dry/wet mix and the reel
+        // write. constant_power_mix does in*a + delayed*b; NaN*0 == NaN, so without this
+        // one bad sample silences even the 100%-dry monitor and can be recorded into the
+        // reel, where it self-sustains — the "no monitor after recording" bug.
+        ligase_sanitize_pair(x->delayed_left, x->delayed_right, n);
 
         // Output mixing based on SOS mode
         if (x->sos_mode == 1) {
