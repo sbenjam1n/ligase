@@ -1,28 +1,14 @@
-<!-- QUEUE.md — THE authoritative work-ordering for the ligase~ project. PLANNER-WRITE-ONLY.
-================================ WRITE RULE (PERMANENT) ================================
-- Only the PLANNER (SLB) may set, add, remove, reorder, or re-prioritize items in this
-  queue. The ordering in §1 is the single source of truth for "what to work on next."
-- The AGENT is READ-ONLY here: it executes the top UNBLOCKED item in its lane (§1), and
-  NEVER edits this file. It reports progress, completions, and blockers via a commit/PR
-  note and/or MESSAGE.md; the planner reconciles them into this queue. The agent MAY
-  propose a reordering, but only in MESSAGE.md/a note — a proposal is not a change until
-  the planner makes it here.
-- Every change to §1 increments **Queue Seq** and adds a one-line §6 history entry signed
-  "SLB". An unsigned or non-SLB edit to the ordering is invalid by convention.
-- This file ORDERS; it does not DUPLICATE. Each item points to its plan + step and its
-  tracking note. Truth lives in the pointed-to doc; if they disagree, the doc wins and the
-  planner fixes the pointer.
-======================================================================================== -->
+<!-- QUEUE.md — shared work-ordering for the ligase~ project (just the user + Claude).
+§1 is the single source of truth for "what to work on next." This file ORDERS; it does
+not DUPLICATE — each item points to its plan/tracking note, and the pointed-to doc wins on
+conflict. Convention: bump **Queue Seq** and add a one-line §6 history entry on any change
+to §1. Section numbers are stable references — append, never renumber. -->
 
-# QUEUE.md — Authoritative Work Queue
+# QUEUE.md — Work Queue
 
 **Queue Seq:** 20
-**Set by:** SLB (planner)
 **Date:** 2026-06-16
-**Relationship to other coordination files:** `MESSAGE.md` = tactical, per-turn handoff (nuance, the current catch). **QUEUE.md = the standing ordering** (survives turns). When they differ on *what's next*, QUEUE.md wins; MESSAGE.md carries the *how/why* of the top item.
-**What this queue draws from:** active execution plans (`Plans/*.md`) and the project's own indexes (`README.md`, `TODO.md`). Items are promoted from backlog → active by the planner only (see §4).
-
-> **Planner-write-only.** The agent reads this (see §5) and is read-only here. Section numbers are stable references — **append, never renumber.** Log every change in §6.
+**What this queue draws from:** active execution plans (`Plans/*.md`) and the project's own indexes (`README.md`, `TODO.md`).
 
 ---
 
@@ -30,20 +16,20 @@
 
 ligase~ is a Pure Data granular synthesizer/sampler/looper/delay external (C, GPL-v2). A
 2026-06-16 session fixed every reported runtime bug and refreshed the docs. All work is
-**implemented and verified headless** on branch `fix/audio-engine-and-manual` (unpushed). The
-only thing left for the AGENT is none — remaining items are **user hardware sign-off + a push/PR**.
+**implemented and verified headless** on branch `fix/audio-engine-and-manual` (unpushed).
+Nothing is left to code — remaining items are **user hardware/ear sign-off + a push/PR**.
 
-| Objective | Status | Lane | Source |
-|-----------|--------|------|--------|
-| **B1 — Sample-rate-agnostic engine & consistent buffering** | DONE (Steps 1+2); Tier-2 audible = user | AGENT | `Plans/sample_rate_buffering.md` |
-| **B2 — Reel load/save on macOS** | DONE (canvas paths + robust parser + 16-bit + error routing) | AGENT | `Plans/reel_io_macos.md` |
-| **Record modes (B4 recsplice SOS-VCA, B5 overdub TLA)** | DONE — hardware-confirmed | AGENT | §1 |
-| **Runtime stability (B6 denormals, B7 fftease symbol collision, B8 CPU runaways)** | DONE; long-session/coexistence sign-off = user | AGENT | §1 |
-| **Fog default retune (musical)** | DONE; ear-test = user | AGENT | §1 / §6 Seq 18 |
-| **B9 — Fog wet/dry level match (volume bug)** | DONE (limiter normalization + makeup gain); ear-test = user | AGENT | §1 (B9) / §6 Seq 20 |
-| Manual: single source + `make manual` + content/SOS/modulation accuracy | DONE | AGENT | `Plans/pdf_manual_regeneration.md`, `Plans/manual_content_edits.md` |
-| Stale-artifact / build-naming cleanup (`erosion` leftovers) | BACKLOG | AGENT | §4 |
-| Core external (build, fog, modulation engine) | DONE | — | `README.md`, `TODO.md` |
+| Objective | Status | Source |
+|-----------|--------|--------|
+| **B1 — Sample-rate-agnostic engine & consistent buffering** | DONE (Steps 1+2); Tier-2 audible = user | `Plans/sample_rate_buffering.md` |
+| **B2 — Reel load/save on macOS** | DONE (canvas paths + robust parser + 16-bit + error routing) | `Plans/reel_io_macos.md` |
+| **Record modes (B4 recsplice SOS-VCA, B5 overdub TLA)** | DONE — hardware-confirmed | §1 |
+| **Runtime stability (B6 denormals, B7 fftease symbol collision, B8 CPU runaways)** | DONE; long-session/coexistence sign-off = user | §1 |
+| **Fog default retune (musical)** | DONE; ear-test = user | §1 / §6 Seq 18 |
+| **B9 — Fog wet/dry level match (volume bug)** | DONE (removed cancelling phase filter; energy-preserving smear + makeup); ear-test = user | §1 (B9) / §6 Seq 20 |
+| Manual: single source + `make manual` + content/SOS/modulation accuracy | DONE | `Plans/pdf_manual_regeneration.md`, `Plans/manual_content_edits.md` |
+| Stale-artifact / build-naming cleanup (`erosion` leftovers) | BACKLOG | §4 |
+| Core external (build, fog, modulation engine) | DONE | `README.md`, `TODO.md` |
 
 ## §0.5 ACTIVE INDEXES (fixed pointer — do not catalogue here)
 
@@ -53,10 +39,9 @@ only thing left for the AGENT is none — remaining items are **user hardware si
 - `TEST_PLAN_MACOS.md` — macOS + Focusrite test plan (SR sweep, buffering, reel I/O); verifies B1/B2.
 - `Plans/` — execution plans.
 
-## §1. ACTIVE QUEUE (ordered; the agent runs the top UNBLOCKED item in the AGENT lane)
+## §1. ACTIVE QUEUE (ordered; take the top UNBLOCKED item)
 
-### AGENT lane
-_Nothing left for the agent — all bug work (B1, B2+polish, B4/B5, B6, B7, B8, B9) + manual + fog retune is implemented and verified headless. Pending = USER hardware/ear sign-off (B1 Tier-2 audible @44.1/96 k; B6/B8 long-session CPU stays flat under scanning+delay+fog; B7 fftease coexists; fog retune + B9 wet-level ear-test) and a push/PR. Branch `fix/audio-engine-and-manual` (unpushed)._
+_Nothing left to code — all bug work (B1, B2+polish, B4/B5, B6, B7, B8, B9) + manual + fog retune is implemented and verified headless. Pending = USER hardware/ear sign-off (B1 Tier-2 audible @44.1/96 k; B6/B8 long-session CPU stays flat under scanning+delay+fog; B7 fftease coexists; fog retune + B9 wet-level ear-test) and a push/PR. Branch `fix/audio-engine-and-manual` (unpushed)._
 
 | # | Item | Status | Gate to stop at | Plan |
 |---|------|--------|-----------------|------|
@@ -69,7 +54,7 @@ _Nothing left for the agent — all bug work (B1, B2+polish, B4/B5, B6, B7, B8, 
 | B8 | CPU saturates to 100% and stays (audio glitch, control lost) — unbounded loops/state | **FIXED — hardware-verify pending** | 3-agent hunt (playhead/delay/fog; scheduler excluded per owner). Root class: unbounded `while`-wraps + unbounded filter state in the audio thread. Fixes: (a) playhead wraps → O(1) `wrap_to_splice` (fmodf; guards zero-length splice + non-finite pos — the scanning-playhead hang); (b) delay: `buffer_size<=0` dispatcher guard + fmodf read-pos + NaN/denormal flush (incl. Bencina lpf, previously unflushed); (c) fog: phase-unwrap `while`→fmodf fold (the Inf-delta infinite loop) + wrapped/bounded `phase_prev` + clamped mag-filter STATE + isfinite firewall before the overlap-add buffer. Likely the true "stuck at 100%" cause (supersedes B6). Verified: builds, delay/TLA regression clean. Owner to confirm over a long session w/ scanning + delay + fog. | (inline; 4 files) |
 | B7 | fftease won't load w/ ligase; fog broken + fog-inlet CPU spike (symbol collision) | **FIXED — hardware-verify pending** | Root cause: every non-static function was exported into Pd's flat namespace (`-undefined dynamic_lookup`), so ligase's vendored `kiss_fft`/internal symbols collided with other externals — blocking fftease and letting fog's FFT calls bind to the wrong implementation (garbage → CPU spike). Fix: `-fvisibility=hidden` + export only `ligase_tilde_setup` (`LIGASE_PUBLIC`). Verified: only `_ligase_tilde_setup` exported, 0 internal leaks; still loads/runs. Likely the real cause of the fog-inlet CPU spike (supersedes the B6 attribution). Owner to confirm: fftease loads, fog works, CPU flat. | (inline; Makefile + ligase~.c) |
 | B6 | CPU creeps up over minutes (denormals on x86) | **FIXED — hardware-verify pending** | Diagnosis: subnormal floats are ~100× slower on x86 and accumulate in effect-feedback states as audio decays toward silence; the dev had added per-state flushing to delay/fog/moog but **distortion IIR states were unflushed** (and distortion runs by default), and a slow feedback decay reaches denormal range after ~minutes — matching the symptom. Fix: enable hardware FTZ+DAZ at the top of `ligase_perform` (`LIGASE_FLUSH_DENORMALS`, x86-guarded) — comprehensive across the whole chain. Verified: builds, runs, `stmxcsr`/`ldmxcsr` present. Can't reproduce the multi-minute creep headless (timescale); owner to confirm on hardware (playhead 3 + quant, run a few minutes). | (inline) |
-| B9 | Fog wet path far quieter than dry ("adding fog drops output volume") | **FIXED — ear-test pending** | Root cause was a real normalization bug, not just a missing makeup gain: the magnitude soft-limiter used a FIXED knee `tanhf(filtered*0.5)*2`, hard-capping every spectral bin at magnitude 2.0 — but un-normalized FFT magnitudes run ~5–10 for a hot signal, so it crushed the whole wet path ~12 dB regardless of mix (headless: full-wet RMS 0.087 vs dry 0.438). Fix: (a) soft-limit RELATIVE to the bin's own input magnitude (`ceil=8*x_n+1e-6; filtered=ceil*tanhf(filtered/ceil)`) — transparent in-passband (`tanh(1/8)*8≈0.995`), still bounds high-Q resonance runaway (the limiter's original intent); (b) setting-agnostic wet makeup gain — `|dry|`/`|wet|` one-pole followers (~80 ms), smoothed/clamped makeup `lvl_dry/lvl_wet` ∈ [0.5,4.0] (~250 ms), final ±1 clamp; new `grain_fog_t` fields `lvl_dry/lvl_wet/makeup`. Verified headless (48 kHz, `test_fog_level.pd`): full-wet RMS 0.454 vs dry 0.438 (~0.3 dB), smooth monotonic 0→1 ease-in over ~0.5 s, no pumping; makeup ≈ unity at defaults (the limiter fix carries it). Owner ear-test: levels feel matched and the effect still sounds right after the brighter/louder wet. | (inline `grain_fog.c`/`types.h`; `test_fog_level.pd`) |
+| B9 | Fog wet path far quieter than dry ("adding fog drops output volume") | **FIXED — ear-test pending** | The makeup gain only matched NOISE; tonal/musical material still collapsed ~37 dB. Real cause: the temporal PHASE filter modified each bin's phase per frame, breaking overlap-add coherence across the 4x-overlapping frames so coherent tones destructively cancel (noise has no coherent phase to cancel — why noise looked fine). A phase-vocoder rewrite (propagate a smeared instantaneous frequency) was tried to keep the watery character, but per-bin propagation from arbitrary start phases scrambles a leaked tone's inter-bin relationships → intermittent ~20 dB collapse (~1 run in 8). Chosen fix (the "fall back to magnitude-domain blur" option): leave phase UNTOUCHED → coherent, deterministic full-level reconstruction. Fog haze now magnitude-only: (a) smear made ENERGY-PRESERVING (rescale smeared mags to the input's spectral energy — was ~8 dB loss on a tone); (b) temporal magnitude filter kept (unity DC gain; only loses variance on fluctuating material); (c) wet makeup gain (cap 6x) covers that residual. Removed the unused per-bin phase state. Verified headless (deterministic averaged, `test_fog_const.pd`): noise wet within ~0.1 dB of dry; tones within ~0–5 dB (no collapse) vs old ~37 dB. NOTE: phase processing gone ⇒ `fog_phase_cutoff` now inert (manual + setter to be reconciled). Owner ear-test: levels match + haze still musical (less watery than the old design). Future: phase-locked vocoder could restore a watery character without cancellation. | (inline `grain_fog.c`/`types.h`; `test_fog_const.pd`, `test_fog_level.pd`) |
 
 ### SLB lane (planner; runs in parallel, agent does not wait on these)
 - ✓ Manual-content-edits plan authored (`Plans/manual_content_edits.md`), seeded with Worklist A (modulation coverage audit). Awaiting the user's incoming content changes to fill stream 1.
@@ -121,7 +106,7 @@ _Nothing left for the agent — all bug work (B1, B2+polish, B4/B5, B6, B7, B8, 
 | 2026-06-16 | 6 | B1 Step 1 functionally verified headless (Tier-1) at 44.1/48/96 kHz: `test_delay.pd` (6 s tap correct, 96 k clamp gone) + `test_dist.pd` (resonant distortion bounded, no NaN). Focusrite (Scarlett 2i2) now enumerated. Remaining: Tier-2 audible tests (user) + Step 2 reel/WAV SR (reel-sizing decision still open). | SLB |
 | 2026-06-16 | 7 | B3 added + FIXED: empty-reel OVERDUB recorded silence when SOS up (recorded `input×(1−sos)`; pre-existing, NOT a B1 regression — recording code untouched by B1). Fix in `reel.c`: per-record `initial_length`; virgin samples capture full input regardless of SOS, SOS-crossfade only for genuine overdub onto existing content. Verified headless (sos 1.0 silent→full). Tests `test_rec.pd`, `test_input.pd` added. Awaiting user hardware confirmation (live input via Focusrite, `record 1` with SOS up). | SLB |
 | 2026-06-16 | 8 | B3 CLOSED — NOT A BUG. Owner confirmed SOS is designed to attenuate the initial recording too; OVERDUB `input×(1−sos)` is intended. Seq-7 "fix" reverted in full (`reel.c`/`types.h` restored). Build clean; B1 changes remain intact and untouched. | SLB |
-| 2026-06-16 | 20 | B9 added + FIXED: "adding fog drops output volume." Real cause = the magnitude soft-limiter's FIXED knee `tanh(f*0.5)*2` capping every spectral bin at magnitude 2.0, while un-normalized FFT magnitudes run ~5–10 → the whole wet path crushed ~12 dB regardless of mix (headless full-wet RMS 0.087 vs dry 0.438). Fix: soft-limit relative to the bin's input magnitude (transparent in-passband, still bounds high-Q runaway) + a setting-agnostic wet makeup gain (`\|dry\|`/`\|wet\|` followers, makeup clamped [0.5,4.0], ±1 final clamp; new `grain_fog_t` lvl_dry/lvl_wet/makeup). Verified headless (`test_fog_level.pd`): full-wet RMS 0.454 vs dry 0.438 (~0.3 dB), smooth ease-in, no pumping; makeup ≈ unity at defaults. Owner ear-test pending. | SLB |
+| 2026-06-16 | 20 | B9 added + FIXED: "adding fog drops output volume." A first pass (magnitude soft-limiter normalization + wet makeup gain) only matched NOISE; tonal material still collapsed ~37 dB. Real cause = the temporal PHASE filter broke overlap-add coherence (4x overlap) so coherent tones cancelled. A phase-vocoder rewrite cancelled intermittently (~1 run in 8, inter-bin decoherence), so phase is now left UNTOUCHED (deterministic full-level OLA). Fog haze is magnitude-only: energy-preserving smear + temporal magnitude filter, with the makeup gain (cap 6x) covering the residual variance loss. Verified headless (`test_fog_const.pd`, averaged/deterministic): noise within ~0.1 dB, tones ~0–5 dB, no collapse (was ~37 dB). `fog_phase_cutoff` now inert (manual/setter to reconcile). Limiter-normalization fix from the first pass retained. Owner ear-test pending; phase-locked vocoder a possible future enhancement. | SLB |
 | 2026-06-16 | 19 | Refreshed §0 strategic map + §1 AGENT-lane summary to reflect reality: all bug work (B1/B2/B4/B5/B6/B7/B8) + manual + fog retune DONE and verified headless; agent backlog empty; remaining is user hardware sign-off + push/PR. (Per-item rows + §6 were already current; only the top blurb was stale.) | SLB |
 | 2026-06-16 | 18 | Fog defaults retuned for musicality (smear_bins 8->3, smear_onset 1.0->0.8, mag_cutoff 2.0->2.5 Hz, mag_resonance 1.0->0.5, phase_cutoff 2.0->3.0 Hz, stereo shared->independent) — a smooth, lush, dreamy haze vs the old washy/ringy/mono-ish default. Manual defaults synced + PDF regenerated. Aesthetic; owner to confirm by ear. | SLB |
 | 2026-06-16 | 17 | B8 added + FIXED: persistent 100% CPU traced (3-agent hunt: playhead/delay/fog) to unbounded audio-thread `while`-wraps + unbounded filter state. Replaced playhead wraps with O(1) `wrap_to_splice` (kills the zero-length-splice scanning hang); added delay `buffer_size<=0` guard + fmodf read-pos + NaN flush (incl. Bencina lpf); replaced fog phase-unwrap `while` with an fmodf fold (kills the Inf-delta infinite loop), bounded `phase_prev` + mag-filter state, and added an isfinite firewall before the OLA buffer. Builds; delay/TLA regression clean. Probable true cause of the stuck-100% (supersedes B6). | SLB |
