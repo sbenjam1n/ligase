@@ -645,26 +645,13 @@ typedef struct {
     float specmagfilter_onset_amount;  // 0.0-1.0
     // @endregion:ligase_pd.core.grain.fog.specmagfilter
 
-    // @region:ligase_pd.core.grain.fog.specmagfilter.magnitude_filter Spectral Filter State
-    // Per-bin 2-pole resonant-lowpass state. The filter runs on the COMPLEX FFT
-    // channel (real and imaginary parts, same coefficients) across successive
-    // frames — a linear, phase-coherent operation that smooths spectral evolution
-    // cleanly (Grainstorm-style), unlike filtering magnitude/phase separately.
-    float *mag_z1;               // Left: REAL-part state T-1
-    float *mag_z2;               // Left: REAL-part state T-2
-    float *im_z1;                // Left: IMAG-part state T-1
-    float *im_z2;                // Left: IMAG-part state T-2
-    float *mag_z1_right;         // Right: REAL-part state T-1 (independent mode)
-    float *mag_z2_right;         // Right: REAL-part state T-2 (independent mode)
-    float *im_z1_right;          // Right: IMAG-part state T-1 (independent mode)
-    float *im_z2_right;          // Right: IMAG-part state T-2 (independent mode)
-
-    // Per-bin accumulated heterodyne phase. With overlap the raw complex bins spin
-    // at their centre frequency frame-to-frame, so a lowpass on them would kill
-    // everything. We rotate each bin to baseband (remove this phase) before
-    // filtering and restore it after — so a steady component is DC (preserved) and
-    // only genuine spectral EVOLUTION is smoothed. Advanced once per hop.
-    float *het_phase;            // num_bins; shared L/R (signal-independent)
+    // @region:ligase_pd.core.grain.fog.specmagfilter.magnitude_filter Magnitude Filter State
+    // Per-bin filter state for magnitude temporal filtering (vertical axis)
+    // 2-pole IIR resonant lowpass filter for each bin
+    float *mag_z1;               // Left channel: magnitude state T-1
+    float *mag_z2;               // Left channel: magnitude state T-2
+    float *mag_z1_right;         // Right channel: magnitude state T-1 (independent mode)
+    float *mag_z2_right;         // Right channel: magnitude state T-2 (independent mode)
 
     // Pre-computed filter coefficients (updated when cutoff/resonance changes)
     float mag_a1, mag_a2;        // IIR feedback coefficients
@@ -672,10 +659,14 @@ typedef struct {
     // @endregion:ligase_pd.core.grain.fog.specmagfilter.magnitude_filter
 
     // @region:ligase_pd.core.grain.fog.specmagfilter.phase_filter Phase Filter State
-    // Fog leaves the analysis phase untouched (see filter_phases), so there is no
-    // per-bin phase state. phase_lp_coeff is retained because the fog_phase_cutoff
-    // message still computes it, but it no longer affects the audio.
-    float phase_lp_coeff;        // computed from fog_phase_cutoff; currently inert
+    // Per-bin filter state for phase temporal filtering
+    float *phase_prev;           // Left channel: previous phase value per bin
+    float *phase_delta_z1;       // Left channel: phase delta at T-1
+    float *phase_prev_right;     // Right channel: previous phase value per bin (independent mode)
+    float *phase_delta_z1_right; // Right channel: phase delta at T-1 (independent mode)
+
+    // Pre-computed filter coefficient for phase lowpass (1-pole)
+    float phase_lp_coeff;
     // @endregion:ligase_pd.core.grain.fog.specmagfilter.phase_filter
 
     // Stereo filter mode:
@@ -686,6 +677,13 @@ typedef struct {
     int stereo_filter_independent;
 
     // @region:ligase_pd.core.grain.fog.process Temporary Processing Buffers
+    // Buffers for FFT/spectral processing
+    float *magnitudes;           // Current frame magnitudes
+    float *phases;               // Current frame phases
+    float *smeared_mags;         // After horizontal smear
+    float *filtered_mags;        // After vertical magnitude filter
+    float *filtered_phases;      // After vertical phase filter
+
     // FFT buffers (real/imaginary, per channel)
     float *fft_real_left;
     float *fft_imag_left;
