@@ -115,6 +115,10 @@ static void filter_magnitudes(grain_fog_t *fog, float amount, float *z1, float *
         z1[i] = fog->mag_b1 * x_n - fog->mag_a1 * filtered + z2[i];
         z2[i] = fog->mag_b2 * x_n - fog->mag_a2 * filtered;
 
+        // Bound + sanitize the STATE (the tanh above limits only the output): a high-Q resonance
+        // or a stray NaN/Inf could otherwise let the per-bin state run away and flood the FFT/CPU.
+        if (!isfinite(z1[i])) z1[i] = 0.0f; else if (z1[i] > 1.0e4f) z1[i] = 1.0e4f; else if (z1[i] < -1.0e4f) z1[i] = -1.0e4f;
+        if (!isfinite(z2[i])) z2[i] = 0.0f; else if (z2[i] > 1.0e4f) z2[i] = 1.0e4f; else if (z2[i] < -1.0e4f) z2[i] = -1.0e4f;
         // Flush denormals to prevent CPU spikes
         if (fabsf(z1[i]) < 1e-15f) z1[i] = 0.0f;
         if (fabsf(z2[i]) < 1e-15f) z2[i] = 0.0f;
@@ -158,23 +162,27 @@ static void filter_phases(grain_fog_t *fog, float amount,
         // Calculate phase delta (unwrapped)
         float delta = current_phase - prev_phase;
 
-        // Wrap delta to [-pi, pi]
-        while (delta > M_PI) delta -= 2.0f * M_PI;
-        while (delta < -M_PI) delta += 2.0f * M_PI;
+        // Wrap delta to [-pi, pi] in O(1). The old while-loops hung the audio thread at 100% CPU
+        // if delta ever became Inf (Inf - 2*pi == Inf, so the loop never terminated).
+        if (!isfinite(delta)) delta = 0.0f;
+        delta -= 2.0f * M_PI * floorf((delta + (float)M_PI) * (float)(1.0 / (2.0 * M_PI)));
 
         // Lowpass filter the delta
         float filtered_delta = delta * (1.0f - fog->phase_lp_coeff) +
                               phase_delta_z1[i] * fog->phase_lp_coeff;
 
-        // Reconstruct filtered phase
+        // Reconstruct filtered phase, kept wrapped to [-pi, pi] so this per-bin accumulator can
+        // never drift to a huge magnitude or Inf (which would re-trip the unwrap above).
         float filtered_phase = prev_phase + filtered_delta;
+        filtered_phase -= 2.0f * M_PI * floorf((filtered_phase + (float)M_PI) * (float)(1.0 / (2.0 * M_PI)));
+        if (!isfinite(filtered_phase)) filtered_phase = 0.0f;
 
         // Update state
         phase_delta_z1[i] = filtered_delta;
         phase_prev[i] = filtered_phase;
 
-        // Flush denormals to prevent CPU spikes
-        if (fabsf(phase_delta_z1[i]) < 1e-15f) phase_delta_z1[i] = 0.0f;
+        // Flush denormals / non-finite to prevent CPU spikes and a stuck NaN
+        if (!isfinite(phase_delta_z1[i]) || fabsf(phase_delta_z1[i]) < 1e-15f) phase_delta_z1[i] = 0.0f;
 
         // Blend between unfiltered and filtered based on amount
         fog->filtered_phases[i] = current_phase * (1.0f - amount) + filtered_phase * amount;
@@ -566,7 +574,10 @@ static void process_fft_frame(grain_fog_t *fog, float *input, float *output,
     // norm_factor = 1 / (N * COLA_sum), computed at init from the actual window.
     const float norm_factor = fog->cola_norm_factor;
     for (int i = 0; i < fog->fft_size; i++) {
-        output[i] = scratch[i] * fog->window[i] * norm_factor;
+        float v = scratch[i] * fog->window[i] * norm_factor;
+        // Firewall: never let a non-finite spectral result enter the persistent overlap-add
+        // buffer, where it would self-sustain (x + NaN = NaN forever) and re-enter the FFT.
+        output[i] = isfinite(v) ? v : 0.0f;
     }
 }
 

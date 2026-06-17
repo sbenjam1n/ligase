@@ -341,6 +341,17 @@ static inline void constant_power_mix(
 
 // @endregion:ligase_pd.dsp.crossfade
 
+// Fold a position into [start, start+len) in O(1). Never loops — safe for any finite/Inf/NaN
+// input and any len; a degenerate splice (len <= 0) or non-finite position pins to start.
+// Replaces the subtractive while-wraps that hung the audio thread at 100% CPU on a zero-length
+// splice or a runaway/non-finite playhead position.
+static inline float wrap_to_splice(float pos, float start, float len) {
+    if (!(len > 0.0f) || !isfinite(pos)) return start;
+    float rel = fmodf(pos - start, len);
+    if (rel < 0.0f) rel += len;
+    return start + rel;
+}
+
 // @region:ligase_pd.pd_external.dsp DSP Callback
 
 // Debug flag - set to 0 to disable verbose logging
@@ -1126,9 +1137,8 @@ static void ligase_process_grains(ligase_t *x,
                     // GrainStart offsets where grain reads relative to playhead
                     float grain_pos = x->playback_position + (x->grain_start * splice_length);
 
-                    // Wrap grain position within splice bounds
-                    while (grain_pos >= splice_end) grain_pos -= splice_length;
-                    while (grain_pos < splice_start) grain_pos += splice_length;
+                    // Wrap grain position within splice bounds (O(1), can't hang)
+                    grain_pos = wrap_to_splice(grain_pos, (float)splice_start, splice_length);
 
                     scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth);
 
@@ -1145,16 +1155,12 @@ static void ligase_process_grains(ligase_t *x,
                 // Advance playback position through splice at scan_rate (can be negative)
                 x->playback_position += x->scan_rate;
 
-                // Loop playback position within splice bounds (forward or backward)
-                int wrapped = 0;
-                while (x->playback_position >= splice_end) {
-                    x->playback_position -= splice_length;
-                    wrapped = 1;
-                }
-                while (x->playback_position < splice_start) {
-                    x->playback_position += splice_length;
-                    wrapped = 1;
-                }
+                // Loop playback position within splice bounds (O(1) fold — never hangs even on a
+                // zero-length splice or a runaway/non-finite position)
+                int wrapped = (x->playback_position >= (float)splice_end ||
+                               x->playback_position < (float)splice_start ||
+                               !isfinite(x->playback_position));
+                x->playback_position = wrap_to_splice(x->playback_position, (float)splice_start, splice_length);
 
                 // Bang outlet when splice ends (wraps) - only in default mode
                 if (wrapped && x->outlet3_mode == 0) {
@@ -1195,16 +1201,11 @@ static void ligase_process_grains(ligase_t *x,
                 float advance_samples = advance_grain_length * x->sample_rate;
                 x->playback_position += advance_samples;
 
-                // Wrap playback position within splice bounds
-                int wrapped = 0;
-                while (x->playback_position >= splice_end) {
-                    x->playback_position -= splice_length;
-                    wrapped = 1;
-                }
-                while (x->playback_position < splice_start) {
-                    x->playback_position += splice_length;
-                    wrapped = 1;
-                }
+                // Wrap playback position within splice bounds (O(1) fold — never hangs)
+                int wrapped = (x->playback_position >= (float)splice_end ||
+                               x->playback_position < (float)splice_start ||
+                               !isfinite(x->playback_position));
+                x->playback_position = wrap_to_splice(x->playback_position, (float)splice_start, splice_length);
 
                 // Bang outlet when splice ends (wraps) - only in default mode
                 if (wrapped && x->outlet3_mode == 0) {
@@ -1240,9 +1241,8 @@ static void ligase_process_grains(ligase_t *x,
                     // GrainStart offsets where grain reads relative to playhead
                     float grain_pos = x->playback_position + (x->grain_start * splice_length);
 
-                    // Wrap grain position within splice bounds
-                    while (grain_pos >= splice_end) grain_pos -= splice_length;
-                    while (grain_pos < splice_start) grain_pos += splice_length;
+                    // Wrap grain position within splice bounds (O(1), can't hang)
+                    grain_pos = wrap_to_splice(grain_pos, (float)splice_start, splice_length);
 
                     scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth);
 

@@ -132,12 +132,11 @@ static void grain_delay_process_dd4(grain_delay_t *delay, float *in_left, float 
         // Calculate read position using smoothed delay time (supports fractional delay)
         float read_pos_float = delay->write_pos - delay->current_delay_samples;
 
-        // Ensure read_pos_float is within valid range [0, buffer_size)
-        // Handle both underflow and overflow cases
-        while (read_pos_float < 0)
-            read_pos_float += delay->buffer_size;
-        while (read_pos_float >= delay->buffer_size)
-            read_pos_float -= delay->buffer_size;
+        // Fold read_pos_float into [0, buffer_size) in O(1) — never hangs even if the smoothed
+        // delay drives it non-finite or far out of range.
+        if (!isfinite(read_pos_float)) read_pos_float = 0.0f;
+        read_pos_float = fmodf(read_pos_float, (float)delay->buffer_size);
+        if (read_pos_float < 0.0f) read_pos_float += (float)delay->buffer_size;
 
         // Integer and fractional parts for linear interpolation
         int read_pos = (int)read_pos_float;
@@ -162,9 +161,10 @@ static void grain_delay_process_dd4(grain_delay_t *delay, float *in_left, float 
         float filtered_left = lpf_coeff * delayed_left + (1.0f - lpf_coeff) * delay->lpf_state_left;
         float filtered_right = lpf_coeff * delayed_right + (1.0f - lpf_coeff) * delay->lpf_state_right;
 
-        // Flush denormals to zero to prevent CPU spikes from subnormal floats
-        if (fabsf(filtered_left) < 1e-20f) filtered_left = 0.0f;
-        if (fabsf(filtered_right) < 1e-20f) filtered_right = 0.0f;
+        // Flush denormals AND non-finite (NaN/Inf) to zero — prevents both the CPU-eating
+        // subnormal slowdown and a NaN/Inf poisoning the feedback buffer forever.
+        if (!isfinite(filtered_left)  || fabsf(filtered_left)  < 1e-20f) filtered_left  = 0.0f;
+        if (!isfinite(filtered_right) || fabsf(filtered_right) < 1e-20f) filtered_right = 0.0f;
         delay->lpf_state_left = filtered_left;
         delay->lpf_state_right = filtered_right;
 
@@ -206,6 +206,13 @@ void grain_delay_process(grain_delay_t *delay,
                         uint32_t splice_start,
                         uint32_t splice_end) {
     if (!delay) return;
+
+    // Guard a degenerate buffer (sample_rate 0 / realloc failure): the wrap loops and the
+    // `% buffer_size` indexing below would otherwise hang the audio thread or divide by zero.
+    if (delay->buffer_size <= 0) {
+        for (int i = 0; i < blocksize; i++) { out_left[i] = in_left[i]; out_right[i] = in_right[i]; }
+        return;
+    }
 
     // Dispatch based on mode
     switch (delay->mode) {

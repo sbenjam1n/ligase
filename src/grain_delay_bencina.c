@@ -134,6 +134,7 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
             // CORE BENCINA LOGIC: Calculate read position RELATIVE to current write head
             // This is the "moving tap" - it follows the write head at a fixed distance
             float read_pos_float = delay->write_pos - g->read_offset;
+            if (!isfinite(read_pos_float)) read_pos_float = 0.0f;
 
             // Handle wrapping based on mode
             if (g->wrap_mode == 1) {
@@ -141,9 +142,8 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
                 // If delay > splice length, wrap within the splice (creates phasing/layering)
 
                 // Convert global buffer position to splice-relative position
-                while (read_pos_float < 0) {
-                    read_pos_float += delay->buffer_size;
-                }
+                read_pos_float = fmodf(read_pos_float, (float)delay->buffer_size);
+                if (read_pos_float < 0.0f) read_pos_float += (float)delay->buffer_size;
 
                 // Map to splice coordinates
                 int global_read_pos = (int)read_pos_float % delay->buffer_size;
@@ -163,12 +163,8 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
             } else {
                 // GLOBAL WRAP MODE: Wrap within entire buffer (ignores splice boundaries)
                 // This creates "ghost" effects where grains can read from previous splices
-                while (read_pos_float < 0) {
-                    read_pos_float += delay->buffer_size;
-                }
-                while (read_pos_float >= delay->buffer_size) {
-                    read_pos_float -= delay->buffer_size;
-                }
+                read_pos_float = fmodf(read_pos_float, (float)delay->buffer_size);
+                if (read_pos_float < 0.0f) read_pos_float += (float)delay->buffer_size;
             }
 
             // Integer and fractional parts for linear interpolation
@@ -223,6 +219,10 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
         float filtered_left = lpf_coeff * grain_sum_left + (1.0f - lpf_coeff) * delay->lpf_state_left;
         float filtered_right = lpf_coeff * grain_sum_right + (1.0f - lpf_coeff) * delay->lpf_state_right;
 
+        // Flush denormals AND non-finite from the feedback state (DD-4 does this; Bencina didn't):
+        // its recirculating loop otherwise accrued subnormals (CPU creep) or a stuck NaN/Inf.
+        if (!isfinite(filtered_left)  || fabsf(filtered_left)  < 1e-20f) filtered_left  = 0.0f;
+        if (!isfinite(filtered_right) || fabsf(filtered_right) < 1e-20f) filtered_right = 0.0f;
         delay->lpf_state_left = filtered_left;
         delay->lpf_state_right = filtered_right;
 
