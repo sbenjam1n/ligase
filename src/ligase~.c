@@ -1809,30 +1809,18 @@ static void ligase_record(ligase_t *x, t_floatarg f) {
         recorder_start(x->recorder);
         post("ligase~: recording started (overdub mode)");
     } else {
-        // recinput and recsplice both create a new splice on stop. Navigation afterward is
-        // governed by the SHARED splice_jump (jump_to_new) option — identical for both modes:
-        //   0 = stay in the current splice (default), 1 = jump to the new splice (immediate,
-        //   repositioning the playhead — same path as ligase_add_splice's jump_to_new).
-        // They differ only in WHEN the boundary marker is planted: recsplice plants it at
-        // START (to pin the current splice's end so the take can't grow it and feed back),
-        // recinput plants it here at stop (raw input has no granular feedback to guard).
+        // recinput and recsplice both record onto fresh tape and plant their boundary marker
+        // at START (pinning the current splice's end so the take can't grow it — recinput keeps
+        // the playing splice granulating, recsplice also avoids feeding back on its own output).
+        // So on stop the new splice is simply the last marker; no marker is created here.
+        // Navigation afterward is the SHARED splice_jump (jump_to_new) option — identical for
+        // both modes: 0 = stay in the current splice (default), 1 = jump to the new splice and
+        // reposition the playhead (same path as ligase_add_splice). They differ only in WHAT was
+        // recorded (recinput = raw input, recsplice = the SOS monitor mix).
         int is_new_splice = (x->recorder->mode == RECORD_MODE_NEW_SPLICE);
         int is_input_only = (x->recorder->mode == RECORD_MODE_INPUT_ONLY);
         if ((is_new_splice || is_input_only) && x->recorder->is_recording) {
-            int new_splice_index;
-            if (is_new_splice) {
-                // Marker already planted at recsplice START; it's the last splice.
-                new_splice_index = x->reel->splices.count - 1;
-            } else {
-                int splice_pos = recorder_get_new_splice_start(x->recorder);
-                if (splice_add(&x->reel->splices, splice_pos, NULL) != 0) {
-                    pd_error(x, "ligase~: failed to create splice (max %d splices reached)", MAX_SPLICES);
-                    recorder_stop(x->recorder);
-                    return;
-                }
-                new_splice_index = x->reel->splices.count - 1;
-            }
-
+            int new_splice_index = x->reel->splices.count - 1;  // marker planted at start
             const char *mode_name = is_new_splice ? "recsplice" : "recinput";
             if (x->splice_behavior.jump_to_new == 1) {
                 x->reel->splices.current_splice = new_splice_index;
@@ -1981,11 +1969,22 @@ static void ligase_rec_splice(ligase_t *x) {
 }
 
 static void ligase_rec_input(ligase_t *x) {
-    // Input-only recording: start recording input only (no sound-on-sound), create splice on stop
+    // Input-only recording: capture RAW input (no sound-on-sound) onto FRESH tape as a new
+    // splice. Like recsplice, plant the boundary marker at START so the current splice's end
+    // is pinned at the take's start point and can't grow into the tape being recorded — that
+    // keeps the splice you're playing granulating throughout the take instead of drifting into
+    // the freshly-recorded input. The only difference from recsplice is WHAT is recorded
+    // (raw input vs the SOS monitor mix); switching on stop is the shared jump_to_new option.
     recorder_set_mode(x->recorder, RECORD_MODE_INPUT_ONLY);
-    recorder_start(x->recorder);
-    post("ligase~: input-only recording started (will create splice at sample %d on stop)",
-         x->reel->length);
+    recorder_start(x->recorder);  // sets new_splice_start = record_position = reel->length
+    int splice_pos = recorder_get_new_splice_start(x->recorder);
+    if (splice_add(&x->reel->splices, splice_pos, NULL) != 0) {
+        pd_error(x, "ligase~: failed to create splice (max %d splices reached)", MAX_SPLICES);
+        recorder_stop(x->recorder);
+        return;
+    }
+    post("ligase~: input-only recording started (new splice %d pinned at sample %d)",
+         x->reel->splices.count, splice_pos);
 }
 
 static void ligase_clear_splices(ligase_t *x) {
