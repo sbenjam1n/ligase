@@ -6,6 +6,7 @@
 #include "grain_distortion.h"
 #include "grain_moogladder.h"
 #include "grain_fog.h"
+#include "grain_smear.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -196,6 +197,7 @@ struct _ligase {
     grain_delay_bencina_t *delay_bencina;  // Bencina mode processor
     grain_moogladder_t *moogladder;
     grain_fog_t *fog;
+    grain_smear_t *smear;   // allpass smear effect
 
     // Parameters
     float grain_size;
@@ -636,25 +638,14 @@ static void ligase_update_inlets(ligase_t *x,
         }
     }
 
-    // Update fog mix from inlet
-    // headless=1: epsilon threshold (0.0 = unconnected)
-    // headless=0: allow full 0.0 (0.0 = dry/bypassed)
-    float fog_mix = fog_in[0];
-
-    int should_update_fog = 0;
-    if (x->headless_mode) {
-        // Headless mode: epsilon threshold
-        should_update_fog = (fog_mix >= 0.001f && fog_mix <= 1.0f);
-    } else {
-        // Perfect signal mode: allow 0.0
-        should_update_fog = (fog_mix >= 0.0f && fog_mix <= 1.0f);
-    }
-
-    if (should_update_fog && x->fog) {
-        grain_fog_set_mix(x->fog, fog_mix);
-        if (x->scheduler && x->scheduler->fog_pool) {
-            fog_pool_set_mix(x->scheduler->fog_pool, fog_mix);
-        }
+    // Update smear mix from inlet 15.
+    // headless=1: epsilon threshold (0.0 = unconnected); headless=0: allow full 0.0.
+    float smear_mix = fog_in[0];
+    int should_update_smear = x->headless_mode
+        ? (smear_mix >= 0.001f && smear_mix <= 1.0f)
+        : (smear_mix >= 0.0f && smear_mix <= 1.0f);
+    if (should_update_smear && x->smear) {
+        grain_smear_set_mix(x->smear, smear_mix);
     }
 
     // Distortion is now fully message-controlled (no inlet)
@@ -742,7 +733,7 @@ static void ligase_update_inlets(ligase_t *x,
     x->gdelay_feedback_current = gdelay_feedback;
     x->gdelay_tone_current = gdelay_tone;
     x->gdelay_mix_current = gdelay_mix;
-    x->fog_current = fog_mix;
+    x->fog_current = smear_mix;   // inlet 15 -> smear mix
     x->moog_cutoff_current = moog_cutoff;
     x->moog_resonance_current = moog_resonance;
     x->moog_mix_current = moog_mix;
@@ -1480,18 +1471,10 @@ static void ligase_process_effects(ligase_t *x,
     // Prevents filter/distortion artifacts from accumulating in overdub recordings
     // Distortion feeds into filter for classic Moog sound with rich harmonics and self-oscillation
 
-    // Fog spectral effect (monitoring only, not recorded)
-    // Processes delayed grain output with smear and specmagfilter
-    // Only apply post-mix fog when in post-mix mode (position_mode == 1)
-    // Per-grain mode (position_mode == 0) is handled in scheduler_process
-    if (x->fog) {
-        int fog_post_mix = 1;  // default: post-mix
-        if (x->scheduler && x->scheduler->fog_pool) {
-            fog_post_mix = (x->scheduler->fog_pool->position_mode == 1);
-        }
-        if (fog_post_mix) {
-            grain_fog_process_block(x->fog, out_left, out_right, out_left, out_right, n);
-        }
+    // Allpass smear (monitoring only, not recorded): a cascade of 2nd-order
+    // allpass sections — cheap, stable, time-domain spectral smearing.
+    if (x->smear) {
+        grain_smear_process(x->smear, out_left, out_right, n);
     }
 
     // Distortion (monitoring only, not recorded)
@@ -1703,6 +1686,7 @@ static void ligase_set_sample_rate(ligase_t *x, int sr) {
     if (x->moogladder) x->moogladder->sample_rate = sr;  // cutoff normalized per-block
     if (x->delay_stut) x->delay_stut->sample_rate = sr;  // stut spacing computed per-trigger
     if (x->fog)        x->fog->sample_rate = sr;         // FFT frame-rate computed per-frame
+    if (x->smear)      grain_smear_set_sample_rate(x->smear, sr);
 
     // Subsystems that cache derived state — must reallocate / recompute
     if (x->reel)          reel_set_sample_rate(x->reel, sr);                          // resize 10-min reel to rate
@@ -2984,6 +2968,22 @@ static void ligase_fog_position(ligase_t *x, t_floatarg mode) {
 }
 
 // @endregion:ligase_pd.core.grain.fog.messages
+
+// @region:ligase_pd.core.grain.smear.messages Allpass Smear Message Handlers
+// These stay silent (no post()) — they fire on every value of a slider drag.
+static void ligase_smear_frequency(ligase_t *x, t_floatarg hz) {
+    if (x->smear) grain_smear_set_frequency(x->smear, hz);
+}
+static void ligase_smear_resonance(ligase_t *x, t_floatarg r) {
+    if (x->smear) grain_smear_set_resonance(x->smear, r);
+}
+static void ligase_smear_stages(ligase_t *x, t_floatarg stages) {
+    if (x->smear) grain_smear_set_stages(x->smear, (int)stages);
+}
+static void ligase_smear_feedback(ligase_t *x, t_floatarg fb) {
+    if (x->smear) grain_smear_set_feedback(x->smear, fb);
+}
+// @endregion:ligase_pd.core.grain.smear.messages
 
 // @region:ligase_pd.core.grain.distortion Grain Distortion Methods
 
@@ -4436,6 +4436,7 @@ static void ligase_get_state(ligase_t *x) {
 
 static void ligase_free(ligase_t *x) {
     if (x->fog) grain_fog_destroy(x->fog);
+    if (x->smear) grain_smear_destroy(x->smear);
     if (x->moogladder) grain_moogladder_destroy(x->moogladder);
     if (x->grain_delay) grain_delay_destroy(x->grain_delay);
     if (x->delay_bencina) grain_delay_bencina_destroy(x->delay_bencina);
@@ -4502,6 +4503,7 @@ static void *ligase_new(void) {
     x->delay_bencina = grain_delay_bencina_create(x->envelope, 48000);
     x->moogladder = grain_moogladder_create(48000);
     x->fog = grain_fog_create(48000, 0, 0);  // fft_size and overlap_factor from ligase.conf
+    x->smear = grain_smear_create(48000);    // allpass smear (active effect)
 
     // Create fog pool for per-grain fog mode (reads pool size from ligase.conf)
     x->scheduler->fog_pool = fog_pool_create(0, 48000, 0, 0);
@@ -4730,6 +4732,12 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_fog_specmagfilter_onset_amount, gensym("fog_specmagfilter_onset_amount"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_fog_stereo_filter_mode, gensym("fog_stereo_filter_mode"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_fog_position, gensym("fog_position"), A_DEFFLOAT, 0);
+
+    // Allpass smear controls. Mix is the signal inlet (inlet 15).
+    class_addmethod(ligase_class, (t_method)ligase_smear_frequency, gensym("smear_frequency"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_resonance, gensym("smear_resonance"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_stages, gensym("smear_stages"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_feedback, gensym("smear_feedback"), A_DEFFLOAT, 0);
 
     class_addmethod(ligase_class, (t_method)ligase_distortion_enable, gensym("distortion_enable"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_distortion_intensity, gensym("distortion"), A_DEFFLOAT, 0);
