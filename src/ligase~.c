@@ -1809,36 +1809,43 @@ static void ligase_record(ligase_t *x, t_floatarg f) {
         recorder_start(x->recorder);
         post("ligase~: recording started (overdub mode)");
     } else {
-        if (x->recorder->mode == RECORD_MODE_NEW_SPLICE && x->recorder->is_recording) {
-            // recsplice: the boundary marker was already planted at START, so the take
-            // never grew the current splice. The new splice is the last one. Switching
-            // is governed by the existing jump_to_new option (same path as ligase_add_splice):
-            // jump_to_new==1 moves to the new splice and repositions the playhead; otherwise
-            // we stay on the splice we were granulating and the new splice is left for nav.
-            int new_splice_index = x->reel->splices.count - 1;
+        // recinput and recsplice both create a new splice on stop. Navigation afterward is
+        // governed by the SHARED splice_jump (jump_to_new) option — identical for both modes:
+        //   0 = stay in the current splice (default), 1 = jump to the new splice (immediate,
+        //   repositioning the playhead — same path as ligase_add_splice's jump_to_new).
+        // They differ only in WHEN the boundary marker is planted: recsplice plants it at
+        // START (to pin the current splice's end so the take can't grow it and feed back),
+        // recinput plants it here at stop (raw input has no granular feedback to guard).
+        int is_new_splice = (x->recorder->mode == RECORD_MODE_NEW_SPLICE);
+        int is_input_only = (x->recorder->mode == RECORD_MODE_INPUT_ONLY);
+        if ((is_new_splice || is_input_only) && x->recorder->is_recording) {
+            int new_splice_index;
+            if (is_new_splice) {
+                // Marker already planted at recsplice START; it's the last splice.
+                new_splice_index = x->reel->splices.count - 1;
+            } else {
+                int splice_pos = recorder_get_new_splice_start(x->recorder);
+                if (splice_add(&x->reel->splices, splice_pos, NULL) != 0) {
+                    pd_error(x, "ligase~: failed to create splice (max %d splices reached)", MAX_SPLICES);
+                    recorder_stop(x->recorder);
+                    return;
+                }
+                new_splice_index = x->reel->splices.count - 1;
+            }
+
+            const char *mode_name = is_new_splice ? "recsplice" : "recinput";
             if (x->splice_behavior.jump_to_new == 1) {
                 x->reel->splices.current_splice = new_splice_index;
                 uint32_t new_start, new_end;
                 splice_get_bounds(&x->reel->splices, new_splice_index,
                                  x->reel->length, &new_start, &new_end);
                 x->playback_position = (float)new_start;
-                post("ligase~: recsplice stopped, jumped to new splice %d", new_splice_index);
+                post("ligase~: %s stopped, jumped to new splice %d", mode_name, new_splice_index);
                 ligase_send_current_splice_msg(x);
             } else {
-                post("ligase~: recsplice stopped, recorded new splice %d (staying on %d)",
-                     new_splice_index, x->reel->splices.current_splice);
+                post("ligase~: %s stopped, recorded new splice %d (staying on %d)",
+                     mode_name, new_splice_index, x->reel->splices.current_splice);
             }
-        } else if (x->recorder->mode == RECORD_MODE_INPUT_ONLY && x->recorder->is_recording) {
-            // recinput: raw-input capture; create its marker on stop, then select it.
-            int splice_pos = recorder_get_new_splice_start(x->recorder);
-            if (splice_add(&x->reel->splices, splice_pos, NULL) != 0) {
-                pd_error(x, "ligase~: failed to create splice (max %d splices reached)", MAX_SPLICES);
-                recorder_stop(x->recorder);
-                return;
-            }
-            x->reel->splices.current_splice = x->reel->splices.count - 1;
-            post("ligase~: recording stopped, new splice %d created at sample %d",
-                 x->reel->splices.count, splice_pos);
         } else {
             post("ligase~: recording stopped");
         }
