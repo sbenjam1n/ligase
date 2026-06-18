@@ -1392,9 +1392,9 @@ static void ligase_process_grains(ligase_t *x,
 
 static void ligase_process_effects(ligase_t *x,
     t_sample *out_left, t_sample *out_right, int n) {
-    // MONITORING EFFECTS: Fog, Distortion, and Moogladder applied after recording
-    // Signal chain: Grains → Mix → Delay → [RECORDING] → FOG → DISTORTION → MOOGLADDER → Output
-    // Prevents filter/distortion artifacts from accumulating in overdub recordings
+    // MONITORING EFFECTS: Smear, Distortion, and Moogladder applied after recording
+    // Signal chain: Grains → Mix → Delay → [RECORDING] → SMEAR → DISTORTION → MOOGLADDER → Output
+    // These are monitor-only — never written to the reel, so they can't accumulate in overdub
     // Distortion feeds into filter for classic Moog sound with rich harmonics and self-oscillation
 
     // Allpass smear (monitoring only, not recorded): a cascade of 2nd-order
@@ -1809,18 +1809,33 @@ static void ligase_record(ligase_t *x, t_floatarg f) {
         recorder_start(x->recorder);
         post("ligase~: recording started (overdub mode)");
     } else {
-        // Check if we were in NEW_SPLICE or INPUT_ONLY mode and need to create the splice
-        if ((x->recorder->mode == RECORD_MODE_NEW_SPLICE ||
-             x->recorder->mode == RECORD_MODE_INPUT_ONLY) &&
-            x->recorder->is_recording) {
+        if (x->recorder->mode == RECORD_MODE_NEW_SPLICE && x->recorder->is_recording) {
+            // recsplice: the boundary marker was already planted at START, so the take
+            // never grew the current splice. The new splice is the last one. Switching
+            // is governed by the existing jump_to_new option (same path as ligase_add_splice):
+            // jump_to_new==1 moves to the new splice and repositions the playhead; otherwise
+            // we stay on the splice we were granulating and the new splice is left for nav.
+            int new_splice_index = x->reel->splices.count - 1;
+            if (x->splice_behavior.jump_to_new == 1) {
+                x->reel->splices.current_splice = new_splice_index;
+                uint32_t new_start, new_end;
+                splice_get_bounds(&x->reel->splices, new_splice_index,
+                                 x->reel->length, &new_start, &new_end);
+                x->playback_position = (float)new_start;
+                post("ligase~: recsplice stopped, jumped to new splice %d", new_splice_index);
+                ligase_send_current_splice_msg(x);
+            } else {
+                post("ligase~: recsplice stopped, recorded new splice %d (staying on %d)",
+                     new_splice_index, x->reel->splices.current_splice);
+            }
+        } else if (x->recorder->mode == RECORD_MODE_INPUT_ONLY && x->recorder->is_recording) {
+            // recinput: raw-input capture; create its marker on stop, then select it.
             int splice_pos = recorder_get_new_splice_start(x->recorder);
-
             if (splice_add(&x->reel->splices, splice_pos, NULL) != 0) {
                 pd_error(x, "ligase~: failed to create splice (max %d splices reached)", MAX_SPLICES);
                 recorder_stop(x->recorder);
                 return;
             }
-
             x->reel->splices.current_splice = x->reel->splices.count - 1;
             post("ligase~: recording stopped, new splice %d created at sample %d",
                  x->reel->splices.count, splice_pos);
@@ -1939,11 +1954,23 @@ static void ligase_add_splice(ligase_t *x) {
 }
 
 static void ligase_rec_splice(ligase_t *x) {
-    // Morphagene "Rec + Splice": start recording, create splice on stop
+    // Morphagene "Rec + Splice": lay what-you-hear onto FRESH tape as a NEW splice.
+    // Plant the boundary marker at the take's start point NOW (not on stop): the last
+    // splice's end always tracks reel->length (splice_get_bounds), so without a marker
+    // here the current splice would grow into the tape being recorded and the granulator
+    // would read its own freshly-recorded output = feedback/overdub, not a clean capture.
+    // We keep granulating the EXISTING splice during the take (current_splice unchanged)
+    // and only move to the new splice on stop, honoring jump_to_new.
     recorder_set_mode(x->recorder, RECORD_MODE_NEW_SPLICE);
-    recorder_start(x->recorder);
-    post("ligase~: recsplice recording started (will create splice at sample %d on stop)",
-         x->reel->length);
+    recorder_start(x->recorder);  // sets new_splice_start = record_position = reel->length
+    int splice_pos = recorder_get_new_splice_start(x->recorder);
+    if (splice_add(&x->reel->splices, splice_pos, NULL) != 0) {
+        pd_error(x, "ligase~: failed to create splice (max %d splices reached)", MAX_SPLICES);
+        recorder_stop(x->recorder);
+        return;
+    }
+    post("ligase~: recsplice recording started (new splice %d pinned at sample %d)",
+         x->reel->splices.count, splice_pos);
 }
 
 static void ligase_rec_input(ligase_t *x) {
@@ -4473,7 +4500,7 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_bencina_wrap, gensym("bencina_wrap"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_bencina_clear, gensym("bencina_clear"), 0);
 
-    // Fog effect methods
+    // Smear effect methods
 
     // Allpass smear controls. Mix is the signal inlet (inlet 15).
     class_addmethod(ligase_class, (t_method)ligase_smear_frequency, gensym("smear_frequency"), A_DEFFLOAT, 0);
