@@ -41,7 +41,7 @@ Nothing is left to code — remaining items are **user hardware/ear sign-off + a
 
 ## §1. ACTIVE QUEUE (ordered; take the top UNBLOCKED item)
 
-_Nothing left to code — all bug work (B1, B2+polish, B4/B5, B6, B7, B8, B9) + manual + fog retune is implemented and verified headless. Pending = USER hardware/ear sign-off (B1 Tier-2 audible @44.1/96 k; B6/B8 long-session CPU stays flat under scanning+delay+fog; B7 fftease coexists; fog retune + B9 wet-level ear-test) and a push/PR. Branch `fix/audio-engine-and-manual` (unpushed)._
+_Branch `fix/audio-engine-and-manual` PUSHED to origin (2026-06-18, as owner). The FFT fog (B9) was removed entirely and replaced by the allpass smear (Seq 29–30); owner ear-tested it positively (resonator/bell mode works). The "silence/CPU after recording a splice" reports (B10/B11) were ultimately a STALE plugdata binary loading the old fog build — resolved once the smear build was actually loaded; recsplice verified to record + play back cleanly on the current binary (headless). OPEN: owner is reviewing recsplice ("fix recsplice") — awaiting the specific symptom on the smear build, since it works in headless tests. Other items (B1/B2/B4/B5/B6/B8) remain at owner hardware sign-off._
 
 | # | Item | Status | Gate to stop at | Plan |
 |---|------|--------|-----------------|------|
