@@ -19,7 +19,7 @@ endif
 
 TARGET = ligase~.$(EXT)
 
-SOURCES = src/ligase~.c src/envelope.c src/grain.c src/grain_delay.c src/grain_delay_stut.c src/grain_delay_bencina.c src/grain_distortion.c src/grain_moogladder.c src/grain_fog.c src/grain_smear.c src/kiss_fft.c src/kiss_fftr.c src/reel.c src/splice.c src/perlin.c src/sphere.c
+SOURCES = src/ligase~.c src/envelope.c src/grain.c src/grain_delay.c src/grain_delay_stut.c src/grain_delay_bencina.c src/grain_distortion.c src/grain_moogladder.c src/grain_smear.c src/reel.c src/splice.c src/perlin.c src/sphere.c
 OBJECTS = $(SOURCES:.c=.o)
 
 all: $(TARGET)
@@ -80,13 +80,6 @@ test_query: erosion_query_test.$(EXT)
 	@echo "Query test external built: erosion_query_test.$(EXT)"
 	@echo "Open test_query_system.pd to run tests"
 
-# Test fog bypass/passthrough (FFT->IFFT roundtrip)
-test_fog_build: test_fog.c src/grain_fog.o src/kiss_fft.o src/kiss_fftr.o
-	$(CC) $(CFLAGS) -o test_fog test_fog.c src/grain_fog.o src/kiss_fft.o src/kiss_fftr.o -lm
-
-test_fog: test_fog_build
-	./test_fog
-
 # Regenerate the PDF manual from the Markdown master (docs/ligase_manual.md).
 # Requires: pandoc + weasyprint (pip install weasyprint).
 manual: docs/ligase_manual.md docs/manual.css
@@ -95,6 +88,6 @@ manual: docs/ligase_manual.md docs/manual.css
 		-o ligase_manual.pdf
 	@echo "Regenerated ligase_manual.pdf"
 
-.PHONY: all clean install test_random test_pitch test_dist test_splice test_query test_fog manual
+.PHONY: all clean install test_random test_pitch test_dist test_splice test_query manual
 
 # @endregion:erosion_pd.utils

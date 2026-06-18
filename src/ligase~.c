@@ -5,7 +5,6 @@
 #include "perlin.h"
 #include "grain_distortion.h"
 #include "grain_moogladder.h"
-#include "grain_fog.h"
 #include "grain_smear.h"
 #include <stdlib.h>
 #include <string.h>
@@ -25,9 +24,8 @@
 #endif
 
 // Export ONLY the Pd entry point; everything else stays hidden (paired with -fvisibility=hidden)
-// so ligase's internal symbols (kiss_fft, grain_*, reel_*, …) don't collide in Pd's flat
-// namespace with other externals that vendor the same code — e.g. fftease, which also uses
-// kiss_fft. Without this, loading ligase~ blocks fftease and can hijack fog's own FFT calls.
+// so ligase's internal symbols (grain_*, reel_*, …) don't collide in Pd's flat namespace with
+// other externals that vendor the same code.
 #if defined(__GNUC__) || defined(__clang__)
 #define LIGASE_PUBLIC __attribute__((visibility("default")))
 #else
@@ -162,7 +160,7 @@ struct _ligase {
     t_inlet *x_gdelay_feedback;
     t_inlet *x_gdelay_tone;
     t_inlet *x_gdelay_mix;
-    t_inlet *x_fog;            // Fog effect mix (replaced distortion inlet)
+    t_inlet *x_smear;            // inlet 15: smear mix
     t_inlet *x_moog_cutoff;    // Moogladder cutoff frequency
     t_inlet *x_moog_resonance; // Moogladder resonance
     t_inlet *x_moog_mix;       // Moogladder dry/wet mix
@@ -196,7 +194,6 @@ struct _ligase {
     grain_delay_stut_t *delay_stut;        // Stut mode processor
     grain_delay_bencina_t *delay_bencina;  // Bencina mode processor
     grain_moogladder_t *moogladder;
-    grain_fog_t *fog;
     grain_smear_t *smear;   // allpass smear effect
 
     // Parameters
@@ -296,7 +293,7 @@ struct _ligase {
     float gdelay_feedback_current;
     float gdelay_tone_current;
     float gdelay_mix_current;
-    float fog_current;
+    float smear_current;   // tracks inlet 15 (smear mix)
     float moog_cutoff_current;
     float moog_resonance_current;
     float moog_mix_current;
@@ -304,13 +301,6 @@ struct _ligase {
     float env_skew_current;
     float amplitude_current;
     float pan_current;
-    float fog_mix_current_mod;
-    float fog_smear_bins_current;
-    float fog_smear_onset_current;
-    float fog_mag_cutoff_current;
-    float fog_mag_resonance_current;
-    float fog_phase_cutoff_current;
-    float fog_smf_onset_current;
     float stut_reps_current;
     float bencina_iot_current;
     float bencina_grainsize_current;
@@ -383,7 +373,7 @@ static void ligase_update_inlets(ligase_t *x,
     t_sample *sos_in, t_sample *iot_in, t_sample *maxgrains_in,
     t_sample *gdelay_time_in, t_sample *gdelay_feedback_in,
     t_sample *gdelay_tone_in, t_sample *gdelay_mix_in,
-    t_sample *fog_in, t_sample *moog_cutoff_in, t_sample *moog_resonance_in,
+    t_sample *smear_in, t_sample *moog_cutoff_in, t_sample *moog_resonance_in,
     t_sample *moog_mix_in, t_sample *midi_in, t_sample *env_skew_in,
     t_sample *amplitude_in, t_sample *pan_in, int n) {
     // Update parameters from inlets, with validation
@@ -640,7 +630,7 @@ static void ligase_update_inlets(ligase_t *x,
 
     // Update smear mix from inlet 15.
     // headless=1: epsilon threshold (0.0 = unconnected); headless=0: allow full 0.0.
-    float smear_mix = fog_in[0];
+    float smear_mix = smear_in[0];
     int should_update_smear = x->headless_mode
         ? (smear_mix >= 0.001f && smear_mix <= 1.0f)
         : (smear_mix >= 0.0f && smear_mix <= 1.0f);
@@ -733,7 +723,7 @@ static void ligase_update_inlets(ligase_t *x,
     x->gdelay_feedback_current = gdelay_feedback;
     x->gdelay_tone_current = gdelay_tone;
     x->gdelay_mix_current = gdelay_mix;
-    x->fog_current = smear_mix;   // inlet 15 -> smear mix
+    x->smear_current = smear_mix;   // inlet 15 -> smear mix
     x->moog_cutoff_current = moog_cutoff;
     x->moog_resonance_current = moog_resonance;
     x->moog_mix_current = moog_mix;
@@ -849,70 +839,6 @@ static void ligase_update_inlets(ligase_t *x,
     if (x->scheduler->moog_mix_range.enabled) {
         grain_moogladder_set_mix(x->moogladder, sampled_moog_mix);
         x->moog_mix_current = sampled_moog_mix;  // Store modulated value for query
-    }
-
-    // Sample fog parameters with range (if enabled)
-    if (x->scheduler->fog_mix_range.enabled) {
-        float sampled = sample_param_range(&x->scheduler->fog_mix_range,
-                                           &x->scheduler->perlin_state,
-                                           x->fog ? x->fog->mix : 0.0f);
-        if (x->fog) grain_fog_set_mix(x->fog, sampled);
-        if (x->scheduler->fog_pool) fog_pool_set_mix(x->scheduler->fog_pool, sampled);
-        x->fog_mix_current_mod = sampled;
-    }
-
-    if (x->scheduler->fog_smear_bins_range.enabled) {
-        float sampled = sample_param_range(&x->scheduler->fog_smear_bins_range,
-                                           &x->scheduler->perlin_state,
-                                           x->fog ? (float)x->fog->smear_bins : 0.0f);
-        if (x->fog) grain_fog_set_smear_bins(x->fog, (int)sampled);
-        if (x->scheduler->fog_pool) fog_pool_set_smear_bins(x->scheduler->fog_pool, (int)sampled);
-        x->fog_smear_bins_current = sampled;
-    }
-
-    if (x->scheduler->fog_smear_onset_range.enabled) {
-        float sampled = sample_param_range(&x->scheduler->fog_smear_onset_range,
-                                           &x->scheduler->perlin_state,
-                                           x->fog ? x->fog->smear_onset_amount : 0.0f);
-        if (x->fog) grain_fog_set_smear_onset_amount(x->fog, sampled);
-        if (x->scheduler->fog_pool) fog_pool_set_smear_onset_amount(x->scheduler->fog_pool, sampled);
-        x->fog_smear_onset_current = sampled;
-    }
-
-    if (x->scheduler->fog_mag_cutoff_range.enabled) {
-        float sampled = sample_param_range(&x->scheduler->fog_mag_cutoff_range,
-                                           &x->scheduler->perlin_state,
-                                           x->fog ? x->fog->mag_cutoff_hz : 1.0f);
-        if (x->fog) grain_fog_set_mag_cutoff(x->fog, sampled);
-        if (x->scheduler->fog_pool) fog_pool_set_mag_cutoff(x->scheduler->fog_pool, sampled);
-        x->fog_mag_cutoff_current = sampled;
-    }
-
-    if (x->scheduler->fog_mag_resonance_range.enabled) {
-        float sampled = sample_param_range(&x->scheduler->fog_mag_resonance_range,
-                                           &x->scheduler->perlin_state,
-                                           x->fog ? x->fog->mag_resonance : 0.707f);
-        if (x->fog) grain_fog_set_mag_resonance(x->fog, sampled);
-        if (x->scheduler->fog_pool) fog_pool_set_mag_resonance(x->scheduler->fog_pool, sampled);
-        x->fog_mag_resonance_current = sampled;
-    }
-
-    if (x->scheduler->fog_phase_cutoff_range.enabled) {
-        float sampled = sample_param_range(&x->scheduler->fog_phase_cutoff_range,
-                                           &x->scheduler->perlin_state,
-                                           x->fog ? x->fog->phase_cutoff_hz : 1.0f);
-        if (x->fog) grain_fog_set_phase_cutoff(x->fog, sampled);
-        if (x->scheduler->fog_pool) fog_pool_set_phase_cutoff(x->scheduler->fog_pool, sampled);
-        x->fog_phase_cutoff_current = sampled;
-    }
-
-    if (x->scheduler->fog_smf_onset_range.enabled) {
-        float sampled = sample_param_range(&x->scheduler->fog_smf_onset_range,
-                                           &x->scheduler->perlin_state,
-                                           x->fog ? x->fog->specmagfilter_onset_amount : 0.0f);
-        if (x->fog) grain_fog_set_specmagfilter_onset_amount(x->fog, sampled);
-        if (x->scheduler->fog_pool) fog_pool_set_specmagfilter_onset_amount(x->scheduler->fog_pool, sampled);
-        x->fog_smf_onset_current = sampled;
     }
 
     // Sample stut_reps with range (if enabled)
@@ -1518,7 +1444,7 @@ static void ligase_process_effects(ligase_t *x,
 
 static t_int *ligase_perform(t_int *w) {
     // Flush denormals to zero for this audio callback (FPU mode is per-thread). Prevents the
-    // gradual CPU climb from subnormal floats piling up in delay/moog/distortion/fog feedback
+    // gradual CPU climb from subnormal floats piling up in delay/moog/distortion feedback
     // states when the granular output decays toward silence.
     LIGASE_FLUSH_DENORMALS();
 
@@ -1555,7 +1481,7 @@ static t_int *ligase_perform(t_int *w) {
     t_sample *gdelay_feedback_in = (t_sample *)(w[13]);
     t_sample *gdelay_tone_in = (t_sample *)(w[14]);
     t_sample *gdelay_mix_in = (t_sample *)(w[15]);
-    t_sample *fog_in = (t_sample *)(w[16]);
+    t_sample *smear_in = (t_sample *)(w[16]);
     t_sample *moog_cutoff_in = (t_sample *)(w[17]);
     t_sample *moog_resonance_in = (t_sample *)(w[18]);
     t_sample *moog_mix_in = (t_sample *)(w[19]);
@@ -1594,7 +1520,7 @@ static t_int *ligase_perform(t_int *w) {
 
     if (!speed_in || !organize_in || !scanrate_in || !sos_in || !iot_in || !maxgrains_in ||
         !gdelay_time_in || !gdelay_feedback_in || !gdelay_tone_in || !gdelay_mix_in ||
-        !fog_in || !moog_cutoff_in || !moog_resonance_in || !moog_mix_in ||
+        !smear_in || !moog_cutoff_in || !moog_resonance_in || !moog_mix_in ||
         !midi_in || !env_skew_in || !amplitude_in || !pan_in || !out_left || !out_right) {
 null_ptr_error:
         if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: ERROR - NULL signal pointer detected!\n");
@@ -1613,7 +1539,7 @@ null_ptr_error:
     ligase_update_inlets(x, grain_size_in, grain_start_in, speed_in, organize_in,
         scanrate_in, sos_in, iot_in, maxgrains_in,
         gdelay_time_in, gdelay_feedback_in, gdelay_tone_in, gdelay_mix_in,
-        fog_in, moog_cutoff_in, moog_resonance_in, moog_mix_in,
+        smear_in, moog_cutoff_in, moog_resonance_in, moog_mix_in,
         midi_in, env_skew_in, amplitude_in, pan_in, n);
     ligase_process_grains(x, in_left, in_right, out_left, out_right, sos_in, n);
     ligase_process_effects(x, out_left, out_right, n);
@@ -1685,7 +1611,6 @@ static void ligase_set_sample_rate(ligase_t *x, int sr) {
     if (x->scheduler)  x->scheduler->sample_rate = sr;   // grain length computed per-trigger
     if (x->moogladder) x->moogladder->sample_rate = sr;  // cutoff normalized per-block
     if (x->delay_stut) x->delay_stut->sample_rate = sr;  // stut spacing computed per-trigger
-    if (x->fog)        x->fog->sample_rate = sr;         // FFT frame-rate computed per-frame
     if (x->smear)      grain_smear_set_sample_rate(x->smear, sr);
 
     // Subsystems that cache derived state — must reallocate / recompute
@@ -2842,132 +2767,6 @@ static void ligase_bencina_clear(ligase_t *x) {
 
 // @endregion:ligase_pd.core.grain.delay_bencina
 
-// @region:ligase_pd.core.grain.fog.messages Fog Effect Message Handlers
-
-// NOTE: these handlers must NOT post() — they fire on every value of a GUI slider
-// drag (hundreds/sec). In the Pd GUI each post() repaints the console, so spamming
-// them chokes the main thread and spikes CPU on "any fog adjustment" (it doesn't
-// show up headless, where stderr is cheap). Parameter sets are silent.
-
-// Smear parameters
-static void ligase_fog_smear_bins(ligase_t *x, t_floatarg bins) {
-    if (x->fog) {
-        grain_fog_set_smear_bins(x->fog, (int)bins);
-    }
-    if (x->scheduler && x->scheduler->fog_pool) {
-        fog_pool_set_smear_bins(x->scheduler->fog_pool, (int)bins);
-    }
-}
-
-static void ligase_fog_smear_enable(ligase_t *x, t_floatarg enable) {
-    if (x->fog) {
-        grain_fog_set_smear_enabled(x->fog, (int)enable);
-    }
-    if (x->scheduler && x->scheduler->fog_pool) {
-        fog_pool_set_smear_enabled(x->scheduler->fog_pool, (int)enable);
-    }
-}
-
-static void ligase_fog_smear_onset_curve(ligase_t *x, t_floatarg curve) {
-    int curve_int = (int)curve;
-    if (curve_int < 0) curve_int = 0;
-    if (curve_int > 2) curve_int = 2;
-    if (x->fog) {
-        grain_fog_set_smear_onset_curve(x->fog, (fog_onset_curve_t)curve_int);
-    }
-    if (x->scheduler && x->scheduler->fog_pool) {
-        fog_pool_set_smear_onset_curve(x->scheduler->fog_pool, (fog_onset_curve_t)curve_int);
-    }
-}
-
-static void ligase_fog_smear_onset_amount(ligase_t *x, t_floatarg amount) {
-    if (x->fog) {
-        grain_fog_set_smear_onset_amount(x->fog, amount);
-    }
-    if (x->scheduler && x->scheduler->fog_pool) {
-        fog_pool_set_smear_onset_amount(x->scheduler->fog_pool, amount);
-    }
-}
-
-// SpecMagFilter parameters
-static void ligase_fog_mag_cutoff(ligase_t *x, t_floatarg cutoff_hz) {
-    if (x->fog) {
-        grain_fog_set_mag_cutoff(x->fog, cutoff_hz);
-    }
-    if (x->scheduler && x->scheduler->fog_pool) {
-        fog_pool_set_mag_cutoff(x->scheduler->fog_pool, cutoff_hz);
-    }
-}
-
-static void ligase_fog_mag_resonance(ligase_t *x, t_floatarg q) {
-    if (x->fog) {
-        grain_fog_set_mag_resonance(x->fog, q);
-    }
-    if (x->scheduler && x->scheduler->fog_pool) {
-        fog_pool_set_mag_resonance(x->scheduler->fog_pool, q);
-    }
-}
-
-static void ligase_fog_phase_cutoff(ligase_t *x, t_floatarg cutoff_hz) {
-    if (x->fog) {
-        grain_fog_set_phase_cutoff(x->fog, cutoff_hz);
-    }
-    if (x->scheduler && x->scheduler->fog_pool) {
-        fog_pool_set_phase_cutoff(x->scheduler->fog_pool, cutoff_hz);
-    }
-}
-
-static void ligase_fog_specmagfilter_enable(ligase_t *x, t_floatarg enable) {
-    if (x->fog) {
-        grain_fog_set_specmagfilter_enabled(x->fog, (int)enable);
-    }
-    if (x->scheduler && x->scheduler->fog_pool) {
-        fog_pool_set_specmagfilter_enabled(x->scheduler->fog_pool, (int)enable);
-    }
-}
-
-static void ligase_fog_specmagfilter_onset_curve(ligase_t *x, t_floatarg curve) {
-    int curve_int = (int)curve;
-    if (curve_int < 0) curve_int = 0;
-    if (curve_int > 2) curve_int = 2;
-    if (x->fog) {
-        grain_fog_set_specmagfilter_onset_curve(x->fog, (fog_onset_curve_t)curve_int);
-    }
-    if (x->scheduler && x->scheduler->fog_pool) {
-        fog_pool_set_specmagfilter_onset_curve(x->scheduler->fog_pool, (fog_onset_curve_t)curve_int);
-    }
-}
-
-static void ligase_fog_specmagfilter_onset_amount(ligase_t *x, t_floatarg amount) {
-    if (x->fog) {
-        grain_fog_set_specmagfilter_onset_amount(x->fog, amount);
-    }
-    if (x->scheduler && x->scheduler->fog_pool) {
-        fog_pool_set_specmagfilter_onset_amount(x->scheduler->fog_pool, amount);
-    }
-}
-
-static void ligase_fog_stereo_filter_mode(ligase_t *x, t_floatarg mode) {
-    if (x->fog) {
-        grain_fog_set_stereo_filter_mode(x->fog, (int)mode);
-    }
-    if (x->scheduler && x->scheduler->fog_pool) {
-        fog_pool_set_stereo_filter_mode(x->scheduler->fog_pool, (int)mode);
-    }
-}
-
-// Fog position mode: 0 = per-grain (each grain routed through independent fog slot)
-//                    1 = post-mix (single fog on mixed output, default)
-static void ligase_fog_position(ligase_t *x, t_floatarg mode) {
-    if (x->scheduler && x->scheduler->fog_pool) {
-        int m = (int)mode;
-        if (m < 0) m = 0;
-        if (m > 1) m = 1;
-        x->scheduler->fog_pool->position_mode = m;
-    }
-}
-
-// @endregion:ligase_pd.core.grain.fog.messages
 
 // @region:ligase_pd.core.grain.smear.messages Allpass Smear Message Handlers
 // These stay silent (no post()) — they fire on every value of a slider drag.
@@ -3284,15 +3083,6 @@ static param_range_t* get_param_range_by_name(ligase_t *x, const char *name) {
     if (strcmp(name, "dist_poly_c2") == 0) return &x->scheduler->dist_poly_c2_range;
     if (strcmp(name, "dist_poly_c3") == 0) return &x->scheduler->dist_poly_c3_range;
 
-    // Fog parameters
-    if (strcmp(name, "fog_mix") == 0) return &x->scheduler->fog_mix_range;
-    if (strcmp(name, "fog_smear_bins") == 0) return &x->scheduler->fog_smear_bins_range;
-    if (strcmp(name, "fog_smear_onset") == 0) return &x->scheduler->fog_smear_onset_range;
-    if (strcmp(name, "fog_mag_cutoff") == 0) return &x->scheduler->fog_mag_cutoff_range;
-    if (strcmp(name, "fog_mag_resonance") == 0) return &x->scheduler->fog_mag_resonance_range;
-    if (strcmp(name, "fog_phase_cutoff") == 0) return &x->scheduler->fog_phase_cutoff_range;
-    if (strcmp(name, "fog_smf_onset") == 0) return &x->scheduler->fog_smf_onset_range;
-
     // Stut
     if (strcmp(name, "stut_reps") == 0) return &x->scheduler->stut_reps_range;
 
@@ -3570,13 +3360,6 @@ static void ligase_rand_type(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
             &x->scheduler->dist_poly_c1_range,
             &x->scheduler->dist_poly_c2_range,
             &x->scheduler->dist_poly_c3_range,
-            &x->scheduler->fog_mix_range,
-            &x->scheduler->fog_smear_bins_range,
-            &x->scheduler->fog_smear_onset_range,
-            &x->scheduler->fog_mag_cutoff_range,
-            &x->scheduler->fog_mag_resonance_range,
-            &x->scheduler->fog_phase_cutoff_range,
-            &x->scheduler->fog_smf_onset_range,
             &x->scheduler->stut_reps_range,
             &x->scheduler->bencina_iot_range,
             &x->scheduler->bencina_grainsize_range,
@@ -3994,7 +3777,7 @@ static float get_current_value(ligase_t *x, const char *param_name) {
     if (strcmp(param_name, "gdelay_feed") == 0) return x->gdelay_feedback_current;
     if (strcmp(param_name, "gdelay_tone") == 0) return x->gdelay_tone_current;
     if (strcmp(param_name, "gdelay_mix") == 0) return x->gdelay_mix_current;
-    if (strcmp(param_name, "fog") == 0) return x->fog_current;
+    if (strcmp(param_name, "smear") == 0) return x->smear_current;
     if (strcmp(param_name, "moog_cutoff") == 0) return x->moog_cutoff_current;
     if (strcmp(param_name, "moog_resonance") == 0) return x->moog_resonance_current;
     if (strcmp(param_name, "moog_mix") == 0) return x->moog_mix_current;
@@ -4002,13 +3785,6 @@ static float get_current_value(ligase_t *x, const char *param_name) {
     if (strcmp(param_name, "env_skew") == 0) return x->env_skew_current;
     if (strcmp(param_name, "amplitude") == 0) return x->amplitude_current;
     if (strcmp(param_name, "pan") == 0) return x->pan_current;
-    if (strcmp(param_name, "fog_mix") == 0) return x->fog_mix_current_mod;
-    if (strcmp(param_name, "fog_smear_bins") == 0) return x->fog_smear_bins_current;
-    if (strcmp(param_name, "fog_smear_onset") == 0) return x->fog_smear_onset_current;
-    if (strcmp(param_name, "fog_mag_cutoff") == 0) return x->fog_mag_cutoff_current;
-    if (strcmp(param_name, "fog_mag_resonance") == 0) return x->fog_mag_resonance_current;
-    if (strcmp(param_name, "fog_phase_cutoff") == 0) return x->fog_phase_cutoff_current;
-    if (strcmp(param_name, "fog_smf_onset") == 0) return x->fog_smf_onset_current;
     if (strcmp(param_name, "stut_reps") == 0) return x->stut_reps_current;
     if (strcmp(param_name, "bencina_iot") == 0) return x->bencina_iot_current;
     if (strcmp(param_name, "bencina_grainsize") == 0) return x->bencina_grainsize_current;
@@ -4110,9 +3886,8 @@ static void ligase_get_inlets(ligase_t *x) {
     post("Inlet 14: gdelay_mix");
     post("       Current: %.3f", x->gdelay_mix_current);
     post("       Message: gdelay_mix %.3f", x->gdelay_mix_current);
-    post("Inlet 15: distortion");
-    post("       Current: %.3f", x->fog_current);
-    post("       Message: fog %.3f", x->fog_current);
+    post("Inlet 15: smear mix");
+    post("       Current: %.3f", x->smear_current);
     post("Inlet 16: moog_cutoff");
     post("       Current: %.1f", x->moog_cutoff_current);
     post("       Message: moog_cutoff %.1f", x->moog_cutoff_current);
@@ -4210,8 +3985,8 @@ static void ligase_get_params(ligase_t *x) {
     SETFLOAT(&argv[0], x->gdelay_mix_current);
     outlet_anything(x->x_state_out, gensym("gdelay_mix"), 1, argv);
 
-    SETFLOAT(&argv[0], x->fog_current);
-    outlet_anything(x->x_state_out, gensym("distortion"), 1, argv);
+    SETFLOAT(&argv[0], x->smear_current);
+    outlet_anything(x->x_state_out, gensym("smear"), 1, argv);
 
     SETFLOAT(&argv[0], x->moog_cutoff_current);
     outlet_anything(x->x_state_out, gensym("moog_cutoff"), 1, argv);
@@ -4284,14 +4059,6 @@ static void ligase_get_ranges(ligase_t *x) {
     output_param_range(x, "dist_poly_c2", &x->scheduler->dist_poly_c2_range);
     output_param_range(x, "dist_poly_c3", &x->scheduler->dist_poly_c3_range);
 
-    // Output fog parameter ranges
-    output_param_range(x, "fog_mix", &x->scheduler->fog_mix_range);
-    output_param_range(x, "fog_smear_bins", &x->scheduler->fog_smear_bins_range);
-    output_param_range(x, "fog_smear_onset", &x->scheduler->fog_smear_onset_range);
-    output_param_range(x, "fog_mag_cutoff", &x->scheduler->fog_mag_cutoff_range);
-    output_param_range(x, "fog_mag_resonance", &x->scheduler->fog_mag_resonance_range);
-    output_param_range(x, "fog_phase_cutoff", &x->scheduler->fog_phase_cutoff_range);
-    output_param_range(x, "fog_smf_onset", &x->scheduler->fog_smf_onset_range);
 
     // Output stut and bencina parameter ranges
     output_param_range(x, "stut_reps", &x->scheduler->stut_reps_range);
@@ -4346,14 +4113,6 @@ static void ligase_get_generators(ligase_t *x) {
     output_rand_type(x, "dist_poly_c2", &x->scheduler->dist_poly_c2_range);
     output_rand_type(x, "dist_poly_c3", &x->scheduler->dist_poly_c3_range);
 
-    // Output fog parameter generators
-    output_rand_type(x, "fog_mix", &x->scheduler->fog_mix_range);
-    output_rand_type(x, "fog_smear_bins", &x->scheduler->fog_smear_bins_range);
-    output_rand_type(x, "fog_smear_onset", &x->scheduler->fog_smear_onset_range);
-    output_rand_type(x, "fog_mag_cutoff", &x->scheduler->fog_mag_cutoff_range);
-    output_rand_type(x, "fog_mag_resonance", &x->scheduler->fog_mag_resonance_range);
-    output_rand_type(x, "fog_phase_cutoff", &x->scheduler->fog_phase_cutoff_range);
-    output_rand_type(x, "fog_smf_onset", &x->scheduler->fog_smf_onset_range);
 
     // Output stut and bencina parameter generators
     output_rand_type(x, "stut_reps", &x->scheduler->stut_reps_range);
@@ -4435,7 +4194,6 @@ static void ligase_get_state(ligase_t *x) {
 // @endregion:ligase_pd.pd_external.methods
 
 static void ligase_free(ligase_t *x) {
-    if (x->fog) grain_fog_destroy(x->fog);
     if (x->smear) grain_smear_destroy(x->smear);
     if (x->moogladder) grain_moogladder_destroy(x->moogladder);
     if (x->grain_delay) grain_delay_destroy(x->grain_delay);
@@ -4467,7 +4225,7 @@ static void *ligase_new(void) {
     x->x_gdelay_feedback = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);
     x->x_gdelay_tone = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);
     x->x_gdelay_mix = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);
-    x->x_fog = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);  // Inlet 15 - Fog effect mix
+    x->x_smear = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);  // Inlet 15 - smear mix
     x->x_moog_cutoff = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);
     x->x_moog_resonance = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);
     x->x_moog_mix = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);
@@ -4502,16 +4260,12 @@ static void *ligase_new(void) {
     x->delay_stut = grain_delay_stut_create(48000);
     x->delay_bencina = grain_delay_bencina_create(x->envelope, 48000);
     x->moogladder = grain_moogladder_create(48000);
-    x->fog = grain_fog_create(48000, 0, 0);  // fft_size and overlap_factor from ligase.conf
-    x->smear = grain_smear_create(48000);    // allpass smear (active effect)
-
-    // Create fog pool for per-grain fog mode (reads pool size from ligase.conf)
-    x->scheduler->fog_pool = fog_pool_create(0, 48000, 0, 0);
+    x->smear = grain_smear_create(48000);    // allpass smear effect
 
     // Check for allocation failures
     if (!x->reel || !x->envelope || !x->scheduler || !x->recorder ||
         !x->grain_delay || !x->delay_stut || !x->delay_bencina ||
-        !x->moogladder || !x->fog || !x->scheduler->fog_pool) {
+        !x->moogladder || !x->smear) {
         pd_error(x, "ligase~: failed to allocate memory for components");
         ligase_free(x);
         return NULL;
@@ -4720,18 +4474,6 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_bencina_clear, gensym("bencina_clear"), 0);
 
     // Fog effect methods
-    class_addmethod(ligase_class, (t_method)ligase_fog_smear_bins, gensym("fog_smear_bins"), A_DEFFLOAT, 0);
-    class_addmethod(ligase_class, (t_method)ligase_fog_smear_enable, gensym("fog_smear_enable"), A_DEFFLOAT, 0);
-    class_addmethod(ligase_class, (t_method)ligase_fog_smear_onset_curve, gensym("fog_smear_onset_curve"), A_DEFFLOAT, 0);
-    class_addmethod(ligase_class, (t_method)ligase_fog_smear_onset_amount, gensym("fog_smear_onset_amount"), A_DEFFLOAT, 0);
-    class_addmethod(ligase_class, (t_method)ligase_fog_mag_cutoff, gensym("fog_mag_cutoff"), A_DEFFLOAT, 0);
-    class_addmethod(ligase_class, (t_method)ligase_fog_mag_resonance, gensym("fog_mag_resonance"), A_DEFFLOAT, 0);
-    class_addmethod(ligase_class, (t_method)ligase_fog_phase_cutoff, gensym("fog_phase_cutoff"), A_DEFFLOAT, 0);
-    class_addmethod(ligase_class, (t_method)ligase_fog_specmagfilter_enable, gensym("fog_specmagfilter_enable"), A_DEFFLOAT, 0);
-    class_addmethod(ligase_class, (t_method)ligase_fog_specmagfilter_onset_curve, gensym("fog_specmagfilter_onset_curve"), A_DEFFLOAT, 0);
-    class_addmethod(ligase_class, (t_method)ligase_fog_specmagfilter_onset_amount, gensym("fog_specmagfilter_onset_amount"), A_DEFFLOAT, 0);
-    class_addmethod(ligase_class, (t_method)ligase_fog_stereo_filter_mode, gensym("fog_stereo_filter_mode"), A_DEFFLOAT, 0);
-    class_addmethod(ligase_class, (t_method)ligase_fog_position, gensym("fog_position"), A_DEFFLOAT, 0);
 
     // Allpass smear controls. Mix is the signal inlet (inlet 15).
     class_addmethod(ligase_class, (t_method)ligase_smear_frequency, gensym("smear_frequency"), A_DEFFLOAT, 0);
