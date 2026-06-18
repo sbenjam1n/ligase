@@ -14,12 +14,12 @@ A granular synthesizer/sampler/looper/delay external for [Pure Data](https://pur
 - **Chaotic parameter modulation** — random, Perlin noise (1D/2D), Lorenz attractor, and N-body gravitational simulation
 - **Pitch modes** — semitone, range, scale, and MIDI pitch control
 - **Timing quantization** — independent grids for IOT, grain size, and delay time with BPM and note division support
-- **Spectral processing** — FFT-based grain fog effect
+- **Allpass smear** — cascade of tunable allpass sections (spectral smear / dispersion); with feedback, a pitched bell-like resonator
 
 ## Signal Flow
 
 ```
-grains → delay → [RECORDING] → output → fog → Moog → distortion → dac~​ 
+grains → delay → [RECORDING] → smear → distortion → Moog → dac~
 ```
 
 ## Requirements

@@ -1658,6 +1658,17 @@ Default: 0.
 
 0 = pure dispersive smear. Toward ±0.99 the cascade rings into a resonator/comb (metallic tones). The allpass cascade is exactly unity-gain, so any value below 1 stays stable. Negative feedback shifts the resonant tuning.
 
+Resonator mode (playing it as a pitched bell)
+
+At high feedback (≈0.9-0.99) the smear becomes a pitched, bell-like resonator: the loop rings at the frequencies where its total phase wraps, producing a comb of partials.
+
+- smear_frequency tunes the pitch — sweep it to play the resonator up and down the spectrum.
+- smear_stages sets the comb density: more stages lower the fundamental and pack in more partials.
+- smear_resonance sharpens each partial (longer, more focused ring).
+- Negative feedback selects a different (more hollow/odd-harmonic) set of partials.
+
+Because the wet output is bounded (unity-gain allpass), the resonator can be driven straight into the Moog filter without the level running away — the filter then shapes the ring.
+
 # DISTORTION
 
 Multi-mode waveshaping with pre/post filters and oversampling. Two position modes: per-grain (experimental) or post-mix (default). In post-mix mode, distortion is applied only AFTER recording as a monitoring effect.

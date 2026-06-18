@@ -41,7 +41,7 @@ Ensure these files exist:
 - `ligase~.pd_linux` - The compiled external
 - `test_auto.pd` - Automated recording test patch
 - `test_playback.pd` - Automated playback verification patch
-- `ligase.conf` - Configuration file (fft_size, overlap_factor, max_grains)
+- `ligase.conf` - Configuration file (max_grains)
 
 ---
 
@@ -60,28 +60,7 @@ make
 - ✅ No compiler warnings or errors
 - ✅ `ligase~.pd_linux` is present and recently modified
 
-### Step 2: Run Fog Unit Tests
-
-```bash
-make test_fog
-```
-
-**Expected Output:**
-```
-=== Fog Bypass Test ===
-Test 1 PASS: gain = 0.00 dB (expected 0.00 dB)
-Test 2 PASS: THD = -137.76 dB (below -60 dB threshold)
-Test 3 PASS: latency = 0 samples (expected 0)
-Test 4 PASS: stereo gain match = 0.00 dB
-All fog tests passed.
-```
-
-**Success Criteria:**
-- ✅ All 4 tests report PASS
-- ✅ THD below -60 dB
-- ✅ Gain within 0.1 dB of 0 dB
-
-### Step 3: Clean Previous Test Results
+### Step 2: Clean Previous Test Results
 
 ```bash
 # Remove any previous test files
@@ -94,7 +73,7 @@ ls /tmp/ligase_test.wav 2>&1
 # Expected: "No such file or directory"
 ```
 
-### Step 4: Run Recording Test
+### Step 3: Run Recording Test
 
 Execute the automated recording test:
 
@@ -115,8 +94,6 @@ timeout 10s pd -nogui -nosound -stderr -path . test_auto.pd 2>&1 | tee /tmp/pd_a
 ```
 priority 6 scheduling failed; running at normal priority
 ligase~: Loaded max_grains = 200 from ligase.conf
-ligase~: Loaded fft_size = 1024 from ligase.conf
-ligase~: Loaded overlap_factor = 4 from ligase.conf
 ligase_dsp: CALLED (x=..., sp=...)
 ligase_dsp: Adding perform callback (sr=44100, blocksize=64)
 ligase_dsp: COMPLETE
@@ -133,7 +110,7 @@ ligase~: saved /tmp/ligase_test.wav
 - ✅ No error messages (except priority warnings, which are normal)
 - ✅ Process exits cleanly within 10 seconds
 
-### Step 5: Verify WAV File Creation
+### Step 4: Verify WAV File Creation
 
 Check that the recording was saved:
 
@@ -150,7 +127,7 @@ ls -lh /tmp/ligase_test.wav
 - ✅ File exists
 - ✅ File size is between 1.0 MB and 1.5 MB
 
-### Step 6: Analyze Audio Content
+### Step 5: Analyze Audio Content
 
 Use sox to verify the recording contains actual audio (not silence):
 
@@ -177,7 +154,7 @@ RMS     amplitude:     0.293041
 - ❌ Maximum amplitude < 0.1 (very weak signal)
 - ❌ File size < 100 KB (incomplete recording)
 
-### Step 7: Playback Buffer Verification
+### Step 6: Playback Buffer Verification
 
 This is the **most critical test** - it verifies the internal buffer contains audio:
 
@@ -405,7 +382,6 @@ For convenience, use this script to run all tests from the project root:
 #!/bin/bash
 cd ~/projects/ligase && \
 make && \
-make test_fog && \
 rm -f /tmp/ligase_test.wav && \
 echo "=== Running Recording Test ===" && \
 timeout 10s pd -nogui -nosound -stderr -path . test_auto.pd 2>&1 | tee /tmp/pd_auto.log && \
@@ -489,9 +465,10 @@ rm -f /tmp/ligase_test.wav /tmp/pd_auto.log /tmp/pd_playback.log
   - Test successfully detects the fix: buffer amplitude changed from 0.000000 to 0.481438
 
 - **2026-02-24:** Updated for ligase-improvements branch
-  - Added Step 1 (`make`) and Step 2 (`make test_fog`) to cover build and unit tests
-  - Renumbered remaining steps (3–7)
+  - Added Step 1 (`make`) to cover the build
   - Fixed `test_auto.pd` and `test_playback.pd`: added `[\; pd dsp 1]` wired from loadbang — required because Pd with `-nosound` does not start DSP automatically; without it `ligase_dsp: CALLED` never appears and all recordings are empty
+
+- **2026-06-18:** Removed the fog unit-test step (the FFT fog effect was replaced by the allpass smear; `make test_fog` no longer exists). Renumbered steps.
   - Updated expected output values to reflect current implementation (RMS 0.293, max 0.982, buffer check L/R 0.331)
   - Corrected project directory from `~/projects/ligase` to `~/projects/ligase`
   - Updated patch diagram in "Understanding test_auto.pd" to reflect actual wiring (removed obsolete `[receive e-ctl]` reference)

@@ -31,10 +31,9 @@ Must print the device. If empty: power-cycle / reconnect the interface, confirm 
 Proves the engine is rate-correct at every rate using Pd's `-r` flag and `-nosound` (DSP runs
 internally via `\; pd dsp 1`). Run each at **44100, 48000, 96000**.
 
-### T1.1 Build + fog unit tests
+### T1.1 Build
 ```bash
-make clean && make
-make test_fog            # 4 fog tests must PASS
+make clean && make       # clean compile, produces ligase~.pd_darwin
 ```
 
 ### T1.2 Record/buffer integrity at each rate  (extends test_auto.pd)

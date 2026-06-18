@@ -1,5 +1,10 @@
 # Ligase~ TODO
 
+> **Note (2026-06-18):** the FFT "fog" effect was removed and replaced by a
+> time-domain allpass **smear** (`src/grain_smear.{c,h}`). The fog changelog
+> entries below are historical — `grain_fog.c`, `process_fft_frame()`, the fog
+> pool, and kiss_fft no longer exist in the source.
+
 ## What I'd Change
 
 ### ~~Fog stereo filter state — add independent per-channel mode~~ ✓ DONE
