@@ -7,7 +7,7 @@ date: "© 2025 · GNU General Public License v2"
 
 # OVERVIEW
 
-ligase~ is a granular synthesizer/sampler/looper/delay with real-time recording, reel/splice management, spectral fog, filter, distortion and chaotic parameter modulation inspired by features of the Morphagene, Audiomulch’s DLGranulator and Tidalcycles.
+ligase~ is a granular synthesizer/sampler/looper/delay with real-time recording, reel/splice management, allpass smear, filter, distortion and chaotic parameter modulation inspired by features of the Morphagene, Audiomulch’s DLGranulator and Tidalcycles.
 
 ligase~ implements asynchronous granular synthesis with splice-based sample organization. The engine operates on a fixed-size stereo buffer (10 minutes at the host sample rate) divided into segments called splices.
 
@@ -79,7 +79,7 @@ No automatic gain compensation
 
 14. GDelay Mix - Dry/wet mix (0-1)
 
-15. Fog Mix - Spectral fog blend (0-1)
+15. Smear Mix - Allpass smear blend (0-1)
 
 16. Moog Cutoff - Filter cutoff (20-20000 Hz)
 
@@ -227,20 +227,13 @@ dist_poly_c1 <-10 to 10> - Linear coefficient
 dist_poly_c2 <-10 to 10> - Quadratic coefficient
 dist_poly_c3 <-10 to 10> - Cubic coefficient
 
-Fog (Spectral Effect)
+Smear (Allpass Spectral Effect)
 
-fog_smear_bins <0-32> - Frequency smear width (bins)
-fog_smear_enable <0|1> - Enable/disable smear
-fog_smear_onset_curve <0|1|2> - Linear/Exponential/Logarithmic
-fog_smear_onset_amount <0-1> - Smear onset depth
-fog_mag_cutoff <0.1-20> - Magnitude filter cutoff (Hz)
-fog_mag_resonance <0.1-10> - Magnitude filter Q
-fog_phase_cutoff <0.1-20> - Phase filter cutoff (Hz)
-fog_specmagfilter_enable <0|1> - Enable/disable temporal filter
-fog_specmagfilter_onset_curve <0|1|2> - Linear/Exponential/Logarithmic
-fog_specmagfilter_onset_amount <0-1> - Temporal filter onset depth
-fog_stereo_filter_mode <0|1> - Shared/Independent stereo state
-fog_position <0|1> - Per-grain/Post-mix mode
+smear_frequency <Hz> - Allpass center frequency (default 800)
+smear_resonance <0-0.999> - Pole radius / smear sharpness (default 0.7)
+smear_stages <0-48> - Number of allpass sections / smear depth (default 12)
+smear_feedback <-0.99 to 0.99> - Global feedback (0 = pure smear, toward ±1 = resonant)
+(mix is signal inlet 15, 0-1)
 
 Moogladder Filter
 
@@ -368,20 +361,11 @@ split: 0 (allow split)
 
 Effects
 
-fog_mix: 0.0 (dry)
-fog_smear_bins: 3
-fog_smear_enable: 1
-fog_smear_onset_curve: 2 (logarithmic)
-fog_smear_onset_amount: 0.8
-fog_mag_cutoff: 2.5 Hz
-fog_mag_resonance: 0.5
-fog_phase_cutoff: 3.0 Hz
-fog_specmagfilter_enable: 1
-fog_specmagfilter_onset_curve: 2 (logarithmic)
-fog_specmagfilter_onset_amount: 1.0
-fog_stereo_filter_mode: 1 (independent)
-fog_position: 1 (post-mix)
-fog_pool_size: 4 (configurable via ligase.conf)
+smear mix: 0.0 (dry, inlet 15)
+smear_frequency: 800 Hz
+smear_resonance: 0.7
+smear_stages: 12
+smear_feedback: 0.0
 gdelay_time: 0.0 (off)
 gdelay_feed: 0.0
 gdelay_tone: 0.5
@@ -1642,89 +1626,37 @@ Max voices      1               32              16
 
 All three modes share the circular delay buffer and write head. Mode-specific parameters only affect their respective mode. Switching modes via delay_mode takes effect immediately.
 
-# FOG (SPECTRAL EFFECT)
+# SMEAR (ALLPASS SPECTRAL EFFECT)
 
-FFT-based spectral processing applied to the grain output. Combines horizontal smear (frequency-axis magnitude averaging) and vertical specmagfilter (time-axis resonant filtering of magnitude and phase) to create spectral fog — timbral sustain, blurring, and ghostly persistence.
+A cascade of tunable second-order allpass sections applied to the grain output. Each section delays frequencies near its center by different amounts; cascading many of them smears transients and disperses the spectrum — a rich spectral delay that can blur, morph, and animate the sound. With feedback engaged the cascade becomes a resonator with metallic, comb-like tones. It is a time-domain effect (a handful of multiply-adds per sample) — light on CPU and unconditionally stable.
 
-Signal chain: FFT → polar conversion → smear → specmagfilter → IFFT
+Smear is a monitoring effect — it is not recorded into the reel. Applied after delay and before distortion in the effects chain.
 
-Fog is a monitoring effect — it is not recorded into the reel. Applied after delay and before distortion in the effects chain.
+Signal inlet 15: smear mix (0.0-1.0). 0.0 = dry bypass. 1.0 = full wet. Dry/wet blend of the input and the allpass output.
 
-Signal inlet 15: fog mix (0.0-1.0). 0.0 = dry bypass (no FFT processing). 1.0 = full wet (100% spectral effect). Equal-power crossfade between dry and wet.
+smear_frequency <Hz>  Center frequency where each allpass section's group delay peaks — the focus of the smear.
 
-Smear (Horizontal)
+Range: 20 Hz to ~0.45 × sample rate. Default: 800 Hz.
 
-Frequency-axis magnitude averaging. Blurs the spectral content across neighboring bins, creating a diffuse, hazy timbre.
+Sweeping it moves the smeared/resonant region up and down the spectrum.
 
-fog_smear_bins <int>  Number of neighbor bins to average on each side.
+smear_resonance <0-0.999>  Pole radius of the allpass sections — the sharpness of the smear.
 
-Range: 0 to 32. Default: 8.
+Default: 0.7.
 
-Higher values = wider blur, more diffuse timbre. 0 = no smearing.
+Higher values concentrate the group delay near the center frequency, giving a tighter, more pronounced (and, with feedback, more metallic) character. Lower values give a gentler, broader smear.
 
-fog_smear_enable <0|1>  Enable/disable smear processing.
+smear_stages <0-48>  Number of allpass sections cascaded — the depth of the smear.
 
-fog_smear_onset_curve <0|1|2>  How smear amount scales with fog mix. 0 = linear, 1 = exponential (x^2, delayed onset), 2 = logarithmic (sqrt, early onset). Default: 2.
+Default: 12.
 
-fog_smear_onset_amount <0-1>  Maximum smear depth at mix=1.0. Default: 1.0.
+More stages = longer dispersion and stronger transient smearing. 0 = no effect (the wet path passes through).
 
-SpecMagFilter (Vertical)
+smear_feedback <-0.99 to 0.99>  Global feedback around the whole cascade.
 
-Time-axis resonant filtering. Lowpass filters magnitude and phase per bin across consecutive FFT frames, creating temporal persistence — spectral content decays slowly rather than updating instantly.
+Default: 0.
 
-fog_mag_cutoff <float>  Magnitude filter cutoff frequency. Controls how quickly magnitudes track changes.
-
-Range: 0.1 to 20.0 Hz (relative to FFT hop rate). Default: 2.0 Hz.
-
-Lower values = slower tracking, longer spectral sustain. Higher values = faster response.
-
-fog_mag_resonance <float>  Magnitude filter resonance (Q factor). Adds a peak at the cutoff frequency, emphasizing the rate of spectral change.
-
-Range: 0.1 to 10.0. Default: 1.0.
-
-Higher values create a more pronounced, ringy spectral persistence. Soft-limited via tanh to prevent magnitude explosion.
-
-fog_phase_cutoff <float>  Phase lowpass cutoff. Controls smoothing of phase evolution between frames.
-
-Range: 0.1 to 20.0 Hz. Default: 2.0 Hz.
-
-Lower values freeze phase relationships, creating a static spectral snapshot.
-
-fog_specmagfilter_enable <0|1>  Enable/disable temporal filtering.
-
-fog_specmagfilter_onset_curve <0|1|2>  How filter depth scales with fog mix. 0 = linear, 1 = exponential, 2 = logarithmic (default).
-
-fog_specmagfilter_onset_amount <0-1>  Maximum filter depth at mix=1.0. Default: 1.0.
-
-Stereo Filter Mode
-
-fog_stereo_filter_mode <0|1>  Select stereo processing strategy.
-
-0 (default): Shared state. Left and right channels share the same per-bin filter state arrays. Creates a diffuse, mono-ish spectral character — both channels converge toward the same spectral evolution.
-
-1: Independent. Each channel has its own per-bin state arrays. Left and right channels evolve independently, preserving true stereo spectral separation.
-
-Per-Grain Fog Mode
-
-fog_position <0|1>  Select fog routing.
-
-0: Per-grain. Each grain is assigned to one of N independent fog slots via round-robin at trigger time. Grains accumulate into per-slot buffers, then each slot runs its own FFT pipeline. Different grains develop independent spectral evolution — some fogging faster, some slower — creating richer, more complex textures than global processing.
-
-1 (default): Post-mix. Single fog instance processes the mixed grain output. Existing behavior.
-
-Pool size is configurable via ligase.conf (fog_pool_size, 1-8 slots, default 4). Each slot costs ~76KB.
-
-Configuration (ligase.conf)
-
-fft_size = 1024       FFT window size: 512, 1024 (default), or 2048.
-512 = lower latency, less frequency resolution.
-2048 = highest resolution, higher latency.
-
-overlap_factor = 4    Overlap factor: 2, 4 (default), or 8.
-Higher = smoother temporal evolution, more CPU.
-
-fog_pool_size = 4     Per-grain fog slots: 1-8, default 4.
-~76KB per slot.
+0 = pure dispersive smear. Toward ±0.99 the cascade rings into a resonator/comb (metallic tones). The allpass cascade is exactly unity-gain, so any value below 1 stays stable. Negative feedback shifts the resonant tuning.
 
 # DISTORTION
 
@@ -1766,7 +1698,7 @@ Applied to final output AFTER all recording operations.
 
 Uses oversampling. Uses grain_distortion_process_block().
 
-Signal chain: grains → delay → [RECORDING] → fog → distortion → Moog → dac~
+Signal chain: grains → delay → [RECORDING] → smear → distortion → Moog → dac~
 
 Distortion NOT recorded (monitoring/output only).
 
@@ -2006,7 +1938,7 @@ When disabled or mix = 0.0, filter bypasses without processing.
 
 # PARAMETER RANGES & MODULATION
 
-Per-grain parameter variation system. Each parameter can vary within a specified range driven by one of nine generator types (rand, Perlin 1D/2D, Lorenz, N-body, sphere, saw, sine, square — four instances each). ~37 parameters across grain synthesis, timing/playback, delay, distortion, fog, and the modulation outlets are modulatable.
+Per-grain parameter variation system. Each parameter can vary within a specified range driven by one of nine generator types (rand, Perlin 1D/2D, Lorenz, N-body, sphere, saw, sine, square — four instances each). ~30 parameters across grain synthesis, timing/playback, delay, distortion, and the modulation outlets are modulatable. (The smear parameters are set directly, not via the modulation ranges.)
 
 Modulation Sources
 
@@ -2081,10 +2013,6 @@ gdelay (delay time), gdelay_feed, gdelay_tone, gdelay_mix, moog_cutoff, moog_res
 - Distortion:
 
 distortion (intensity), dist_emphasis_freq, dist_pregain, dist_curve_blend, dist_drive_pos, dist_drive_neg, dist_poly_c1, dist_poly_c2, dist_poly_c3
-
-- Fog (sampled per DSP block):
-
-fog_mix, fog_smear_bins, fog_smear_onset, fog_mag_cutoff, fog_mag_resonance, fog_phase_cutoff, fog_smf_onset
 
 - Stut (sampled per DSP block):
 
