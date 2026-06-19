@@ -1484,7 +1484,7 @@ Clamped to bounds.
 
 Smoothed internally to prevent clicks during time changes. Smoothing coefficient: 0.001 (approximately 20ms transition at 48kHz).
 
-Signal inlet 11: In DD-4/Bencina modes, updates delay time if value in range (0.0, 10.0]. In Stut mode (delay_mode 2), sets the repeat count (TidalCycles `count`, clamped 1-16) — but ONLY in headless 0 (signal-driven mode). In headless 1 the inlet is ignored here so the `stut_reps` message/modulation stays authoritative; you do not need to disconnect inlet 11 (it is the delay-time inlet in DD-4/Bencina and may carry a value there).
+Signal inlet 11: In DD-4/Bencina modes, updates delay time if value in range (0.0, 10.0]. In Stut mode (delay_mode 2), sets the repeat count (TidalCycles `count`, clamped 1-16) — but ONLY in headless 0 (signal-driven mode). In headless 1 the inlet is ignored here so the `stut_reps` message/modulation stays authoritative; you do not need to disconnect inlet 11 (it is the delay-time inlet in DD-4/Bencina and may carry a value there). Inlets 12 and 13 follow the same rule in Stut mode (see below): they drive stut_reduction/stut_spacing in headless 0 and are ignored in headless 1.
 
 gdelay_feed <float> Set feedback amount.
 
@@ -1584,43 +1584,47 @@ Quantized rhythmic delay. Unlike DD-4 and Bencina which run continuously, Stut i
 
 Architecture: the stut message captures the buffer write position at the moment of triggering. It then schedules up to 16 grains, each with a countdown timer (i × spacing) and a gain value (gain_reduction ^ i). During processing, each grain counts down; when its timer reaches zero it replays the captured slice — the `spacing`-length stretch of audio just before the trigger — scaled by its gain, with a short edge fade to avoid clicks. This produces decaying rhythmic repeats (a stutter) of the captured moment, not single-sample clicks.
 
-Active inlets: mix, and — in Stut mode — inlets 11, 12 and 13 are repurposed. Inlet 11 sets stut_reps (the repeat count / TidalCycles `count`, 1-16) instead of delay time. Inlet 12 controls stut_reduction (gain decay per repeat, 0.0-1.0) instead of feedback. Inlet 13 controls stut_spacing (repetition spacing in ms, 1.0-5000.0) instead of tone. Each repeat replays the captured slice with per-repetition gain decay — there is no feedback loop or tone filter in the stut signal path. The mix parameter controls dry/wet blend as usual. Modulation ranges (gdelay_feed range, gdelay_tone range) also route to stut_reduction and stut_spacing respectively when in Stut mode.
+Active inlets: mix, and — in Stut mode — inlets 11, 12 and 13 are repurposed. Inlet 11 sets stut_reps (the repeat count / TidalCycles `count`, 1-16) instead of delay time. Inlet 12 controls stut_reduction (gain decay per repeat, 0.0-1.0) instead of feedback. Inlet 13 controls stut_spacing (repetition spacing in ms, 1.0-5000.0) instead of tone. These three inlets drive their stut parameter ONLY in headless 0; in headless 1 they are ignored so the stut_reps/stut_reduction/stut_spacing messages stay authoritative (see "Setting stut parameters" below). Each repeat replays the captured slice with per-repetition gain decay — there is no feedback loop or tone filter in the stut signal path. The mix parameter controls dry/wet blend as usual. Modulation ranges (gdelay_feed range, gdelay_tone range) also route to stut_reduction and stut_spacing respectively when in Stut mode.
 
 stut  Trigger a stut sequence. Captures the current splice boundaries and write position. Schedules repetitions immediately. If delay quantization is active (delay_quant > 0, BPM running), uses the quantized grid spacing instead of stut_spacing.
 
 stut_reps <int>  Number of repetitions per trigger.
 
-Range: 1 to 16. Default: 4. See "Setting the repeat count" below for how this interacts with inlet 11 and the headless modes.
+Range: 1 to 16. Default: 4. See "Setting stut parameters" below for how this interacts with inlet 11 and the headless modes.
 
-Setting the repeat count (headless modes and initialization)
+Setting stut parameters (headless modes and initialization)
 
-The repeat count can be driven from three places. When more than one is active, the highest
-on this list wins — it is re-applied every audio block and overwrites the others:
+Three stut parameters share the delay inlets — stut_reps (inlet 11, normally delay time),
+stut_reduction (inlet 12, normally feedback) and stut_spacing (inlet 13, normally tone). Each
+can be driven from three places. When more than one is active, the highest on this list wins —
+it is re-applied every audio block and overwrites the others:
 
-1. Modulation (highest). If a stut_reps modulation range is enabled (param_range stut_reps
-   <min> <max>), the count is re-sampled and rewritten every block, overriding both the
-   message and inlet 11. To control the count manually, do NOT enable a stut_reps range (or
-   set it to a single fixed value). This is the most common reason a stut_reps message
-   "does nothing": an enabled range is silently re-driving the count.
+1. Modulation (highest). If that parameter's modulation range is enabled (e.g. param_range
+   stut_reps <min> <max>; reduction/spacing use the gdelay_feed / gdelay_tone ranges in Stut
+   mode), it is re-sampled and rewritten every block, overriding both the message and the
+   inlet. To control the parameter manually, do NOT enable its range (or set it to a single
+   fixed value).
 
-2. Inlet 11 — headless 0 ONLY. In headless 0 (perfect-signal / all-inlets-driven mode), a
-   value >= 1 on inlet 11 sets the count every block. An unconnected or 0 inlet 11 in
-   headless 0 reads below 1 and is ignored, so the message persists. In headless 1, inlet 11
-   is NOT read for the count at all (see below).
+2. Inlet 11/12/13 — headless 0 ONLY. In headless 0 (perfect-signal / all-inlets-driven mode)
+   the inlet sets its parameter every block. In headless 1 these three inlets are NOT read in
+   Stut mode at all, so they cannot clobber the messages (see below).
 
-3. stut_reps message (baseline). Sets the count and holds it until something above overwrites
-   it. This is the authoritative control in headless 1.
+3. Message (baseline). stut_reps / stut_reduction / stut_spacing set the value and hold it
+   until something above overwrites it. These are the authoritative controls in headless 1.
+
+Note: stut_length and stut_length_mode have no associated inlet, so they are always set by
+message regardless of headless mode.
 
 Per headless mode:
 
-- headless 1 (DEFAULT): inlet 11 is ignored for the count. Set it with the stut_reps message
-  (or a stut_reps modulation range). You do NOT need to disconnect inlet 11 — even if it
-  carries a delay-time value left over from a DD-4/Bencina patch, it will not touch the count.
+- headless 1 (DEFAULT): inlets 11/12/13 are ignored in Stut mode. Set reps/reduction/spacing
+  with their messages (or modulation ranges). You do NOT need to disconnect those inlets — even
+  if they carry delay-time/feedback/tone values left over from a DD-4/Bencina patch, they will
+  not touch the stut parameters. This is the entire point of headless 1: messages are authoritative.
 
-- headless 0 (perfect-signal): inlet 11 drives the count (value >= 1 -> count). Because
-  headless 0 expects every inlet to be driven, send the count you want on inlet 11 (and
-  reduction/spacing on inlets 12/13). If you leave inlet 11 unconnected it reads 0 and the
-  stut_reps message holds instead.
+- headless 0 (perfect-signal): inlets 11/12/13 drive reps/reduction/spacing respectively, every
+  block. Because headless 0 expects every inlet to be driven, send the values you want on those
+  inlets; the messages will be continuously overwritten by the inlet signal.
 
 Recommended initialization (headless 1):
 

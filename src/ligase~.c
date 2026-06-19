@@ -592,12 +592,12 @@ static void ligase_update_inlets(ligase_t *x,
 
     // Inlet 12: feedback (DD-4/Bencina) or stut_reduction (Stut)
     if (x->grain_delay->mode == DELAY_MODE_STUT) {
-        // In stut mode, inlet 12 controls gain reduction (0-1)
-        if (x->headless_mode) {
-            if (gdelay_feedback >= 0.001f && gdelay_feedback <= 1.0f) {
-                grain_delay_stut_set_reduction(x->delay_stut, gdelay_feedback);
-            }
-        } else {
+        // Stut: inlet 12 = gain reduction (0-1). Drive from the inlet ONLY in headless 0
+        // (perfect-signal / all-inlets-driven mode). In headless 1 the inlet is ignored so the
+        // stut_reduction MESSAGE/modulation stays authoritative — inlet 12 is the feedback inlet
+        // in DD-4/Bencina and may carry a value there; you should not have to disconnect it.
+        // (Same contract as inlet 11/stut_reps and inlet 13/stut_spacing.)
+        if (!x->headless_mode) {
             if (gdelay_feedback >= 0.0f && gdelay_feedback <= 1.0f) {
                 grain_delay_stut_set_reduction(x->delay_stut, gdelay_feedback);
             }
@@ -617,13 +617,11 @@ static void ligase_update_inlets(ligase_t *x,
 
     // Inlet 13: tone (DD-4/Bencina) or stut_spacing (Stut)
     if (x->grain_delay->mode == DELAY_MODE_STUT) {
-        // In stut mode, inlet 13 controls spacing in ms (1-5000)
-        if (x->headless_mode) {
+        // Stut: inlet 13 = spacing ms (1-5000). Drive from the inlet ONLY in headless 0; in
+        // headless 1 the inlet is ignored so the stut_spacing MESSAGE/modulation stays
+        // authoritative (inlet 13 is the tone inlet in DD-4/Bencina). Same contract as inlets 11/12.
+        if (!x->headless_mode) {
             if (gdelay_tone >= 1.0f && gdelay_tone <= 5000.0f) {
-                grain_delay_stut_set_spacing(x->delay_stut, gdelay_tone);
-            }
-        } else {
-            if (gdelay_tone >= 0.0f && gdelay_tone <= 5000.0f) {
                 grain_delay_stut_set_spacing(x->delay_stut, gdelay_tone);
             }
         }
@@ -2853,12 +2851,14 @@ static void ligase_stut(ligase_t *x) {
                              quantized_spacing, length_samples);
 
     if (quantized_spacing > 0.0f) {
-        post("ligase~: stut triggered (quantized spacing %.2f ms, slice %.1f ms%s)",
-             quantized_spacing, length_samples * 1000.0f / (float)x->sample_rate,
+        post("ligase~: stut triggered (reps %d, reduction %.2f, quantized spacing %.2f ms, slice %.1f ms%s)",
+             x->delay_stut->num_repetitions, x->delay_stut->gain_reduction, quantized_spacing,
+             length_samples * 1000.0f / (float)x->sample_rate,
              x->stut_length_mode ? " [grainsize]" : "");
     } else {
-        post("ligase~: stut triggered (spacing %.2f ms, slice %.1f ms%s)",
-             x->delay_stut->spacing_ms, length_samples * 1000.0f / (float)x->sample_rate,
+        post("ligase~: stut triggered (reps %d, reduction %.2f, spacing %.2f ms, slice %.1f ms%s)",
+             x->delay_stut->num_repetitions, x->delay_stut->gain_reduction, x->delay_stut->spacing_ms,
+             length_samples * 1000.0f / (float)x->sample_rate,
              x->stut_length_mode ? " [grainsize]" : "");
     }
 }
