@@ -1590,7 +1590,50 @@ stut  Trigger a stut sequence. Captures the current splice boundaries and write 
 
 stut_reps <int>  Number of repetitions per trigger.
 
-Range: 1 to 16. Default: 4.
+Range: 1 to 16. Default: 4. See "Setting the repeat count" below for how this interacts with inlet 11 and the headless modes.
+
+Setting the repeat count (headless modes and initialization)
+
+The repeat count can be driven from three places. When more than one is active, the highest
+on this list wins — it is re-applied every audio block and overwrites the others:
+
+1. Modulation (highest). If a stut_reps modulation range is enabled (param_range stut_reps
+   <min> <max>), the count is re-sampled and rewritten every block, overriding both the
+   message and inlet 11. To control the count manually, do NOT enable a stut_reps range (or
+   set it to a single fixed value). This is the most common reason a stut_reps message
+   "does nothing": an enabled range is silently re-driving the count.
+
+2. Inlet 11 — headless 0 ONLY. In headless 0 (perfect-signal / all-inlets-driven mode), a
+   value >= 1 on inlet 11 sets the count every block. An unconnected or 0 inlet 11 in
+   headless 0 reads below 1 and is ignored, so the message persists. In headless 1, inlet 11
+   is NOT read for the count at all (see below).
+
+3. stut_reps message (baseline). Sets the count and holds it until something above overwrites
+   it. This is the authoritative control in headless 1.
+
+Per headless mode:
+
+- headless 1 (DEFAULT): inlet 11 is ignored for the count. Set it with the stut_reps message
+  (or a stut_reps modulation range). You do NOT need to disconnect inlet 11 — even if it
+  carries a delay-time value left over from a DD-4/Bencina patch, it will not touch the count.
+
+- headless 0 (perfect-signal): inlet 11 drives the count (value >= 1 -> count). Because
+  headless 0 expects every inlet to be driven, send the count you want on inlet 11 (and
+  reduction/spacing on inlets 12/13). If you leave inlet 11 unconnected it reads 0 and the
+  stut_reps message holds instead.
+
+Recommended initialization (headless 1):
+
+  delay_mode 2         select Stut
+  gdelay_mix 1         hear the wet (mix 0 = dry only, no audible stutter)
+  stut_reps 4          repeat count (default 4)
+  stut_reduction 0.5   gain decay per repeat (default 0.5)
+  stut_spacing 125     ms between repeats (default 62.5)
+  stut_length 30       slice length per repeat; < spacing gives audible gaps between repeats
+  ... then send `stut` to trigger the sequence.
+
+Do not enable param_range stut_reps unless you want the count modulated; an enabled range
+overrides both the stut_reps message and inlet 11.
 
 stut_reduction <float>  Gain reduction factor per repeat. Each repetition's gain = reduction ^ repetition_number.
 
