@@ -12,7 +12,12 @@ extern float envelope_sample(envelope_t *env, float phase);
 // (the raw, overlap-normalized grain sum is ~unity with the dry, which felt too subtle).
 // Applied to the OUTPUT only — NOT to the feedback path — so the recirculation loop stays
 // stable (loop gain = feedback < 1) while the audible wet is boosted. Tunable.
-#define BENCINA_WET_GAIN 1.8f
+//
+// The wet is then tanh-soft-limited (see process): at 1.8x a ~unity grain sum hit ~1.8 and hard-
+// clipped at the output (sanitize only flushes NaN, it does not clamp levels). 1.3x keeps the
+// cloud prominent (≈1.3x at low level) while tanh bounds it to ±1 and rounds off peaks gracefully
+// instead of clipping — including when feedback drives the buffer hot.
+#define BENCINA_WET_GAIN 1.3f
 
 // @region:ligase_pd.core.grain.delay_bencina.types Bencina Type Management
 
@@ -257,11 +262,14 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
         // Advance write position
         delay->write_pos = (delay->write_pos + 1) % delay->buffer_size;
 
-        // Output: dry/wet mix. The wet gets BENCINA_WET_GAIN (output-only makeup) so the
-        // cloud is prominent; the feedback path above uses the un-boosted filtered signal,
-        // keeping the recirculation loop stable.
-        out_left[s] = in_left[s] * (1.0f - delay->mix) + filtered_left * BENCINA_WET_GAIN * delay->mix;
-        out_right[s] = in_right[s] * (1.0f - delay->mix) + filtered_right * BENCINA_WET_GAIN * delay->mix;
+        // Output: dry/wet mix. The wet gets BENCINA_WET_GAIN (output-only makeup) then a tanh
+        // soft-limit so it stays prominent but can never exceed ±1 (the clipping fix). The
+        // feedback path above uses the un-boosted, un-limited filtered signal, keeping the
+        // recirculation loop stable (loop gain = feedback only).
+        float wet_left  = tanhf(filtered_left  * BENCINA_WET_GAIN);
+        float wet_right = tanhf(filtered_right * BENCINA_WET_GAIN);
+        out_left[s]  = in_left[s]  * (1.0f - delay->mix) + wet_left  * delay->mix;
+        out_right[s] = in_right[s] * (1.0f - delay->mix) + wet_right * delay->mix;
     }
 }
 
