@@ -86,6 +86,8 @@ extern void grain_delay_bencina_destroy(grain_delay_bencina_t *bencina);
 extern void grain_delay_bencina_process(grain_delay_bencina_t *bencina, grain_delay_t *delay, float *in_left, float *in_right, float *out_left, float *out_right, int blocksize, uint32_t splice_start, uint32_t splice_end);
 extern void grain_delay_bencina_set_spacing(grain_delay_bencina_t *bencina, float spacing_ms);
 extern void grain_delay_bencina_set_grain_size(grain_delay_bencina_t *bencina, float size_seconds);
+extern void grain_delay_bencina_set_scatter(grain_delay_bencina_t *bencina, float amount);
+extern void grain_delay_bencina_set_edge(grain_delay_bencina_t *bencina, float amount);
 extern void grain_delay_bencina_set_wrap_mode(grain_delay_bencina_t *bencina, int mode);
 extern void grain_delay_bencina_clear(grain_delay_bencina_t *bencina);
 extern void grain_delay_bencina_set_sample_rate(grain_delay_bencina_t *bencina, int sample_rate);
@@ -2907,6 +2909,21 @@ static void ligase_bencina_grainsize(ligase_t *x, t_floatarg size_sec) {
     post("ligase~: bencina grain size set to %.3f seconds", size_sec);
 }
 
+// Bencina position-scatter (cloud diffusion): 0 = coherent grains (smooth; stereo cloud comes
+// from bencina_pan only), up to 1 = grains scatter up to a full grain length back (grainy/diffuse
+// but rougher). Default 0.25.
+static void ligase_bencina_spread(ligase_t *x, t_floatarg amount) {
+    grain_delay_bencina_set_scatter(x->delay_bencina, amount);
+    post("ligase~: bencina scatter set to %.2f", amount);
+}
+
+// Bencina grain edge-round (de-click), 0 = OFF (default; envelope/skew edges left intact, including
+// their clickiness), up to 1 = grains ramped in/out over half a grain length.
+static void ligase_bencina_edge(ligase_t *x, t_floatarg amount) {
+    grain_delay_bencina_set_edge(x->delay_bencina, amount);
+    post("ligase~: bencina edge-round set to %.2f", amount);
+}
+
 // Set bencina wrap mode
 static void ligase_bencina_wrap(ligase_t *x, t_floatarg mode) {
     int m = (int)mode;
@@ -4660,6 +4677,8 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     // Bencina mode methods
     class_addmethod(ligase_class, (t_method)ligase_bencina_iot, gensym("bencina_iot"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_bencina_grainsize, gensym("bencina_grainsize"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_bencina_spread, gensym("bencina_spread"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_bencina_edge, gensym("bencina_edge"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_bencina_wrap, gensym("bencina_wrap"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_bencina_clear, gensym("bencina_clear"), 0);
 

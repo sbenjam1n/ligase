@@ -130,6 +130,14 @@ typedef struct {
 
     int sample_rate;
     int default_wrap_mode;         // wrap mode stamped on newly triggered grains (0=global, 1=loop)
+    float scatter;                 // per-grain position-scatter amount 0..1 (fraction of a grain
+                                   // length). DEFAULT 1.0 (full = the grainy cloud character).
+                                   // 0 = coherent (grains share the tap; stereo cloud from pan
+                                   // only). bencina_spread sets this — lower = tamer/smoother.
+    float edge;                    // grain edge-round amount 0..1. DEFAULT 0 (OFF) so the envelope/
+                                   // skew edges stay as-is (the skew-edge clickiness is a usable
+                                   // character). >0 ramps each grain in/out over edge*0.5 grain
+                                   // lengths (raised cosine) to de-click. bencina_edge sets this.
 } grain_delay_bencina_t;
 
 // @endregion:ligase_pd.core.types.grain_delay_bencina

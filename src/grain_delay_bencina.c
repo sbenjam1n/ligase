@@ -38,6 +38,13 @@ grain_delay_bencina_t* grain_delay_bencina_create(envelope_t *envelope, int samp
                                         // is overlap-normalized so this sets texture, not gain)
     bencina->grain_size = 0.1f;          // Default 100ms grain size
     bencina->default_wrap_mode = 0;      // Default GLOBAL wrap (straight grain delay that works)
+    bencina->scatter = 1.0f;             // Default: FULL position scatter (the grainy cloud
+                                         // character). bencina_spread dials it down toward 0
+                                         // (coherent/smoother) if wanted; skew remains the main
+                                         // texture control.
+    bencina->edge = 0.0f;                // Default: edge-round OFF — leave the envelope/skew edges
+                                         // intact (the skew-edge clickiness is usable character).
+                                         // bencina_edge > 0 rounds the grain in/out to de-click.
 
     // Initialize grain pool
     bencina->num_active_grains = 0;
@@ -109,7 +116,7 @@ static void trigger_bencina_grain(grain_delay_bencina_t *bencina,
     // grain's tap by a random 0..one-grain-length further back, so overlapping grains read
     // different points of the recent past — a diffuse granular cloud. Scatter is tied to grain
     // size (bencina_grainsize), so a bigger grain = a wider cloud. No pitch change (rate stays 1).
-    float jitter = ((float)rand() / (float)RAND_MAX) * g->grain_length;  // [0, grain_length)
+    float jitter = ((float)rand() / (float)RAND_MAX) * g->grain_length * bencina->scatter;  // [0, scatter*grain_length)
 
     // Initialize grain
     g->active = 1;
@@ -159,6 +166,12 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
     float overlap = (bencina->trigger_period_samples > 0)
         ? grain_len_s / (float)bencina->trigger_period_samples : 2.0f;
     float gnorm = 2.0f / (overlap > 2.0f ? overlap : 2.0f);
+
+    // Optional raised-cosine edge round (bencina_edge, default 0 = OFF). When > 0, ramps each grain
+    // in/out from zero with zero slope over edge*0.5 grain lengths, ON TOP OF the envelope, to
+    // de-click steep-skew / non-zero-edge (Gaussian/Exponential) windows. OFF by default so the
+    // envelope's skew edges — including their clickiness — are left as a usable character.
+    float edge_fade = bencina->edge * grain_len_s * 0.5f;  // 0 (off) .. half a grain
 
     // Process each sample in the block
     for (int s = 0; s < blocksize; s++) {
@@ -227,6 +240,17 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
             float env_phase = (g->grain_length > 0.0f) ? (g->phase / g->grain_length) : 1.0f;
             if (env_phase > 1.0f) env_phase = 1.0f;
             float env_amp = envelope_sample(bencina->envelope, env_phase);
+
+            // Raised-cosine edge round on top of the envelope: ramp 0->1 over the first edge_fade
+            // samples and 1->0 over the last, so the grain always starts/ends at zero with zero
+            // slope no matter what the main envelope does at its edges (de-clicks every onset).
+            if (edge_fade > 0.0f) {
+                if (g->phase < edge_fade) {
+                    env_amp *= 0.5f * (1.0f - cosf((float)M_PI * g->phase / edge_fade));
+                } else if (g->phase > g->grain_length - edge_fade) {
+                    env_amp *= 0.5f * (1.0f - cosf((float)M_PI * (g->grain_length - g->phase) / edge_fade));
+                }
+            }
 
             // Apply envelope and amplitude
             sample_left *= env_amp * g->amplitude;
@@ -320,6 +344,27 @@ void grain_delay_bencina_set_grain_size(grain_delay_bencina_t *bencina, float si
         if (size_seconds < 0.001f) size_seconds = 0.001f;  // Min 1ms
         if (size_seconds > 2.0f) size_seconds = 2.0f;       // Max 2 seconds
         bencina->grain_size = size_seconds;
+    }
+}
+
+// Position-scatter amount 0..1 (fraction of a grain length each grain's tap is randomized back).
+// 0 = coherent grains (smooth; stereo cloud from pan only); higher = grainier/more diffuse but
+// rougher (the decorrelated-grain sum fluctuates more). Controls cloud diffusion vs smoothness.
+void grain_delay_bencina_set_scatter(grain_delay_bencina_t *bencina, float amount) {
+    if (bencina) {
+        if (amount < 0.0f) amount = 0.0f;
+        if (amount > 1.0f) amount = 1.0f;
+        bencina->scatter = amount;
+    }
+}
+
+// Grain edge-round amount 0..1 (default 0 = off). 0 leaves the envelope/skew edges as-is
+// (clickiness preserved); higher ramps each grain in/out over edge*0.5 grain lengths to de-click.
+void grain_delay_bencina_set_edge(grain_delay_bencina_t *bencina, float amount) {
+    if (bencina) {
+        if (amount < 0.0f) amount = 0.0f;
+        if (amount > 1.0f) amount = 1.0f;
+        bencina->edge = amount;
     }
 }
 
