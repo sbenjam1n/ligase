@@ -1626,12 +1626,27 @@ Per headless mode:
   block. Because headless 0 expects every inlet to be driven, send the values you want on those
   inlets; the messages will be continuously overwritten by the inlet signal.
 
+IMPORTANT — what makes stut audible. The stut wet only reaches the output through the
+granular/delayed monitor path, which is gated by TWO controls in series:
+  - gdelay_mix: dry granular vs stut wet WITHIN the delayed signal. Toward 1 = more stut.
+  - sos: raw input vs the granular/delayed signal at the final monitor mix (Morphagene mode,
+    the default: sos 1 = 100% raw input, sos 0 = 100% granular/delayed). At the DEFAULT sos
+    0.5, half the output is raw input (no stut at all) and the delayed half is diluted — so
+    changing reps/reduction/spacing barely moves the sound. To clearly hear stut and its
+    parameters, set sos LOW (toward 0) so the granular/delayed path dominates the monitor.
+So if stut "does nothing" audibly, check sos before anything else: a high sos drowns it in
+dry input. (This is independent of whether the stut messages took — the trigger prints
+`stut triggered (reps N, reduction R, spacing S ms, slice L ms)` so you can confirm the
+values the engine actually received.)
+
 Recommended initialization (headless 1):
 
   delay_mode 2         select Stut
-  gdelay_mix 1         hear the wet (mix 0 = dry only, no audible stutter)
+  sos 0                monitor the granular/delayed path (NOT raw input) — without this the
+                       stut is buried under dry input regardless of gdelay_mix
+  gdelay_mix 1         within the delayed path, hear the wet (mix 0 = dry granular only)
   stut_reps 4          repeat count (default 4)
-  stut_reduction 0.5   gain decay per repeat (default 0.5)
+  stut_reduction 0.7   gain decay per repeat (default 0.5; higher = more repeats audible)
   stut_spacing 125     ms between repeats (default 62.5)
   stut_length 30       slice length per repeat; < spacing gives audible gaps between repeats
   ... then send `stut` to trigger the sequence.
