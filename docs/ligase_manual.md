@@ -1484,7 +1484,7 @@ Clamped to bounds.
 
 Smoothed internally to prevent clicks during time changes. Smoothing coefficient: 0.001 (approximately 20ms transition at 48kHz).
 
-Signal inlet 11: In DD-4/Bencina modes, updates delay time if value in range (0.0, 10.0]. In Stut mode (delay_mode 2), sets the repeat count (TidalCycles `count`); an integer value >= 1 is applied (clamped to 1-16), 0/unconnected is ignored so it does not override the stut_reps message/modulation.
+Signal inlet 11: In DD-4/Bencina modes, updates delay time if value in range (0.0, 10.0]. In Stut mode (delay_mode 2), sets the repeat count (TidalCycles `count`, clamped 1-16) — but ONLY in headless 0 (signal-driven mode). In headless 1 the inlet is ignored here so the `stut_reps` message/modulation stays authoritative; you do not need to disconnect inlet 11 (it is the delay-time inlet in DD-4/Bencina and may carry a value there).
 
 gdelay_feed <float> Set feedback amount.
 

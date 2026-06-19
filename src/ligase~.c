@@ -566,12 +566,16 @@ static void ligase_update_inlets(ligase_t *x,
 
     // Inlet 11: delay time (DD-4/Bencina) or stut count (Stut).
     if (x->grain_delay->mode == DELAY_MODE_STUT) {
-        // Stut mode: inlet 11 sets the repeat COUNT (TidalCycles `count`, 1-16) — the
-        // delay-time inlet is otherwise unused here. Ignore 0/unconnected so it doesn't
-        // stomp the stut_reps message/modulation value; the setter clamps to [1, 16].
-        int reps = (int)gdelay_time;
-        if (reps >= 1) {
-            grain_delay_stut_set_repetitions(x->delay_stut, reps);
+        // Stut mode: inlet 11 sets the repeat COUNT (TidalCycles `count`, 1-16). Drive it
+        // from the inlet ONLY in headless 0 (perfect-signal/all-inlets-driven mode). In
+        // headless 1 the inlet is ignored so the `stut_reps` MESSAGE/modulation stays
+        // authoritative — you should NOT have to disconnect inlet 11 (which is the
+        // delay-time inlet in DD-4/Bencina and may legitimately carry a value there).
+        if (!x->headless_mode) {
+            int reps = (int)gdelay_time;
+            if (reps >= 1) {
+                grain_delay_stut_set_repetitions(x->delay_stut, reps);
+            }
         }
     } else {
         // Delay time: 0.0 = off (musically valid)
