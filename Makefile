@@ -1,7 +1,11 @@
 # @region:erosion_pd.utils Utilities
 
 CC = gcc
-CFLAGS = -Wall -O2 -fvisibility=hidden
+# -MMD -MP makes the compiler emit a .d file per object listing the headers it #includes,
+# so `make` rebuilds an object whenever ANY header it depends on changes (e.g. types.h). Without
+# this, editing a header left every .o compiled against the OLD header and the link produced a
+# stale / struct-mismatched binary even though `make` reported success.
+CFLAGS = -Wall -O2 -fvisibility=hidden -MMD -MP
 PD_INCLUDE = /usr/local/include/pd
 
 # Determine OS and set extension
@@ -21,6 +25,7 @@ TARGET = ligase~.$(EXT)
 
 SOURCES = src/ligase~.c src/envelope.c src/grain.c src/grain_delay.c src/grain_delay_stut.c src/grain_delay_bencina.c src/grain_distortion.c src/grain_moogladder.c src/grain_smear.c src/reel.c src/splice.c src/perlin.c src/sphere.c
 OBJECTS = $(SOURCES:.c=.o)
+DEPS = $(OBJECTS:.o=.d)
 
 all: $(TARGET)
 
@@ -30,8 +35,13 @@ $(TARGET): $(OBJECTS)
 %.o: %.c
 	$(CC) $(CFLAGS) -I$(PD_INCLUDE) -c $< -o $@
 
+# Pull in the auto-generated header-dependency files (one per object). The leading '-' means
+# "don't error if they don't exist yet" (first build). After that, touching any included header
+# correctly forces the dependent objects to recompile.
+-include $(DEPS)
+
 clean:
-	rm -f $(OBJECTS) $(TARGET) erosion_query_test.o erosion_query_test.$(EXT)
+	rm -f $(OBJECTS) $(DEPS) $(TARGET) erosion_query_test.o erosion_query_test.$(EXT)
 
 install: $(TARGET)
 	mkdir -p ~/Documents/Pd/externals
