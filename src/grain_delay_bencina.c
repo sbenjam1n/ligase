@@ -80,7 +80,9 @@ static grain_bencina_grain_t* get_free_grain(grain_delay_bencina_t *bencina) {
 }
 
 // Trigger a new bencina grain
-// This grain will follow the write head at a fixed distance (the "moving tap")
+// Each grain captures its OWN read position into the delay line, scattered behind the base
+// delay — this is what makes it a granular CLOUD (Bencina "tapped delay line" GS) rather than a
+// plain delay.
 static void trigger_bencina_grain(grain_delay_bencina_t *bencina,
                                   grain_delay_t *delay,
                                   uint32_t splice_start,
@@ -88,18 +90,28 @@ static void trigger_bencina_grain(grain_delay_bencina_t *bencina,
     grain_bencina_grain_t *g = get_free_grain(bencina);
     if (!g) return;  // No free grains
 
-    // KEY DIFFERENCE FROM STUT:
-    // Bencina grains store the RELATIVE OFFSET (delay distance), not an absolute position
-    // The read position will be calculated every sample as: write_head - read_offset
+    // Bencina grains store a RELATIVE OFFSET (delay distance) from the write head; read position
+    // is computed each sample as write_head - read_offset. Playback rate is fixed at 1.0 (the
+    // offset is constant for the grain's life), so the grain reads the delayed stream WITHOUT
+    // transposition — pitch in ligase is deliberately handled elsewhere (the allpass smear and the
+    // morphagene tape speed), not in the delay.
     float delay_samples = delay->delay_time * delay->sample_rate;
+    g->grain_length = bencina->grain_size * bencina->sample_rate;
+
+    // Per-grain POSITION SCATTER (the cloud): without it every grain used the identical
+    // read_offset = delay_samples, so all simultaneous grains read the SAME delayed sample and the
+    // overlap-normalized sum collapsed to a plain delay (just envelope ripple). Scatter each
+    // grain's tap by a random 0..one-grain-length further back, so overlapping grains read
+    // different points of the recent past — a diffuse granular cloud. Scatter is tied to grain
+    // size (bencina_grainsize), so a bigger grain = a wider cloud. No pitch change (rate stays 1).
+    float jitter = ((float)rand() / (float)RAND_MAX) * g->grain_length;  // [0, grain_length)
 
     // Initialize grain
     g->active = 1;
-    g->read_offset = delay_samples;     // RELATIVE offset from write head
+    g->read_offset = delay_samples + jitter;  // captured, scattered per-grain tap
     g->phase = 0.0f;                    // Start of envelope
-    g->grain_length = bencina->grain_size * bencina->sample_rate;
     g->amplitude = 1.0f;                // Full amplitude (mix controlled globally)
-    g->pan = 0.5f;                      // Center pan
+    g->pan = 0.5f;                      // Center pan (panning model unchanged — constant-power)
     g->splice_start = splice_start;
     g->splice_end = splice_end;
     g->wrap_mode = bencina->default_wrap_mode;  // honor the configured wrap mode (was hardcoded 1)
@@ -128,10 +140,11 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
     uint32_t splice_length = (splice_end > splice_start) ? (splice_end - splice_start) : 1;
 
     // Overlap normalization: grain DENSITY (overlap = grain length / trigger spacing) should
-    // shape TEXTURE, not LEVEL. All grains share the read offset, so the summed envelope grows
-    // ~overlap/2 (COLA) — without this, sparse settings whisper and dense ones rail. Scale the
-    // grain sum back to the ~2x-overlap reference so the wet level AND the feedback loop gain
-    // stay consistent across any bencina_iot / bencina_grainsize. (Applied before lpf/feedback.)
+    // shape TEXTURE, not LEVEL. Scale the grain sum back toward a ~2x-overlap reference so the wet
+    // level (and the feedback loop gain) stay roughly consistent across any bencina_iot /
+    // bencina_grainsize. Grains are now position-scattered (a diffuse cloud), so the sum is partly
+    // incoherent and runs a little quieter than the old coherent stack — the makeup gain + tanh
+    // soft-limit set the final level. (Applied before lpf/feedback.)
     float grain_len_s = bencina->grain_size * (float)bencina->sample_rate;
     float overlap = (bencina->trigger_period_samples > 0)
         ? grain_len_s / (float)bencina->trigger_period_samples : 2.0f;
