@@ -564,14 +564,20 @@ static void ligase_update_inlets(ligase_t *x,
     float gdelay_tone = gdelay_tone_in[0];
     float gdelay_mix = gdelay_mix_in[0];
 
-    // Inlet 11: delay time (DD-4/Bencina only).
-    // In Stut mode this inlet is INERT: stut_reps is message/modulation-only. The inlet carries a
-    // delay-TIME value (0-10 s) whose range is meaningless for a 1-16 repeat count — and since the
-    // same physical inlet means time/feedback/tone across the delay modes, no single patched
-    // slider can serve both delay and stut. So stut params (reps/reduction/spacing) are driven by
-    // message (e.g. a slider sending `stut_reps $1`) like stut_length/stut_length_mode, and these
-    // inlets keep their one delay range. See "Setting stut parameters" in the manual.
-    if (x->grain_delay->mode != DELAY_MODE_STUT) {
+    // Inlet 11: delay time (DD-4/Bencina) or stut REPS (Stut). SIGNAL-DRIVEN in every mode (this
+    // is a hardware prototype — the physical control/CV on this inlet must drive the parameter).
+    // The inlet's native range is the delay-time range 0-10 s (shared by DD-4 and Bencina); in
+    // Stut that same 0-10 input is MAPPED linearly to the repeat count 1-16, so one physical
+    // control serves all three modes. Headless gating mirrors the delay-time branch exactly.
+    if (x->grain_delay->mode == DELAY_MODE_STUT) {
+        int apply = x->headless_mode ? (gdelay_time > 0.0f && gdelay_time <= 10.0f)
+                                     : (gdelay_time >= 0.0f && gdelay_time <= 10.0f);
+        if (apply) {
+            float v = gdelay_time; if (v < 0.0f) v = 0.0f; if (v > 10.0f) v = 10.0f;
+            int reps = 1 + (int)((v / 10.0f) * 15.0f + 0.5f);  // 0->1 .. 10->16
+            grain_delay_stut_set_repetitions(x->delay_stut, reps);
+        }
+    } else {
         // Delay time: 0.0 = off (musically valid)
         if (x->headless_mode) {
             if (gdelay_time > 0.0f && gdelay_time <= 10.0f) {
@@ -584,10 +590,16 @@ static void ligase_update_inlets(ligase_t *x,
         }
     }
 
-    // Inlet 12: feedback (DD-4/Bencina only). Inert in Stut mode — stut_reduction is
-    // message/modulation-only (see inlet 11). (Reduction happens to share feedback's 0-1 range,
-    // but reps/spacing do not, so all three stut params are message-driven for consistency.)
-    if (x->grain_delay->mode != DELAY_MODE_STUT) {
+    // Inlet 12: feedback (DD-4/Bencina) or stut REDUCTION (Stut). Signal-driven in every mode.
+    // feedback and reduction share the SAME 0-1 range and meaning (decay per echo), so the inlet
+    // value passes straight through — no remapping needed. Headless gating mirrors the feedback branch.
+    if (x->grain_delay->mode == DELAY_MODE_STUT) {
+        int apply = x->headless_mode ? (gdelay_feedback >= 0.001f && gdelay_feedback <= 1.0f)
+                                     : (gdelay_feedback >= 0.0f && gdelay_feedback <= 1.0f);
+        if (apply) {
+            grain_delay_stut_set_reduction(x->delay_stut, gdelay_feedback);
+        }
+    } else {
         // Feedback: 0.0 = single echo (musically valid)
         if (x->headless_mode) {
             if (gdelay_feedback >= 0.001f && gdelay_feedback <= 1.0f) {
@@ -600,11 +612,21 @@ static void ligase_update_inlets(ligase_t *x,
         }
     }
 
-    // Inlet 13: tone (DD-4/Bencina only). Inert in Stut mode — stut_spacing is
-    // message/modulation-only (see inlet 11). This is the worst range clash: tone is 0-1 here but
-    // spacing is 1-5000 ms in Stut, so a tone-scaled slider drove spacing to ~1 ms and piled every
-    // repeat on top of the first (the "phasing / no stutter" bug). Message control avoids it.
-    if (x->grain_delay->mode != DELAY_MODE_STUT) {
+    // Inlet 13: tone (DD-4/Bencina) or stut SPACING (Stut). Signal-driven in every mode. The inlet's
+    // native range is the tone range 0-1; in Stut that 0-1 input is MAPPED EXPONENTIALLY to spacing
+    // 1-5000 ms (0->1 ms, 0.5->~70 ms, 1->5000 ms) — exponential because spacing is a time control
+    // and a linear 0-1 would cram all the useful musical range into a sliver. This replaces the old
+    // raw passthrough where a 0-1 tone value landed on spacing as ~1 ms and piled every repeat onto
+    // the first (the phasing bug). Headless gating mirrors the tone branch.
+    if (x->grain_delay->mode == DELAY_MODE_STUT) {
+        int apply = x->headless_mode ? (gdelay_tone >= 0.001f && gdelay_tone <= 1.0f)
+                                     : (gdelay_tone >= 0.0f && gdelay_tone <= 1.0f);
+        if (apply) {
+            float v = gdelay_tone; if (v < 0.0f) v = 0.0f; if (v > 1.0f) v = 1.0f;
+            float spacing_ms = powf(5000.0f, v);  // 1 ms .. 5000 ms, exponential
+            grain_delay_stut_set_spacing(x->delay_stut, spacing_ms);
+        }
+    } else {
         // Tone: 0.0 = dark (musically valid)
         if (x->headless_mode) {
             if (gdelay_tone >= 0.001f && gdelay_tone <= 1.0f) {
