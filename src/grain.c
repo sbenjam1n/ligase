@@ -381,6 +381,18 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     scheduler_t *sched = (scheduler_t*)malloc(sizeof(scheduler_t));
     if (!sched) return NULL;  // Memory allocation failed
 
+    // CRITICAL: zero the whole struct before touching any field. malloc returns garbage, and
+    // every param_range_t carries an `enabled` flag that the perform routine checks each block
+    // to decide whether to APPLY that range's modulation (overwriting the live parameter). A
+    // range that is declared but not explicitly initialized below would inherit a garbage
+    // enabled flag — and a garbage-enabled range silently clobbers its parameter with garbage
+    // every block, non-deterministically per instantiation. This was the root cause of the
+    // intermittent "can't record / playback stops" (sos_range), "delay just attenuates"
+    // (gdelay_mix_range), "stut reduction stuck" (gdelay_feedback_range) and skew/organize
+    // glitches. Zeroing guarantees enabled = 0 (disabled) for EVERY range, including any added
+    // in future, so the explicit defaults below only need to set sensible min/max.
+    memset(sched, 0, sizeof(scheduler_t));
+
     sched->envelope = env;
     sched->sample_rate = sample_rate;
     sched->grain_size = 0.1f;
@@ -399,6 +411,12 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->grainsize_range = default_range;
     sched->grainstart_range = default_range;
     sched->gdelay_range = default_range;
+    sched->gdelay_feedback_range = default_range;  // also routes to stut_reduction in Stut mode
+    sched->gdelay_tone_range = default_range;       // also routes to stut_spacing in Stut mode
+    sched->gdelay_mix_range = default_range;
+    sched->organize_range = default_range;
+    sched->sos_range = default_range;
+    sched->env_skew_range = default_range;
     sched->distortion_range = default_range;
     sched->amplitude_range = default_range;
     sched->pan_range = default_range;
