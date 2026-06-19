@@ -963,7 +963,7 @@ When iot > grain_size: grains separate
 
 When iot = grain_size: continuous stream
 
-Signal inlet 8: updates if value in range [0.001, 2.0], else keeps current value.
+Signal inlet 9: updates if value in range [0.001, 2.0], else keeps current value.
 
 Quantization: If quant_amount > 0 and BPM valid:
 
@@ -981,7 +981,7 @@ Range: 0.001 to 10.0 seconds
 
 Clamped to bounds.
 
-Signal inlet 2: updates if value in range [0.001, 10.0], else keeps current value.
+Signal inlet 3: updates if value in range [0.001, 10.0], else keeps current value.
 
 Default: 0.1 seconds (100ms)
 
@@ -1017,7 +1017,7 @@ Clamped to [1, pool_size]
 
 Controls polyphony limit. Grain scheduler uses free-list allocation. When limit reached, oldest grains replaced.
 
-Signal inlet 9: updates if value in range [1, pool_size], else keeps current value.
+Signal inlet 10: updates if value in range [1, pool_size], else keeps current value.
 
 Default: 4
 
@@ -1031,7 +1031,7 @@ Clamped to bounds.
 
 Applied during grain triggering. Passed to scheduler_trigger_grain().
 
-Signal inlet 19: amplitude_in (read from perform cycle)
+Signal inlet 21: amplitude_in (read from perform cycle)
 
 Default: 0.75
 
@@ -1107,7 +1107,7 @@ Pan can be modulated per-grain using param_range:
 
 Direct Control (param_range disabled)
 
-Uses pan value directly from inlet or message
+Uses pan value directly from signal inlet 22 or message
 
 No per-grain randomization
 
@@ -1191,7 +1191,7 @@ Clamped to bounds.
 
 Regenerates envelope table immediately on change.
 
-Signal inlet 18: updates if value in range [0.001, 1.0] and different from current, else keeps current value.
+Signal inlet 20: updates if value in range [0.001, 1.0] and different from current, else keeps current value.
 
 Saw Envelope Modulation
 
@@ -1205,7 +1205,7 @@ Range: 0.0 to 64.0. Default: 0.0 (off).
 
 0.0 = no modulation. 1.0 = one ramp per grain. Higher values = more spikes. Non-integer values produce partial final cycles.
 
-Signal inlet 21 or message. Supports param_range modulation.
+Set via message only (no signal inlet; not param_range-modulatable).
 
 saw_depth <float>  Modulation intensity.
 
@@ -1213,7 +1213,7 @@ Range: 0.0 to 1.0. Default: 0.0 (off).
 
 0.0 = pure base envelope. 1.0 = maximum jaggedness (spikes drop to zero between peaks).
 
-Signal inlet 22 or message. Supports param_range modulation.
+Set via message only (no signal inlet; not param_range-modulatable).
 
 Grain Bang Output
 
@@ -1480,7 +1480,7 @@ Clamped to bounds.
 
 Smoothed internally to prevent clicks during time changes. Smoothing coefficient: 0.001 (approximately 20ms transition at 48kHz).
 
-Signal inlet 10: updates if value in range (0.0, 10.0], else keeps current value.
+Signal inlet 11: updates if value in range (0.0, 10.0], else keeps current value.
 
 gdelay_feed <float> Set feedback amount.
 
@@ -1494,7 +1494,7 @@ Clamped to bounds.
 
 Feedback applied after tone filter in feedback loop (DD-4 and Bencina modes only; inactive in Stut mode).
 
-Signal inlet 11: updates if value in range (0.0, 1.0], else keeps current value.
+Signal inlet 12: In DD-4/Bencina modes, updates feedback if value in range (0.0, 1.0]. In Stut mode (delay_mode 2), controls stut_reduction (gain decay per repeat, range 0.0-1.0).
 
 gdelay_tone <float> Set tone character via one-poleIIR low-pass filter in feedback loop (DD-4 and Bencina modes only; inactive in Stut mode).
 
@@ -1510,7 +1510,7 @@ Filter coefficient applied directly: filtered = tone × delayed + (1 - tone) × 
 
 Higher values pass more high frequencies. Lower values create darker, warmer repeats.
 
-Signal inlet 12: In DD-4/Bencina modes, updates feedback if value in range (0.0, 1.0]. In Stut mode (delay_mode 2), controls stut_reduction (gain decay per repeat, range 0.0-1.0).
+Signal inlet 13: In DD-4/Bencina modes, updates tone if value in range (0.0, 1.0]. In Stut mode (delay_mode 2), controls stut_spacing (repetition spacing in ms, range 1.0-5000.0).
 
 gdelay_mix <float> Set dry/wet mix.
 
@@ -1524,7 +1524,7 @@ Clamped to bounds.
 
 Output calculation: output = dry × (1 - mix) + wet × mix
 
-Signal inlet 13: In DD-4/Bencina modes, updates tone if value in range (0.0, 1.0]. In Stut mode (delay_mode 2), controls stut_spacing (repetition spacing in ms, range 1.0-5000.0).
+Signal inlet 14: updates if value in range (0.0, 1.0], else keeps current value. Dry/wet mix; active in all delay modes.
 
 gdelay_clear  Clear delay buffers and filterstate.
 
@@ -1681,7 +1681,7 @@ distortion_enable 0|1 Enable/disable distortion processing.
 
 1 = enabled
 
-Signal inlet 14: updates if value in range (0.0, 1.0], else keeps current value.
+Set via message only (distortion has no signal inlet).
 
 distortion <float> Set distortion drive amount.
 
@@ -1925,7 +1925,7 @@ Feedback formula: fb = resonance × (1.0 + 0.5 × f⁵)
 
 Nonlinear compensation prevents resonance drop at high cutoff frequencies.
 
-Signal inlet 16: updates if value in range [0.0, 4.0], else keeps current value.
+Signal inlet 17: updates if value in range [0.0, 4.0], else keeps current value.
 
 moog_mix <float> Set dry/wet mix.
 
@@ -1937,7 +1937,7 @@ Range: 0.0 to 1.0
 
 Output: output = dry × (1 - mix) + wet × mix
 
-Signal inlet 17: updates if value in range [0.0, 1.0], else keeps current value.
+Signal inlet 18: updates if value in range [0.0, 1.0], else keeps current value.
 
 moog_enable 0|1 Enable/disable filter processing.
 
