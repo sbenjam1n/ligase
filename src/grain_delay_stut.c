@@ -64,6 +64,11 @@ void grain_delay_stut_trigger(grain_delay_stut_t *stut,
         g->capture_splice_start = splice_start;
         g->capture_splice_end = splice_end;
         g->capture_position = capture_position;
+        // Each repeat REPLAYS the captured slice (the `spacing` samples just before the
+        // trigger), not a single sample — that is what makes it a stutter rather than a
+        // click. Slice length = repeat spacing, so repeats tile gaplessly.
+        g->play_length = spacing_samples;
+        g->play_pos = 0.0f;
 
         grains_scheduled++;
     }
@@ -90,27 +95,40 @@ void grain_delay_stut_process(grain_delay_stut_t *stut,
 
         if (!g->active) continue;
 
+        // Short edge fade (~4 ms) so each replayed slice doesn't click at its boundaries.
+        float fade = 0.004f * (float)stut->sample_rate;
+        if (fade > g->play_length * 0.5f) fade = g->play_length * 0.5f;
+
         // Process each sample in the block
         for (int s = 0; s < blocksize; s++) {
-            // Decrement trigger timer
-            g->trigger_time_samples -= 1.0f;
+            // Wait for this repetition's start time
+            if (g->trigger_time_samples > 0.0f) {
+                g->trigger_time_samples -= 1.0f;
+                continue;
+            }
 
-            // Check if grain should output
-            if (g->trigger_time_samples <= 0.0f && g->trigger_time_samples > -1.0f) {
-                // Grain is active for this sample
-                // Read from captured position in delay buffer
-                int read_pos = (int)g->capture_position;
+            // Replay the captured slice: the `play_length` samples ending at capture_position
+            // (i.e. the audio just before the trigger), read forward. capture_position is the
+            // write head at trigger time, so [capture_position - play_length, capture_position)
+            // is the recent audio, frozen for the duration of the stutter.
+            if (g->play_pos < g->play_length) {
+                int read_pos = (int)(g->capture_position - g->play_length + g->play_pos);
                 read_pos = read_pos % delay->buffer_size;
                 if (read_pos < 0) read_pos += delay->buffer_size;
 
-                // Output delayed sample with gain
-                out_left[s] += delay->buffer_left[read_pos] * g->gain;
-                out_right[s] += delay->buffer_right[read_pos] * g->gain;
-            }
+                float w = 1.0f;
+                if (fade > 0.0f) {
+                    if (g->play_pos < fade) w = g->play_pos / fade;
+                    else if (g->play_pos > g->play_length - fade) w = (g->play_length - g->play_pos) / fade;
+                }
 
-            // Deactivate grain after it's played
-            if (g->trigger_time_samples < -1.0f) {
+                out_left[s]  += delay->buffer_left[read_pos]  * g->gain * w;
+                out_right[s] += delay->buffer_right[read_pos] * g->gain * w;
+                g->play_pos += 1.0f;
+            } else {
+                // Slice finished — retire this repeat
                 g->active = 0;
+                break;
             }
         }
     }

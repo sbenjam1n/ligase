@@ -21,6 +21,7 @@ grain_delay_bencina_t* grain_delay_bencina_create(envelope_t *envelope, int samp
     // Initialize parameters
     bencina->grain_spacing_ms = 50.0f;  // Default 50ms IOT (20 grains/second)
     bencina->grain_size = 0.1f;          // Default 100ms grain size
+    bencina->default_wrap_mode = 0;      // Default GLOBAL wrap (straight grain delay that works)
 
     // Initialize grain pool
     bencina->num_active_grains = 0;
@@ -89,7 +90,7 @@ static void trigger_bencina_grain(grain_delay_bencina_t *bencina,
     g->pan = 0.5f;                      // Center pan
     g->splice_start = splice_start;
     g->splice_end = splice_end;
-    g->wrap_mode = 1;                   // Default: splice wrap mode
+    g->wrap_mode = bencina->default_wrap_mode;  // honor the configured wrap mode (was hardcoded 1)
 
     bencina->num_active_grains++;
 }
@@ -136,33 +137,24 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
             float read_pos_float = delay->write_pos - g->read_offset;
             if (!isfinite(read_pos_float)) read_pos_float = 0.0f;
 
-            // Handle wrapping based on mode
-            if (g->wrap_mode == 1) {
-                // SPLICE WRAP MODE: Wrap within current splice bounds
-                // If delay > splice length, wrap within the splice (creates phasing/layering)
-
-                // Convert global buffer position to splice-relative position
+            // Handle wrapping. BOTH modes wrap within the DELAY BUFFER (a separate 9.5 s
+            // circular history) relative to the write head — never in reel coordinates. The
+            // splice_* args are REEL positions and previously indexed this buffer directly
+            // (read = splice_start + offset), which read unwritten/silent regions of the delay
+            // line for any splice not starting at buffer position 0 → no wet. (The bug.)
+            if (g->wrap_mode == 1 && splice_length > 1 && (uint32_t)splice_length < (uint32_t)delay->buffer_size) {
+                // LOOP WRAP: confine the read to the most recent `splice_length` samples behind
+                // the write head, so the delay loops a short window (the phasing/layering intent),
+                // but in delay-buffer space where the audio actually lives.
+                float offset = (float)delay->write_pos - read_pos_float;
+                offset = fmodf(offset, (float)delay->buffer_size);
+                if (offset < 0.0f) offset += (float)delay->buffer_size;
+                offset = fmodf(offset, (float)splice_length);
+                read_pos_float = (float)delay->write_pos - offset;
                 read_pos_float = fmodf(read_pos_float, (float)delay->buffer_size);
                 if (read_pos_float < 0.0f) read_pos_float += (float)delay->buffer_size;
-
-                // Map to splice coordinates
-                int global_read_pos = (int)read_pos_float % delay->buffer_size;
-
-                // If read position is outside current splice, wrap within splice
-                if (global_read_pos < (int)splice_start || global_read_pos >= (int)splice_end) {
-                    // Calculate how far back we're trying to read
-                    int offset_from_start = ((int)delay->write_pos - global_read_pos);
-                    if (offset_from_start < 0) offset_from_start += delay->buffer_size;
-
-                    // Wrap within splice length
-                    int splice_relative_offset = offset_from_start % splice_length;
-                    global_read_pos = (int)splice_start + splice_relative_offset;
-                }
-
-                read_pos_float = (float)global_read_pos;
             } else {
-                // GLOBAL WRAP MODE: Wrap within entire buffer (ignores splice boundaries)
-                // This creates "ghost" effects where grains can read from previous splices
+                // GLOBAL WRAP: straight grain delay — wrap within the whole delay buffer.
                 read_pos_float = fmodf(read_pos_float, (float)delay->buffer_size);
                 if (read_pos_float < 0.0f) read_pos_float += (float)delay->buffer_size;
             }
@@ -276,8 +268,9 @@ void grain_delay_bencina_set_grain_size(grain_delay_bencina_t *bencina, float si
 // Set wrap mode (0=global, 1=splice)
 void grain_delay_bencina_set_wrap_mode(grain_delay_bencina_t *bencina, int mode) {
     if (bencina) {
-        // Update wrap mode for future grains
-        // Note: Existing grains keep their mode until they finish
+        // Store the default so newly triggered grains adopt it (trigger used to hardcode 1,
+        // which made this setter inert). Also update currently-active grains.
+        bencina->default_wrap_mode = mode;
         for (int i = 0; i < MAX_BENCINA_GRAINS; i++) {
             bencina->grain_pool[i].wrap_mode = mode;
         }

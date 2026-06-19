@@ -70,7 +70,9 @@ typedef struct grain_stut_grain {
     float gain;                    // Gain for this repetition
     uint32_t capture_splice_start; // Captured splice start
     uint32_t capture_splice_end;   // Captured splice end
-    float capture_position;        // Captured read position in samples
+    float capture_position;        // Captured read position in samples (write head at trigger)
+    float play_length;             // Length of the slice to replay per repeat (samples)
+    float play_pos;                // Samples replayed so far within the current slice
     struct grain_stut_grain *next; // Next grain in queue
 } grain_stut_grain_t;
 
@@ -122,6 +124,7 @@ typedef struct {
     envelope_t *envelope;
 
     int sample_rate;
+    int default_wrap_mode;         // wrap mode stamped on newly triggered grains (0=global, 1=loop)
 } grain_delay_bencina_t;
 
 // @endregion:ligase_pd.core.types.grain_delay_bencina

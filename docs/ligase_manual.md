@@ -251,7 +251,7 @@ stut_reduction <0-1> - Gain decay per repeat
 stut_spacing <ms> - Spacing between repeats
 bencina_iot <ms> - Bencina grain spacing
 bencina_grainsize <seconds> - Bencina grain size
-bencina_wrap <0|1> - Global/Splice wrap mode
+bencina_wrap <0|1> - Global delay / loop wrap (default 0)
 bencina_clear - Clear bencina grains
 
 Sphere Simulation
@@ -378,7 +378,7 @@ stut_reduction: 0.5
 stut_spacing: 62.5 ms
 bencina_iot: 50.0 ms
 bencina_grainsize: 0.1 seconds
-bencina_wrap: 1 (splice)
+bencina_wrap: 0 (global)
 distortion: 0.0 (clean)
 distortion_enable: 1
 distortion_oversampling: 4x
@@ -1568,7 +1568,7 @@ Longer grains = smoother, more blurred output. Shorter grains = more granular te
 
 bencina_wrap <0|1>  Buffer wrap mode.
 
-0 = global (default): grains can read from any part of the buffer, creating layered textures from across the recording. 1 = splice: grains wrap within current splice boundaries, preventing cross-splice bleed.
+0 = global (default): a straight grain delay — each grain reads at write_head − (delay_time × sr), wrapping within the whole delay buffer. 1 = loop: confines each grain's read to the most recent stretch of the delay buffer (a short looping window ≈ the current splice length), creating phasing/layering. Both wrap within the delay line itself, in delay-buffer space — not reel coordinates. (Bencina needs delay_time > 0 to produce any wet; at delay_time = 0 there is no offset to read from.)
 
 Applied to all existing and future grains.
 
@@ -1578,9 +1578,9 @@ Stut Mode (delay_mode 2)
 
 Quantized rhythmic delay. Unlike DD-4 and Bencina which run continuously, Stut is event-triggered via the stut message. When triggered, it captures the current buffer write position and schedules N repetitions at fixed time intervals, each with exponentially decaying gain.
 
-Architecture: the stut message captures an absolute buffer position at the moment of triggering. It then schedules up to 16 grains, each with a countdown timer (i × spacing) and a gain value (gain_reduction ^ i). During processing, each grain counts down; when its timer reaches zero it emits a single-sample pulse from the captured position, scaled by its gain. This produces discrete rhythmic echoes of the captured moment.
+Architecture: the stut message captures the buffer write position at the moment of triggering. It then schedules up to 16 grains, each with a countdown timer (i × spacing) and a gain value (gain_reduction ^ i). During processing, each grain counts down; when its timer reaches zero it replays the captured slice — the `spacing`-length stretch of audio just before the trigger — scaled by its gain, with a short edge fade to avoid clicks. This produces decaying rhythmic repeats (a stutter) of the captured moment, not single-sample clicks.
 
-Active inlets: mix, and — in Stut mode — inlets 11, 12 and 13 are repurposed. Inlet 11 sets stut_reps (the repeat count / TidalCycles `count`, 1-16) instead of delay time. Inlet 12 controls stut_reduction (gain decay per repeat, 0.0-1.0) instead of feedback. Inlet 13 controls stut_spacing (repetition spacing in ms, 1.0-5000.0) instead of tone. The stut grains read directly from captured buffer positions with per-repetition gain decay — there is no feedback loop or tone filter in the stut signal path. The mix parameter controls dry/wet blend as usual. Modulation ranges (gdelay_feed range, gdelay_tone range) also route to stut_reduction and stut_spacing respectively when in Stut mode.
+Active inlets: mix, and — in Stut mode — inlets 11, 12 and 13 are repurposed. Inlet 11 sets stut_reps (the repeat count / TidalCycles `count`, 1-16) instead of delay time. Inlet 12 controls stut_reduction (gain decay per repeat, 0.0-1.0) instead of feedback. Inlet 13 controls stut_spacing (repetition spacing in ms, 1.0-5000.0) instead of tone. Each repeat replays the captured slice with per-repetition gain decay — there is no feedback loop or tone filter in the stut signal path. The mix parameter controls dry/wet blend as usual. Modulation ranges (gdelay_feed range, gdelay_tone range) also route to stut_reduction and stut_spacing respectively when in Stut mode.
 
 stut  Trigger a stut sequence. Captures the current splice boundaries and write position. Schedules repetitions immediately. If delay quantization is active (delay_quant > 0, BPM running), uses the quantized grid spacing instead of stut_spacing.
 
