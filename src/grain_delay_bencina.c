@@ -12,16 +12,14 @@ extern float envelope_sample(envelope_t *env, float phase);
 // is disabled, else a value in [min,max] from the bound generator.
 extern float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, float base_value);
 
-// Makeup gain on the Bencina wet output so the granular cloud sits prominently in the mix
-// (the raw, overlap-normalized grain sum is ~unity with the dry, which felt too subtle).
-// Applied to the OUTPUT only — NOT to the feedback path — so the recirculation loop stays
-// stable (loop gain = feedback < 1) while the audible wet is boosted. Tunable.
-//
-// The wet is then tanh-soft-limited (see process): at 1.8x a ~unity grain sum hit ~1.8 and hard-
-// clipped at the output (sanitize only flushes NaN, it does not clamp levels). 1.3x keeps the
-// cloud prominent (≈1.3x at low level) while tanh bounds it to ±1 and rounds off peaks gracefully
-// instead of clipping — including when feedback drives the buffer hot.
-#define BENCINA_WET_GAIN 1.3f
+// Makeup gain driven INTO the tanh soft-limit on the Bencina wet output. Because the wet is
+// tanh-limited (see process), this can sit well above unity to restore loudness WITHOUT clipping —
+// tanh just rounds the transient peaks. The position scatter sums grains incoherently (quieter
+// than a coherent stack), so the cloud was too quiet at the old 1.3x. 6.0x brings the level back
+// (≈0.46 RMS / 0.89 peak at mix 1 with a steady tone), and it stays bounded to ±1 even with high
+// feedback driving the buffer hot. Applied to the OUTPUT only — NOT the feedback path — so the
+// recirculation loop gain stays = feedback (stable for feedback < 1). Tunable.
+#define BENCINA_WET_GAIN 6.0f
 
 // @region:ligase_pd.core.grain.delay_bencina.types Bencina Type Management
 
