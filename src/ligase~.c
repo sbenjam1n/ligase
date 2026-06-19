@@ -564,18 +564,14 @@ static void ligase_update_inlets(ligase_t *x,
     float gdelay_tone = gdelay_tone_in[0];
     float gdelay_mix = gdelay_mix_in[0];
 
-    // Inlet 11: delay time (DD-4/Bencina) or stut count (Stut).
-    if (x->grain_delay->mode == DELAY_MODE_STUT) {
-        // Stut: inlet 11 = repeat COUNT (TidalCycles `count`, 1-16). Same epsilon convention as
-        // every other inlet — a count >= 1 from a connected signal/slider drives it; an
-        // unconnected inlet (reads 0 -> count 0) is below the floor and ignored, so the stut_reps
-        // message holds. Identical in BOTH headless modes: a count has no valid 0/off state, so
-        // the >= 1 floor IS the epsilon (no special-casing, nothing to disconnect).
-        int reps = (int)gdelay_time;
-        if (reps >= 1) {
-            grain_delay_stut_set_repetitions(x->delay_stut, reps);
-        }
-    } else {
+    // Inlet 11: delay time (DD-4/Bencina only).
+    // In Stut mode this inlet is INERT: stut_reps is message/modulation-only. The inlet carries a
+    // delay-TIME value (0-10 s) whose range is meaningless for a 1-16 repeat count — and since the
+    // same physical inlet means time/feedback/tone across the delay modes, no single patched
+    // slider can serve both delay and stut. So stut params (reps/reduction/spacing) are driven by
+    // message (e.g. a slider sending `stut_reps $1`) like stut_length/stut_length_mode, and these
+    // inlets keep their one delay range. See "Setting stut parameters" in the manual.
+    if (x->grain_delay->mode != DELAY_MODE_STUT) {
         // Delay time: 0.0 = off (musically valid)
         if (x->headless_mode) {
             if (gdelay_time > 0.0f && gdelay_time <= 10.0f) {
@@ -588,22 +584,10 @@ static void ligase_update_inlets(ligase_t *x,
         }
     }
 
-    // Inlet 12: feedback (DD-4/Bencina) or stut_reduction (Stut)
-    if (x->grain_delay->mode == DELAY_MODE_STUT) {
-        // Stut: inlet 12 = gain reduction (0-1). IDENTICAL epsilon handling to the gdelay_feedback
-        // inlet (the else branch below), just routed to the stut setter: headless 1 ignores
-        // < 0.001 so an unconnected inlet lets the stut_reduction message hold; headless 0 honors
-        // the full range. A connected signal/slider drives it in either mode.
-        if (x->headless_mode) {
-            if (gdelay_feedback >= 0.001f && gdelay_feedback <= 1.0f) {
-                grain_delay_stut_set_reduction(x->delay_stut, gdelay_feedback);
-            }
-        } else {
-            if (gdelay_feedback >= 0.0f && gdelay_feedback <= 1.0f) {
-                grain_delay_stut_set_reduction(x->delay_stut, gdelay_feedback);
-            }
-        }
-    } else {
+    // Inlet 12: feedback (DD-4/Bencina only). Inert in Stut mode — stut_reduction is
+    // message/modulation-only (see inlet 11). (Reduction happens to share feedback's 0-1 range,
+    // but reps/spacing do not, so all three stut params are message-driven for consistency.)
+    if (x->grain_delay->mode != DELAY_MODE_STUT) {
         // Feedback: 0.0 = single echo (musically valid)
         if (x->headless_mode) {
             if (gdelay_feedback >= 0.001f && gdelay_feedback <= 1.0f) {
@@ -616,16 +600,11 @@ static void ligase_update_inlets(ligase_t *x,
         }
     }
 
-    // Inlet 13: tone (DD-4/Bencina) or stut_spacing (Stut)
-    if (x->grain_delay->mode == DELAY_MODE_STUT) {
-        // Stut: inlet 13 = spacing ms (1-5000). Same epsilon convention as the other inlets: a
-        // value >= 1 ms from a connected signal/slider drives it; below the 1 ms floor (an
-        // unconnected inlet reads 0) it is ignored so the stut_spacing message holds. Identical in
-        // both headless modes — spacing has no valid sub-1 ms state, so the 1 ms floor IS the epsilon.
-        if (gdelay_tone >= 1.0f && gdelay_tone <= 5000.0f) {
-            grain_delay_stut_set_spacing(x->delay_stut, gdelay_tone);
-        }
-    } else {
+    // Inlet 13: tone (DD-4/Bencina only). Inert in Stut mode — stut_spacing is
+    // message/modulation-only (see inlet 11). This is the worst range clash: tone is 0-1 here but
+    // spacing is 1-5000 ms in Stut, so a tone-scaled slider drove spacing to ~1 ms and piled every
+    // repeat on top of the first (the "phasing / no stutter" bug). Message control avoids it.
+    if (x->grain_delay->mode != DELAY_MODE_STUT) {
         // Tone: 0.0 = dark (musically valid)
         if (x->headless_mode) {
             if (gdelay_tone >= 0.001f && gdelay_tone <= 1.0f) {

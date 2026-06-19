@@ -1484,7 +1484,7 @@ Clamped to bounds.
 
 Smoothed internally to prevent clicks during time changes. Smoothing coefficient: 0.001 (approximately 20ms transition at 48kHz).
 
-Signal inlet 11: In DD-4/Bencina modes, updates delay time if value in range (0.0, 10.0]. In Stut mode (delay_mode 2), sets the repeat count (TidalCycles `count`, clamped 1-16). It uses the same epsilon convention as every other inlet: a connected signal/slider drives it in either headless mode; in headless 1 an unconnected inlet (reads 0) is ignored so the `stut_reps` message holds (no need to disconnect anything). Inlets 12 and 13 behave the same way for stut_reduction/stut_spacing. See "Setting stut parameters" below.
+Signal inlet 11: In DD-4/Bencina modes, updates delay time if value in range (0.0, 10.0]. In Stut mode (delay_mode 2) this inlet is INERT — stut_reps is set by message only (see "Setting stut parameters" below). Inlets 12 and 13 are likewise inert in Stut mode (stut_reduction/stut_spacing are message-only). The reason: these inlets carry delay time/feedback/tone values whose ranges (0-10 s, 0-1, 0-1) do not match the stut parameters (count 1-16, 0-1, spacing 1-5000 ms), so a single patched slider cannot serve both — driving them in Stut produced nonsense (e.g. a tone-scaled value put stut_spacing at ~1 ms, collapsing every repeat onto the first).
 
 gdelay_feed <float> Set feedback amount.
 
@@ -1586,41 +1586,34 @@ Architecture: the stut message captures the buffer write position at the moment 
 
 Polyphony / layering: grains are allocated from a 64-voice pool (MAX_STUT_GRAINS) into FREE slots, so re-triggering stut while a previous stutter is still ringing LAYERS the new echo train on top of the old one (each train keeps its own captured slice, timing and decay) rather than clobbering it. Banging the trigger therefore stacks overlapping stutters up to the 64-voice limit; it does not restart or click. When the pool is saturated, further repeats in the newest train are dropped (oldest grains keep playing to their natural end).
 
-Active inlets: mix, and — in Stut mode — inlets 11, 12 and 13 are repurposed. Inlet 11 sets stut_reps (the repeat count / TidalCycles `count`, 1-16) instead of delay time. Inlet 12 controls stut_reduction (gain decay per repeat, 0.0-1.0) instead of feedback. Inlet 13 controls stut_spacing (repetition spacing in ms, 1.0-5000.0) instead of tone. These three inlets use the same epsilon convention as every other inlet: a connected signal/slider drives the stut parameter in either headless mode, while an unconnected inlet is ignored in headless 1 so the stut_reps/stut_reduction/stut_spacing message holds (see "Setting stut parameters" below). Each repeat replays the captured slice with per-repetition gain decay — there is no feedback loop or tone filter in the stut signal path. The mix parameter controls dry/wet blend as usual. Modulation ranges (gdelay_feed range, gdelay_tone range) also route to stut_reduction and stut_spacing respectively when in Stut mode.
+Active inlets: mix. In Stut mode the three delay inlets (11 = delay time, 12 = feedback, 13 = tone) are INERT — stut's reps/reduction/spacing are set by MESSAGE only (stut_reps, stut_reduction, stut_spacing), exactly like stut_length/stut_length_mode. They are not driven by inlets 11/12/13 because those inlets carry delay-ranged values (time 0-10 s, feedback 0-1, tone 0-1) that don't match the stut parameter ranges (count 1-16, reduction 0-1, spacing 1-5000 ms); one patched slider can't serve both roles, so message control is used to avoid the range clash. Each repeat replays the captured slice with per-repetition gain decay — there is no feedback loop or tone filter in the stut signal path. The mix parameter controls dry/wet blend as usual. For automated/LFO-style control, stut_reps/reduction/spacing remain modulation targets via param_range (stut_reps; reduction/spacing via the gdelay_feed/gdelay_tone ranges).
 
 stut  Trigger a stut sequence. Captures the current splice boundaries and write position. Schedules repetitions immediately. If delay quantization is active (delay_quant > 0, BPM running), uses the quantized grid spacing instead of stut_spacing.
 
 stut_reps <int>  Number of repetitions per trigger.
 
-Range: 1 to 16. Default: 4. See "Setting stut parameters" below for how this interacts with inlet 11 and the headless modes.
+Range: 1 to 16. Default: 4. See "Setting stut parameters" below.
 
-Setting stut parameters (headless modes and initialization)
+Setting stut parameters (message-only)
 
-stut_reps (inlet 11), stut_reduction (inlet 12) and stut_spacing (inlet 13) are reached BOTH by
-message and by their signal inlet (the delay time/feedback/tone inlets, reused in Stut mode).
-They follow the EXACT same convention as every other inlet in ligase~ — there is no stut-specific
-special-casing:
+stut_reps, stut_reduction and stut_spacing are set by MESSAGE only — they are NOT driven by
+signal inlets 11/12/13. (stut_length and stut_length_mode are likewise message-only.)
 
-- A connected signal/slider on the inlet DRIVES the value, every block, in BOTH headless modes
-  (just like grainsize, speed, gdelay_time, etc.).
-- The message sets the value too; it holds whenever the inlet isn't driving (see epsilon below).
-- Modulation (param_range stut_reps/gdelay_feed/gdelay_tone) overrides both when enabled.
+Why message-only: inlets 11/12/13 are the delay time/feedback/tone inlets, reused while in Stut
+mode. Their natural ranges (time 0-10 s, feedback 0-1, tone 0-1) do not match the stut parameters
+(count 1-16, reduction 0-1, spacing 1-5000 ms). Because a single slider/signal patched to one of
+these inlets is scaled for its delay role, feeding that value to a stut parameter produced garbage
+— most visibly a tone-scaled (0-1) value landing on stut_spacing as ~1 ms, which piled every
+repeat onto the first (phasing, "no stutter"). Rather than make you reconcile three different
+ranges on one inlet, stut is driven entirely by message.
 
-Epsilon / unconnected inlets (identical to the rest of the engine):
-- headless 1 (DEFAULT): a near-zero inlet is ignored, so an UNCONNECTED inlet (reads 0) lets the
-  message hold — you do NOT need to disconnect anything to use messages. A real value drives.
-  Floors: reps >= 1, spacing >= 1 ms, reduction >= 0.001.
-- headless 0 (perfect-signal): the inlet's literal value is honored, including 0 (reps and
-  spacing still floor at 1 / 1 ms since they have no valid 0 state).
+Controlling stut from a slider/UI: send a MESSAGE, not a signal. e.g. an hslider with range
+1-5000 → message box `stut_spacing $1`; a 1-16 slider → `stut_reps $1`; a 0-1 slider →
+`stut_reduction $1`. For automated/LFO-style movement, stut_reps/reduction/spacing are also
+param_range modulation targets (reduction/spacing via the gdelay_feed/gdelay_tone ranges).
 
-Note: stut_length and stut_length_mode have no inlet, so they are message-only in both modes.
-
-Headless-0 caveat (applies to all inlets, not just stut): in headless 0 an UNCONNECTED inlet
-reads 0.0 and that 0 is honored. So an unconnected inlet 12 forces stut_reduction to 0 (rep 0 is
-full gain but trailing repeats are reduction^i, so 0 = only the first hit) and an unconnected
-inlet 14 forces gdelay_mix to 0 (no wet). If you want message-only control with nothing connected,
-use headless 1. If you patch sliders/signals to the inlets (the normal case), they drive the
-parameters in either mode.
+This is independent of headless mode — being message-only, stut parameters behave identically in
+headless 0 and 1, and you never need to connect or disconnect inlets 11/12/13 for stut.
 
 IMPORTANT — what makes stut audible. The stut wet only reaches the output through the
 granular/delayed monitor path, which is gated by TWO controls in series:
@@ -1695,17 +1688,17 @@ Note: delay quantization also affects DD-4 delay time (blending toward the grid)
 
 Per-Mode Parameter Summary
 
-DD-4            Bencina         Stut
-gdelay_time     Active          Active          → stut_reps (count)
-gdelay_feed     Active          Active          → stut_reduction
-gdelay_tone     Active          Active          → stut_spacing
-gdelay_mix      Active          Active          Active
-delay_quant     Blends time     No effect       Overrides spacing
-Triggering      Continuous      Continuous      Event (stut msg)
-Read pattern    Fixed offset    Moving tap      Captured position
-Max voices      1               32              64 (16 per trigger)
+Inlet/control    DD-4            Bencina         Stut
+gdelay_time      Active          Active          inert (stut_reps is message-only)
+gdelay_feed      Active          Active          inert (stut_reduction is message-only)
+gdelay_tone      Active          Active          inert (stut_spacing is message-only)
+gdelay_mix       Active          Active          Active
+delay_quant      Blends time     No effect       Overrides spacing
+Triggering       Continuous      Continuous      Event (stut msg)
+Read pattern     Fixed offset    Moving tap      Captured position
+Max voices       1               32              64 (16 per trigger)
 
-- Stut writes input to the shared buffer using the write head, but stut grains read from captured absolute positions, so there is no "delay time" in Stut. Inlet 11 (the delay-time inlet) is therefore repurposed to set the repeat count (stut_reps) in Stut mode.
+- Stut writes input to the shared buffer using the write head, but stut grains read from captured absolute positions, so there is no "delay time" in Stut. Inlets 11/12/13 keep their single delay meaning (time/feedback/tone) and are inert in Stut mode; stut_reps/reduction/spacing are set by message (see "Setting stut parameters"), so each delay inlet only ever needs one range.
 
 All three modes share the circular delay buffer and write head. Mode-specific parameters only affect their respective mode. Switching modes via delay_mode takes effect immediately.
 
