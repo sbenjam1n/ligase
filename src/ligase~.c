@@ -75,7 +75,7 @@ extern void grain_delay_set_sample_rate(grain_delay_t *delay, int sample_rate);
 
 extern grain_delay_stut_t* grain_delay_stut_create(int sample_rate);
 extern void grain_delay_stut_destroy(grain_delay_stut_t *stut);
-extern void grain_delay_stut_trigger(grain_delay_stut_t *stut, grain_delay_t *delay, uint32_t splice_start, uint32_t splice_end, float quantized_spacing_ms);
+extern void grain_delay_stut_trigger(grain_delay_stut_t *stut, grain_delay_t *delay, uint32_t splice_start, uint32_t splice_end, float quantized_spacing_ms, float play_length_samples);
 extern void grain_delay_stut_set_repetitions(grain_delay_stut_t *stut, int num);
 extern void grain_delay_stut_set_reduction(grain_delay_stut_t *stut, float reduction);
 extern void grain_delay_stut_set_spacing(grain_delay_stut_t *stut, float spacing_ms);
@@ -258,6 +258,13 @@ struct _ligase {
     int delay_quant_note;           // Delay quantization note value
     float delay_quant_amount;       // Delay quantization amount (0.0-1.0)
     float delay_quant_grid_ms;      // Delay quantization grid in milliseconds
+
+    // Stut slice length: how much audio each repeat replays (decoupled from spacing).
+    int stut_length_mode;           // 0 = independent (stut_length_ms / quantized), 1 = grainsize
+    float stut_length_ms;           // Stut slice length in ms (independent mode)
+    int stut_len_quant_note;        // Stut-length quantization note value (1..128)
+    float stut_len_quant_amount;    // Stut-length quantization amount (0.0-1.0)
+    float stut_len_quant_grid_ms;   // Stut-length quantization grid in milliseconds (from BPM)
 
     // SOS mode: 0=Record Only (legacy), 1=Morphagene (crossfade input/granular at output)
     int sos_mode;
@@ -2530,6 +2537,12 @@ static void ligase_bang(ligase_t *x) {
                 double ms_per_whole_note = (60000.0 / x->bpm) * 4.0;
                 x->delay_quant_grid_ms = ms_per_whole_note / (float)x->delay_quant_note;
             }
+
+            // Recalculate stut slice-length quantization grid based on new BPM
+            if (x->stut_len_quant_note > 0) {
+                double ms_per_whole_note = (60000.0 / x->bpm) * 4.0;
+                x->stut_len_quant_grid_ms = ms_per_whole_note / (float)x->stut_len_quant_note;
+            }
         }
     }
 
@@ -2712,6 +2725,52 @@ static void ligase_delay_quant_amount(ligase_t *x, t_floatarg amount) {
     post("ligase~: delay quantization amount set to %.0f%%", a * 100.0f);
 }
 
+// Stut slice length (how much audio each repeat replays) — independent of stut_spacing.
+static void ligase_stut_length(ligase_t *x, t_floatarg ms) {
+    float v = ms;
+    if (v < 1.0f) v = 1.0f;
+    if (v > 5000.0f) v = 5000.0f;
+    x->stut_length_ms = v;
+    post("ligase~: stut length set to %.2f ms", v);
+}
+
+// Stut length mode: 0 = independent (stut_length_ms / quantized), 1 = tie to grainsize.
+static void ligase_stut_length_mode(ligase_t *x, t_floatarg mode) {
+    int m = (int)mode;
+    if (m != 0 && m != 1) {
+        pd_error(x, "ligase~: stut_length_mode must be 0 (independent) or 1 (grainsize)");
+        return;
+    }
+    x->stut_length_mode = m;
+    post("ligase~: stut length mode = %d (%s)", m, m ? "grainsize" : "independent");
+}
+
+// Stut length note subdivision (1..128) — same pattern as delay_quantize.
+static void ligase_stut_length_quantize(ligase_t *x, t_floatarg note) {
+    int n = (int)note;
+    if (n != 1 && n != 2 && n != 4 && n != 8 && n != 16 && n != 32 && n != 64 && n != 128) {
+        pd_error(x, "ligase~: stut_length_quantize note must be 1, 2, 4, 8, 16, 32, 64, or 128");
+        return;
+    }
+    x->stut_len_quant_note = n;
+    if (x->bpm > 0.0) {
+        double ms_per_whole_note = (60000.0 / x->bpm) * 4.0;
+        x->stut_len_quant_grid_ms = ms_per_whole_note / (float)n;
+        post("ligase~: stut length quantize set to 1/%d note (%.2f ms grid)", n, x->stut_len_quant_grid_ms);
+    } else {
+        post("ligase~: stut length quantize set to 1/%d note (grid will be calculated when clock starts)", n);
+    }
+}
+
+// Stut length quantization amount (0..1) — blends stut_length_ms toward the note grid.
+static void ligase_stut_length_quant(ligase_t *x, t_floatarg amount) {
+    float a = amount;
+    if (a < 0.0f) a = 0.0f;
+    if (a > 1.0f) a = 1.0f;
+    x->stut_len_quant_amount = a;
+    post("ligase~: stut length quantization amount set to %.0f%%", a * 100.0f);
+}
+
 // @endregion:ligase_pd.core.timing.quantization
 
 // @region:ligase_pd.core.grain.delay Grain Output Delay Methods
@@ -2768,12 +2827,35 @@ static void ligase_stut(ligase_t *x) {
     float quantized_spacing = (x->delay_quant_amount > 0.0f && x->bpm > 1.0 && x->clock_running)
                              ? x->delay_quant_grid_ms : 0.0f;
 
-    grain_delay_stut_trigger(x->delay_stut, x->grain_delay, splice_start, splice_end, quantized_spacing);
+    // Slice length each repeat replays (samples), decoupled from spacing:
+    //   mode 1 = grainsize (one granular grain length);
+    //   mode 0 = independent stut_length_ms, optionally blended toward the BPM note grid
+    //            (stut_length_quant amount), same pattern as delay-time quantization.
+    float length_samples;
+    if (x->stut_length_mode == 1) {
+        length_samples = x->grain_size * (float)x->sample_rate;
+    } else {
+        float len_ms = x->stut_length_ms;
+        if (x->stut_len_quant_amount > 0.0f && x->bpm > 1.0 && x->clock_running &&
+            x->stut_len_quant_grid_ms > 0.0f) {
+            len_ms = len_ms * (1.0f - x->stut_len_quant_amount) +
+                     x->stut_len_quant_grid_ms * x->stut_len_quant_amount;
+        }
+        length_samples = (len_ms / 1000.0f) * (float)x->sample_rate;
+    }
+    if (length_samples < 1.0f) length_samples = 1.0f;
+
+    grain_delay_stut_trigger(x->delay_stut, x->grain_delay, splice_start, splice_end,
+                             quantized_spacing, length_samples);
 
     if (quantized_spacing > 0.0f) {
-        post("ligase~: stut triggered (quantized spacing: %.2f ms)", quantized_spacing);
+        post("ligase~: stut triggered (quantized spacing %.2f ms, slice %.1f ms%s)",
+             quantized_spacing, length_samples * 1000.0f / (float)x->sample_rate,
+             x->stut_length_mode ? " [grainsize]" : "");
     } else {
-        post("ligase~: stut triggered (spacing: %.2f ms)", x->delay_stut->spacing_ms);
+        post("ligase~: stut triggered (spacing %.2f ms, slice %.1f ms%s)",
+             x->delay_stut->spacing_ms, length_samples * 1000.0f / (float)x->sample_rate,
+             x->stut_length_mode ? " [grainsize]" : "");
     }
 }
 
@@ -4421,6 +4503,13 @@ static void *ligase_new(void) {
     x->delay_quant_amount = 0.0f;  // Default no quantization (0%)
     x->delay_quant_grid_ms = 0.0f;
 
+    // Stut slice-length defaults: independent mode, 62.5 ms (= old spacing-tied length)
+    x->stut_length_mode = 0;       // 0 = independent length, 1 = grainsize
+    x->stut_length_ms = 62.5f;     // 1/16 @120 BPM
+    x->stut_len_quant_note = 16;   // Default 1/16 note
+    x->stut_len_quant_amount = 0.0f;  // Default no quantization
+    x->stut_len_quant_grid_ms = 0.0f;
+
     // Initialize SOS mode (default to Morphagene mode)
     x->sos_mode = 1;
     x->sos_value = 0.5f;  // Default to 50% mix (0.5)
@@ -4544,6 +4633,10 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_stut_reps, gensym("stut_reps"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_stut_reduction, gensym("stut_reduction"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_stut_spacing, gensym("stut_spacing"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_stut_length, gensym("stut_length"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_stut_length_mode, gensym("stut_length_mode"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_stut_length_quantize, gensym("stut_length_quantize"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_stut_length_quant, gensym("stut_length_quant"), A_DEFFLOAT, 0);
 
     // Bencina mode methods
     class_addmethod(ligase_class, (t_method)ligase_bencina_iot, gensym("bencina_iot"), A_DEFFLOAT, 0);

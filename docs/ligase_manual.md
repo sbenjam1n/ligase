@@ -249,6 +249,10 @@ stut - Trigger stut effect
 stut_reps <1-16> - Stut repetitions
 stut_reduction <0-1> - Gain decay per repeat
 stut_spacing <ms> - Spacing between repeats
+stut_length <ms> - Slice length each repeat replays (independent of spacing)
+stut_length_mode <0|1> - 0=independent length, 1=tie to grainsize
+stut_length_quantize <1-128> - Note subdivision for a tempo-locked slice length
+stut_length_quant <0-1> - Blend slice length toward the note grid
 bencina_iot <ms> - Bencina grain spacing
 bencina_grainsize <seconds> - Bencina grain size
 bencina_wrap <0|1> - Global delay / loop wrap (default 0)
@@ -1601,6 +1605,27 @@ stut_spacing <float>  Base spacing between repetitions (milliseconds).
 Range: 1.0 to 5000.0 ms. Default: 62.5 ms (1/16 note at 120 BPM).
 
 Overridden by delay quantization grid when active (see below).
+
+Stut Slice Length (what each repeat replays)
+
+Each repeat replays a slice of the captured granular output. Its LENGTH is independent of the
+spacing, so: length < spacing = gated repeats (gaps); length = spacing = gapless; length >
+spacing = overlapping/denser. The length comes from one of two modes:
+
+stut_length_mode <0|1>  0 = independent length (default, uses stut_length / its quantization);
+1 = tie the slice length to the current grainsize (one granular grain per repeat).
+
+stut_length <float>  Independent slice length in milliseconds (mode 0). Range 1.0–5000.0.
+Default: 62.5 ms.
+
+stut_length_quantize <1|2|4|8|16|32|64|128>  Note subdivision for a tempo-locked slice length
+(computed from BPM, same pattern as delay_quantize). Default: 1/16.
+
+stut_length_quant <0-1>  Blend toward the quantized note length: 0 = use stut_length (ms) as-is,
+1 = use the note grid, in-between = blend. Active only when BPM > 1 and the clock is running.
+
+Example: at 120 BPM, stut_length_quantize 8 + stut_length_quant 1 → each repeat replays a
+250 ms (1/8-note) slice, regardless of stut_spacing.
 
 Stut and Delay Quantization
 

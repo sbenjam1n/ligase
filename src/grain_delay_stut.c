@@ -43,12 +43,19 @@ void grain_delay_stut_trigger(grain_delay_stut_t *stut,
                                grain_delay_t *delay,
                                uint32_t splice_start,
                                uint32_t splice_end,
-                               float quantized_spacing_ms) {
+                               float quantized_spacing_ms,
+                               float play_length_samples) {
     if (!stut || !delay) return;
 
     // Use quantized spacing if provided, otherwise use base spacing
     float spacing_ms = (quantized_spacing_ms > 0.0f) ? quantized_spacing_ms : stut->spacing_ms;
     float spacing_samples = (spacing_ms / 1000.0f) * stut->sample_rate;
+
+    // Slice length each repeat replays. The caller computes it (independent stut_length /
+    // BPM-quantized, or grainsize); fall back to the spacing if it wasn't supplied. Decoupled
+    // from spacing, so length<spacing = gated (gaps), =spacing = gapless, >spacing = overlap.
+    float play_length = (play_length_samples >= 1.0f) ? play_length_samples : spacing_samples;
+    if (play_length > (float)delay->buffer_size) play_length = (float)delay->buffer_size;
 
     // Capture current write position in delay buffer
     float capture_position = (float)delay->write_pos;
@@ -64,10 +71,9 @@ void grain_delay_stut_trigger(grain_delay_stut_t *stut,
         g->capture_splice_start = splice_start;
         g->capture_splice_end = splice_end;
         g->capture_position = capture_position;
-        // Each repeat REPLAYS the captured slice (the `spacing` samples just before the
-        // trigger), not a single sample — that is what makes it a stutter rather than a
-        // click. Slice length = repeat spacing, so repeats tile gaplessly.
-        g->play_length = spacing_samples;
+        // Each repeat REPLAYS the captured slice (the play_length samples just before the
+        // trigger), not a single sample — that is what makes it a stutter rather than a click.
+        g->play_length = play_length;
         g->play_pos = 0.0f;
 
         grains_scheduled++;
