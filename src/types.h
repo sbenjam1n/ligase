@@ -62,7 +62,11 @@ typedef struct {
 
 // @region:ligase_pd.core.types.grain_delay_stut Stut Mode Structure
 
-#define MAX_STUT_GRAINS 16  // Maximum stut repetitions
+#define MAX_STUT_REPS   16  // Max repeats in a SINGLE trigger's echo train (TidalCycles `count`)
+#define MAX_STUT_GRAINS 64  // Voice-pool size: total simultaneous grains across OVERLAPPING
+                            // triggers. Each trigger schedules up to MAX_STUT_REPS grains into
+                            // free pool slots, so banging the trigger layers stutters (up to 64
+                            // voices) instead of clobbering the previous one.
 
 typedef struct grain_stut_grain {
     int active;                    // Is this stut grain active

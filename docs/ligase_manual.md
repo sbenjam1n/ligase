@@ -1582,7 +1582,9 @@ Stut Mode (delay_mode 2)
 
 Quantized rhythmic delay. Unlike DD-4 and Bencina which run continuously, Stut is event-triggered via the stut message. When triggered, it captures the current buffer write position and schedules N repetitions at fixed time intervals, each with exponentially decaying gain.
 
-Architecture: the stut message captures the buffer write position at the moment of triggering. It then schedules up to 16 grains, each with a countdown timer (i × spacing) and a gain value (gain_reduction ^ i). During processing, each grain counts down; when its timer reaches zero it replays the captured slice — the `spacing`-length stretch of audio just before the trigger — scaled by its gain, with a short edge fade to avoid clicks. This produces decaying rhythmic repeats (a stutter) of the captured moment, not single-sample clicks.
+Architecture: the stut message captures the buffer write position at the moment of triggering. It then schedules stut_reps grains (up to MAX_STUT_REPS = 16 per trigger), each with a countdown timer (i × spacing) and a gain value (gain_reduction ^ i). During processing, each grain counts down; when its timer reaches zero it replays the captured slice — the `spacing`-length stretch of audio just before the trigger — scaled by its gain, with a short edge fade to avoid clicks. This produces decaying rhythmic repeats (a stutter) of the captured moment, not single-sample clicks.
+
+Polyphony / layering: grains are allocated from a 64-voice pool (MAX_STUT_GRAINS) into FREE slots, so re-triggering stut while a previous stutter is still ringing LAYERS the new echo train on top of the old one (each train keeps its own captured slice, timing and decay) rather than clobbering it. Banging the trigger therefore stacks overlapping stutters up to the 64-voice limit; it does not restart or click. When the pool is saturated, further repeats in the newest train are dropped (oldest grains keep playing to their natural end).
 
 Active inlets: mix, and — in Stut mode — inlets 11, 12 and 13 are repurposed. Inlet 11 sets stut_reps (the repeat count / TidalCycles `count`, 1-16) instead of delay time. Inlet 12 controls stut_reduction (gain decay per repeat, 0.0-1.0) instead of feedback. Inlet 13 controls stut_spacing (repetition spacing in ms, 1.0-5000.0) instead of tone. These three inlets drive their stut parameter ONLY in headless 0; in headless 1 they are ignored so the stut_reps/stut_reduction/stut_spacing messages stay authoritative (see "Setting stut parameters" below). Each repeat replays the captured slice with per-repetition gain decay — there is no feedback loop or tone filter in the stut signal path. The mix parameter controls dry/wet blend as usual. Modulation ranges (gdelay_feed range, gdelay_tone range) also route to stut_reduction and stut_spacing respectively when in Stut mode.
 
@@ -1707,7 +1709,7 @@ gdelay_mix      Active          Active          Active
 delay_quant     Blends time     No effect       Overrides spacing
 Triggering      Continuous      Continuous      Event (stut msg)
 Read pattern    Fixed offset    Moving tap      Captured position
-Max voices      1               32              16
+Max voices      1               32              64 (16 per trigger)
 
 - Stut writes input to the shared buffer using the write head, but stut grains read from captured absolute positions, so there is no "delay time" in Stut. Inlet 11 (the delay-time inlet) is therefore repurposed to set the repeat count (stut_reps) in Stut mode.
 

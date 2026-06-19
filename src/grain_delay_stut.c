@@ -37,6 +37,15 @@ void grain_delay_stut_destroy(grain_delay_stut_t *stut) {
 
 // @region:ligase_pd.core.grain.delay_stut.trigger Stut Trigger Logic
 
+// Find a free (inactive) slot in the voice pool. Returns NULL when all MAX_STUT_GRAINS voices
+// are busy. Mirrors Bencina's get_free_grain so overlapping triggers LAYER rather than clobber.
+static grain_stut_grain_t* get_free_stut_grain(grain_delay_stut_t *stut) {
+    for (int i = 0; i < MAX_STUT_GRAINS; i++) {
+        if (!stut->grain_pool[i].active) return &stut->grain_pool[i];
+    }
+    return NULL;
+}
+
 // Trigger a stut sequence
 // This captures the current buffer position and schedules N repetitions
 void grain_delay_stut_trigger(grain_delay_stut_t *stut,
@@ -60,14 +69,20 @@ void grain_delay_stut_trigger(grain_delay_stut_t *stut,
     // Capture current write position in delay buffer
     float capture_position = (float)delay->write_pos;
 
-    // Schedule N stut grains
-    int grains_scheduled = 0;
-    for (int i = 0; i < stut->num_repetitions && i < MAX_STUT_GRAINS; i++) {
-        grain_stut_grain_t *g = &stut->grain_pool[i];
+    // Schedule this trigger's echo train into FREE pool slots (never fixed slots [0..reps-1]),
+    // so a new trigger LAYERS on top of still-playing grains instead of clobbering them — the
+    // bug behind "banging the trigger clicks and doesn't layer." reps within one train are
+    // capped at MAX_STUT_REPS; the pool (MAX_STUT_GRAINS) caps total simultaneous voices across
+    // all overlapping triggers.
+    int reps = stut->num_repetitions;
+    if (reps > MAX_STUT_REPS) reps = MAX_STUT_REPS;
+    for (int rep = 0; rep < reps; rep++) {
+        grain_stut_grain_t *g = get_free_stut_grain(stut);
+        if (!g) break;  // Pool saturated by overlapping stutters — drop the extra repeats.
 
         g->active = 1;
-        g->trigger_time_samples = i * spacing_samples;  // Delay for each repetition
-        g->gain = powf(stut->gain_reduction, (float)i); // Exponential gain reduction
+        g->trigger_time_samples = rep * spacing_samples;  // Delay for each repetition in THIS train
+        g->gain = powf(stut->gain_reduction, (float)rep); // Exponential decay within THIS train
         g->capture_splice_start = splice_start;
         g->capture_splice_end = splice_end;
         g->capture_position = capture_position;
@@ -75,11 +90,9 @@ void grain_delay_stut_trigger(grain_delay_stut_t *stut,
         // trigger), not a single sample — that is what makes it a stutter rather than a click.
         g->play_length = play_length;
         g->play_pos = 0.0f;
-
-        grains_scheduled++;
     }
-
-    stut->num_active_grains = grains_scheduled;
+    // num_active_grains is recomputed every block in grain_delay_stut_process(); do NOT reset it
+    // here, or we'd erase the count of grains still playing from earlier (overlapping) triggers.
 }
 
 // @endregion:ligase_pd.core.grain.delay_stut.trigger
@@ -155,7 +168,7 @@ void grain_delay_stut_process(grain_delay_stut_t *stut,
 void grain_delay_stut_set_repetitions(grain_delay_stut_t *stut, int num) {
     if (stut) {
         if (num < 1) num = 1;
-        if (num > MAX_STUT_GRAINS) num = MAX_STUT_GRAINS;
+        if (num > MAX_STUT_REPS) num = MAX_STUT_REPS;  // per-train repeat cap (pool is larger)
         stut->num_repetitions = num;
     }
 }
