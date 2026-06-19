@@ -60,15 +60,28 @@ void reel_set_sample_rate(reel_t *reel, int sample_rate) {
         free(nr);
         return;  // allocation failed: keep the existing buffer/rate
     }
+    // PRESERVE the recorded audio and splices across a rate change. Hosts — plugdata/JUCE
+    // especially — commonly (re)report the sample rate one or more times AFTER instantiation;
+    // wiping here silently destroyed a recording the user had just made, leaving empty splices
+    // and a dead, click-on-adjust engine until plugdata was restarted ("sometimes initializes
+    // unable to record"). Copy the existing samples (capped to the new capacity) and keep the
+    // splice markers intact. (Samples are reinterpreted at the new rate — a slight pitch/length
+    // shift on a genuine device switch — which is far better than destroying the take.)
+    int keep = reel->length;
+    if (keep > new_cap) keep = new_cap;
+    if (reel->buffer_left && reel->buffer_right && keep > 0) {
+        memcpy(nl, reel->buffer_left, (size_t)keep * sizeof(float));
+        memcpy(nr, reel->buffer_right, (size_t)keep * sizeof(float));
+    }
+
     free(reel->buffer_left);
     free(reel->buffer_right);
     reel->buffer_left = nl;
     reel->buffer_right = nr;
     reel->capacity = new_cap;
     reel->sample_rate = sample_rate;
-    reel->length = 0;
-    reel->splices.count = 0;
-    reel->splices.current_splice = 0;
+    if (reel->length > new_cap) reel->length = new_cap;
+    // splices (count, markers, current_splice) intentionally preserved
 }
 
 void reel_clear(reel_t *reel) {
