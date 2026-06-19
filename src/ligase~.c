@@ -688,19 +688,16 @@ static void ligase_update_inlets(ligase_t *x,
         }
     }
 
-    // Update amplitude with validation
-    // headless=1: epsilon threshold (0.0 = unconnected)
-    // headless=0: allow full 0.0 (0.0 = silence)
+    // Update amplitude (grain output LEVEL) with validation.
+    // Ignore a bare 0 in BOTH modes — same as grainsize/iot/speed. An unconnected
+    // amplitude inlet (inlet 21) reads 0; honoring that in headless 0 zeroed the grain
+    // level and silenced the whole engine the instant you switched to headless 0 (with
+    // grainsize/iot/speed already 0-safe, amplitude was the lone hold-out). A true 0
+    // (silence) is set via the `amplitude` message or a near-0 signal (e.g. 0.0001),
+    // not a bare unconnected inlet — so this only ignores an exact 0.0 reading.
     float amplitude_val = amplitude_in[0];
-
-    if (x->headless_mode) {
-        if (amplitude_val > 0.0f && amplitude_val <= 2.0f) {
-            x->amplitude = amplitude_val;
-        }
-    } else {
-        if (amplitude_val >= 0.0f && amplitude_val <= 2.0f) {
-            x->amplitude = amplitude_val;
-        }
+    if (amplitude_val > 0.0f && amplitude_val <= 2.0f) {
+        x->amplitude = amplitude_val;
     }
 
     // Update pan with validation
