@@ -64,7 +64,7 @@ extern float sample_param_range(param_range_t *range, perlin_state_t *perlin_sta
 
 extern grain_delay_t* grain_delay_create(int sample_rate);
 extern void grain_delay_destroy(grain_delay_t *delay);
-extern void grain_delay_process(grain_delay_t *delay, grain_delay_stut_t *stut, grain_delay_bencina_t *bencina, float *in_left, float *in_right, float *out_left, float *out_right, int blocksize, uint32_t splice_start, uint32_t splice_end);
+extern void grain_delay_process(grain_delay_t *delay, grain_delay_stut_t *stut, grain_delay_bencina_t *bencina, float *in_left, float *in_right, float *out_left, float *out_right, int blocksize, uint32_t splice_start, uint32_t splice_end, float bencina_pan_base, param_range_t *bencina_pan_range, perlin_state_t *bencina_pan_perlin);
 extern void grain_delay_set_time(grain_delay_t *delay, float time_seconds);
 extern void grain_delay_set_glide(grain_delay_t *delay, float glide_ms);
 extern void grain_delay_set_feedback(grain_delay_t *delay, float feedback);
@@ -1254,7 +1254,8 @@ static void ligase_process_grains(ligase_t *x,
         // Process grain output through delay (DD-4/Bencina/Stut modes)
         grain_delay_process(x->grain_delay, x->delay_stut, x->delay_bencina,
                            x->temp_left, x->temp_right, x->delayed_left, x->delayed_right,
-                           n, delay_splice_start, delay_splice_end);
+                           n, delay_splice_start, delay_splice_end,
+                           x->pan, &x->scheduler->bencina_pan_range, &x->scheduler->perlin_state);
         // Firewall the granular signal before it reaches the dry/wet mix and the reel
         // write. constant_power_mix does in*a + delayed*b; NaN*0 == NaN, so without this
         // one bad sample silences even the 100%-dry monitor and can be recorded into the
@@ -3248,6 +3249,7 @@ static param_range_t* get_param_range_by_name(ligase_t *x, const char *name) {
     // Bencina
     if (strcmp(name, "bencina_iot") == 0) return &x->scheduler->bencina_iot_range;
     if (strcmp(name, "bencina_grainsize") == 0) return &x->scheduler->bencina_grainsize_range;
+    if (strcmp(name, "bencina_pan") == 0) return &x->scheduler->bencina_pan_range;
     if (strcmp(name, "smear_frequency") == 0) return &x->scheduler->smear_frequency_range;
     if (strcmp(name, "smear_resonance") == 0) return &x->scheduler->smear_resonance_range;
     if (strcmp(name, "smear_stages") == 0) return &x->scheduler->smear_stages_range;
@@ -3526,6 +3528,7 @@ static void ligase_rand_type(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
             &x->scheduler->stut_reps_range,
             &x->scheduler->bencina_iot_range,
             &x->scheduler->bencina_grainsize_range,
+            &x->scheduler->bencina_pan_range,
             &x->scheduler->smear_frequency_range,
             &x->scheduler->smear_resonance_range,
             &x->scheduler->smear_stages_range,
@@ -4237,6 +4240,7 @@ static void ligase_get_ranges(ligase_t *x) {
     output_param_range(x, "stut_reps", &x->scheduler->stut_reps_range);
     output_param_range(x, "bencina_iot", &x->scheduler->bencina_iot_range);
     output_param_range(x, "bencina_grainsize", &x->scheduler->bencina_grainsize_range);
+    output_param_range(x, "bencina_pan", &x->scheduler->bencina_pan_range);
 }
 
 // @endregion:ligase_pd.pd_external.methods.query.get_ranges
@@ -4291,6 +4295,7 @@ static void ligase_get_generators(ligase_t *x) {
     output_rand_type(x, "stut_reps", &x->scheduler->stut_reps_range);
     output_rand_type(x, "bencina_iot", &x->scheduler->bencina_iot_range);
     output_rand_type(x, "bencina_grainsize", &x->scheduler->bencina_grainsize_range);
+    output_rand_type(x, "bencina_pan", &x->scheduler->bencina_pan_range);
 
     // Output perlin frequency settings for all 4 instances
     for (int i = 0; i < 4; i++) {

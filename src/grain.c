@@ -442,6 +442,7 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     // Initialize bencina parameter ranges (disabled by default)
     sched->bencina_iot_range = default_range;
     sched->bencina_grainsize_range = default_range;
+    sched->bencina_pan_range = default_range;
 
     // Initialize smear parameter ranges (disabled by default)
     sched->smear_frequency_range = default_range;

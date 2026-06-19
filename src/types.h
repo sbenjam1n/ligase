@@ -563,6 +563,10 @@ typedef struct scheduler {
     // Bencina parameter ranges
     param_range_t bencina_iot_range;         // Bencina grain spacing (1.0-1000.0 ms)
     param_range_t bencina_grainsize_range;   // Bencina grain size (0.001-2.0 sec)
+    param_range_t bencina_pan_range;         // Bencina per-grain pan spread/cloud (0-1); sampled
+                                             // PER GRAIN like the main pan. Disabled -> grains at
+                                             // the base pan (inlet 22). Enabled -> random per-grain
+                                             // pan in [min,max] = stereo cloud (width=span, skew=pos)
     param_range_t smear_frequency_range;     // Smear allpass center freq (20 - ~0.45*sr Hz)
     param_range_t smear_resonance_range;     // Smear pole radius / sharpness (0.0-0.999)
     param_range_t smear_stages_range;        // Smear allpass stages / depth (0-48)

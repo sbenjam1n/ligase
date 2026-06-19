@@ -7,6 +7,10 @@
 
 // Forward declaration for envelope functions
 extern float envelope_sample(envelope_t *env, float phase);
+// Shared modulation sampler (grain.c) — used to pick each grain's pan from bencina_pan_range,
+// exactly as the main granular engine picks its per-grain pan. Returns base_value when the range
+// is disabled, else a value in [min,max] from the bound generator.
+extern float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, float base_value);
 
 // Makeup gain on the Bencina wet output so the granular cloud sits prominently in the mix
 // (the raw, overlap-normalized grain sum is ~unity with the dry, which felt too subtle).
@@ -86,7 +90,8 @@ static grain_bencina_grain_t* get_free_grain(grain_delay_bencina_t *bencina) {
 static void trigger_bencina_grain(grain_delay_bencina_t *bencina,
                                   grain_delay_t *delay,
                                   uint32_t splice_start,
-                                  uint32_t splice_end) {
+                                  uint32_t splice_end,
+                                  float grain_pan) {
     grain_bencina_grain_t *g = get_free_grain(bencina);
     if (!g) return;  // No free grains
 
@@ -111,7 +116,9 @@ static void trigger_bencina_grain(grain_delay_bencina_t *bencina,
     g->read_offset = delay_samples + jitter;  // captured, scattered per-grain tap
     g->phase = 0.0f;                    // Start of envelope
     g->amplitude = 1.0f;                // Full amplitude (mix controlled globally)
-    g->pan = 0.5f;                      // Center pan (panning model unchanged — constant-power)
+    g->pan = grain_pan;                 // per-grain pan: base (inlet 22) or, if bencina_pan_range
+                                        // is enabled, a random per-grain position = stereo cloud
+                                        // (constant-power panning applied in process)
     g->splice_start = splice_start;
     g->splice_end = splice_end;
     g->wrap_mode = bencina->default_wrap_mode;  // honor the configured wrap mode (was hardcoded 1)
@@ -133,7 +140,10 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
                                  float *out_right,
                                  int blocksize,
                                  uint32_t splice_start,
-                                 uint32_t splice_end) {
+                                 uint32_t splice_end,
+                                 float pan_base,
+                                 param_range_t *pan_range,
+                                 perlin_state_t *pan_perlin) {
     if (!bencina || !delay) return;
 
     // Calculate splice length for wrapping
@@ -155,7 +165,11 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
         // Check if we should trigger a new grain
         bencina->samples_until_next_grain--;
         if (bencina->samples_until_next_grain <= 0) {
-            trigger_bencina_grain(bencina, delay, splice_start, splice_end);
+            // Pick this grain's pan exactly like the main engine picks per-grain pan: from
+            // bencina_pan_range if enabled (random in [min,max] = the stereo cloud), else the base
+            // pan (inlet 22). pan_range may be NULL if not wired — fall back to the base then.
+            float gp = pan_range ? sample_param_range(pan_range, pan_perlin, pan_base) : pan_base;
+            trigger_bencina_grain(bencina, delay, splice_start, splice_end, gp);
             bencina->samples_until_next_grain = bencina->trigger_period_samples;
         }
 

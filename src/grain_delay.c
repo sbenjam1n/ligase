@@ -12,7 +12,7 @@ extern void grain_delay_stut_process(grain_delay_stut_t *stut, grain_delay_t *de
 
 extern grain_delay_bencina_t* grain_delay_bencina_create(envelope_t *envelope, int sample_rate);
 extern void grain_delay_bencina_destroy(grain_delay_bencina_t *bencina);
-extern void grain_delay_bencina_process(grain_delay_bencina_t *bencina, grain_delay_t *delay, float *in_left, float *in_right, float *out_left, float *out_right, int blocksize, uint32_t splice_start, uint32_t splice_end);
+extern void grain_delay_bencina_process(grain_delay_bencina_t *bencina, grain_delay_t *delay, float *in_left, float *in_right, float *out_left, float *out_right, int blocksize, uint32_t splice_start, uint32_t splice_end, float pan_base, param_range_t *pan_range, perlin_state_t *pan_perlin);
 
 // Create a new grain delay processor
 grain_delay_t* grain_delay_create(int sample_rate) {
@@ -208,7 +208,10 @@ void grain_delay_process(grain_delay_t *delay,
                         float *out_left, float *out_right,
                         int blocksize,
                         uint32_t splice_start,
-                        uint32_t splice_end) {
+                        uint32_t splice_end,
+                        float bencina_pan_base,
+                        param_range_t *bencina_pan_range,
+                        perlin_state_t *bencina_pan_perlin) {
     if (!delay) return;
 
     // Guard a degenerate buffer (sample_rate 0 / realloc failure): the wrap loops and the
@@ -230,7 +233,7 @@ void grain_delay_process(grain_delay_t *delay,
             if (bencina) {
                 // Bencina mode handles buffer writing internally with feedback
                 // It writes: buffer[write_pos] = input + (grain_output * feedback)
-                grain_delay_bencina_process(bencina, delay, in_left, in_right, out_left, out_right, blocksize, splice_start, splice_end);
+                grain_delay_bencina_process(bencina, delay, in_left, in_right, out_left, out_right, blocksize, splice_start, splice_end, bencina_pan_base, bencina_pan_range, bencina_pan_perlin);
             } else {
                 // Bencina not initialized, pass through dry
                 for (int i = 0; i < blocksize; i++) {

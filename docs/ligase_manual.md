@@ -258,6 +258,7 @@ bencina_iot <ms> - Bencina grain spacing
 bencina_grainsize <seconds> - Bencina grain size
 bencina_wrap <0|1> - Global delay / loop wrap (default 0)
 bencina_clear - Clear bencina grains
+bencina_pan - per-grain stereo spread; a modulation target: `param_range bencina_pan <min> <max>` + `rand_type rand_1 bencina_pan` (base = inlet 22 / pan when the range is off)
 
 Sphere Simulation
 
@@ -1567,6 +1568,8 @@ Pitch: playback rate is fixed at 1.0 — Bencina does NOT transpose. Pitch in li
 
 Architecture: grains are triggered continuously at a fixed interval (bencina_iot). Each grain reads its captured (scattered) position, applies the main envelope shape as a window (the SAME envelope object/shape as the granular engine), and uses constant-power panning. The cloud width scales with bencina_grainsize (bigger grain = wider scatter). The grain sum is overlap-normalized (so density sets texture, not level), passes through the tone filter, and the filtered output is fed back into the buffer before the write head advances. This true feedback creates recursive granulation — delayed grains get re-granulated — producing shimmer and evolving textures at higher feedback values.
 
+Stereo cloud (bencina_pan): each grain's pan is chosen the same way the main granular engine chooses per-grain pan — from the bencina_pan modulation range, sampled per grain. It is a standard modulation target: `param_range bencina_pan <min> <max>` sets the spread (the span = stereo WIDTH, where the span sits = SKEW), `rand_type rand_1 bencina_pan` makes it random per grain. With the range off, every grain takes the BASE pan, which rides the pan inlet (inlet 22) / `pan` message — so the pan knob centers the cloud, exactly like every other modulatable param. Examples: `param_range bencina_pan 0 1` = full random L–R cloud; `param_range bencina_pan 0 0.35` = a narrower cloud skewed left; range off + `pan 0.15` = the whole (mono) cloud sitting left. Pan does NOT affect the time scatter or pitch — it's purely where each grain sits in the field. (To run the cloud pan independent of the pan inlet, enable its modulation range — modulation overrides the inlet, as with any param.)
+
 Wet level / saturation: the wet output gets a modest makeup gain (~1.3x, so the cloud sits prominently against the dry) followed by a tanh soft-limit, so the wet stays prominent but can never exceed ±1 — it rounds off / saturates gracefully instead of hard-clipping, even when high feedback drives the buffer hot. Pushed hard, expect gentle analog-style saturation in the tails rather than digital clipping. The feedback path itself is NOT boosted or limited, so the recirculation loop gain stays = feedback (stable for feedback < 1).
 
 Active inlets: all four (time, feedback, tone, mix). Time controls the distance of the moving tap from the write head. Feedback and tone operate in the grain output path.
@@ -2133,6 +2136,10 @@ stut_reps
 - Bencina/PPG (sampled per DSP block):
 
 bencina_iot, bencina_grainsize
+
+- Bencina pan (sampled PER GRAIN, like the main pan — for the stereo cloud):
+
+bencina_pan
 
 - Smear / allpass (sampled per DSP block):
 
