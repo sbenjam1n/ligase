@@ -1480,7 +1480,7 @@ Clamped to bounds.
 
 Smoothed internally to prevent clicks during time changes. Smoothing coefficient: 0.001 (approximately 20ms transition at 48kHz).
 
-Signal inlet 11: updates if value in range (0.0, 10.0], else keeps current value.
+Signal inlet 11: In DD-4/Bencina modes, updates delay time if value in range (0.0, 10.0]. In Stut mode (delay_mode 2), sets the repeat count (TidalCycles `count`); an integer value >= 1 is applied (clamped to 1-16), 0/unconnected is ignored so it does not override the stut_reps message/modulation.
 
 gdelay_feed <float> Set feedback amount.
 
@@ -1580,7 +1580,7 @@ Quantized rhythmic delay. Unlike DD-4 and Bencina which run continuously, Stut i
 
 Architecture: the stut message captures an absolute buffer position at the moment of triggering. It then schedules up to 16 grains, each with a countdown timer (i × spacing) and a gain value (gain_reduction ^ i). During processing, each grain counts down; when its timer reaches zero it emits a single-sample pulse from the captured position, scaled by its gain. This produces discrete rhythmic echoes of the captured moment.
 
-Active inlets: time, mix, and — in Stut mode — inlets 12 and 13 are repurposed. Inlet 12 controls stut_reduction (gain decay per repeat, 0.0-1.0) instead of feedback. Inlet 13 controls stut_spacing (repetition spacing in ms, 1.0-5000.0) instead of tone. The stut grains read directly from captured buffer positions with per-repetition gain decay — there is no feedback loop or tone filter in the stut signal path. The mix parameter controls dry/wet blend as usual. Modulation ranges (gdelay_feed range, gdelay_tone range) also route to stut_reduction and stut_spacing respectively when in Stut mode.
+Active inlets: mix, and — in Stut mode — inlets 11, 12 and 13 are repurposed. Inlet 11 sets stut_reps (the repeat count / TidalCycles `count`, 1-16) instead of delay time. Inlet 12 controls stut_reduction (gain decay per repeat, 0.0-1.0) instead of feedback. Inlet 13 controls stut_spacing (repetition spacing in ms, 1.0-5000.0) instead of tone. The stut grains read directly from captured buffer positions with per-repetition gain decay — there is no feedback loop or tone filter in the stut signal path. The mix parameter controls dry/wet blend as usual. Modulation ranges (gdelay_feed range, gdelay_tone range) also route to stut_reduction and stut_spacing respectively when in Stut mode.
 
 stut  Trigger a stut sequence. Captures the current splice boundaries and write position. Schedules repetitions immediately. If delay quantization is active (delay_quant > 0, BPM running), uses the quantized grid spacing instead of stut_spacing.
 
@@ -1613,7 +1613,7 @@ Note: delay quantization also affects DD-4 delay time (blending toward the grid)
 Per-Mode Parameter Summary
 
 DD-4            Bencina         Stut
-gdelay_time     Active          Active          Inactive*
+gdelay_time     Active          Active          → stut_reps (count)
 gdelay_feed     Active          Active          → stut_reduction
 gdelay_tone     Active          Active          → stut_spacing
 gdelay_mix      Active          Active          Active
@@ -1622,7 +1622,7 @@ Triggering      Continuous      Continuous      Event (stut msg)
 Read pattern    Fixed offset    Moving tap      Captured position
 Max voices      1               32              16
 
-- Stut writes input to the shared buffer using the write head, but stut grains read from captured absolute positions. The delay_time parameter does not affect stut grain playback positions.
+- Stut writes input to the shared buffer using the write head, but stut grains read from captured absolute positions, so there is no "delay time" in Stut. Inlet 11 (the delay-time inlet) is therefore repurposed to set the repeat count (stut_reps) in Stut mode.
 
 All three modes share the circular delay buffer and write head. Mode-specific parameters only affect their respective mode. Switching modes via delay_mode takes effect immediately.
 

@@ -557,14 +557,25 @@ static void ligase_update_inlets(ligase_t *x,
     float gdelay_tone = gdelay_tone_in[0];
     float gdelay_mix = gdelay_mix_in[0];
 
-    // Delay time: 0.0 = off (musically valid)
-    if (x->headless_mode) {
-        if (gdelay_time > 0.0f && gdelay_time <= 10.0f) {
-            grain_delay_set_time(x->grain_delay, gdelay_time);
+    // Inlet 11: delay time (DD-4/Bencina) or stut count (Stut).
+    if (x->grain_delay->mode == DELAY_MODE_STUT) {
+        // Stut mode: inlet 11 sets the repeat COUNT (TidalCycles `count`, 1-16) — the
+        // delay-time inlet is otherwise unused here. Ignore 0/unconnected so it doesn't
+        // stomp the stut_reps message/modulation value; the setter clamps to [1, 16].
+        int reps = (int)gdelay_time;
+        if (reps >= 1) {
+            grain_delay_stut_set_repetitions(x->delay_stut, reps);
         }
     } else {
-        if (gdelay_time >= 0.0f && gdelay_time <= 10.0f) {
-            grain_delay_set_time(x->grain_delay, gdelay_time);
+        // Delay time: 0.0 = off (musically valid)
+        if (x->headless_mode) {
+            if (gdelay_time > 0.0f && gdelay_time <= 10.0f) {
+                grain_delay_set_time(x->grain_delay, gdelay_time);
+            }
+        } else {
+            if (gdelay_time >= 0.0f && gdelay_time <= 10.0f) {
+                grain_delay_set_time(x->grain_delay, gdelay_time);
+            }
         }
     }
 
@@ -3897,9 +3908,15 @@ static void ligase_get_inlets(ligase_t *x) {
     post("Inlet 10: maxgrains");
     post("       Current: %.0f", x->maxgrains_current);
     post("       Message: maxgrains %.0f", x->maxgrains_current);
-    post("Inlet 11: gdelay_time");
-    post("       Current: %.3f", x->gdelay_time_current);
-    post("       Message: gdelay_time %.3f", x->gdelay_time_current);
+    if (x->grain_delay->mode == DELAY_MODE_STUT) {
+        post("Inlet 11: stut_reps (count, stut mode)");
+        post("       Current: %d", x->delay_stut->num_repetitions);
+        post("       Message: stut_reps %d", x->delay_stut->num_repetitions);
+    } else {
+        post("Inlet 11: gdelay_time");
+        post("       Current: %.3f", x->gdelay_time_current);
+        post("       Message: gdelay_time %.3f", x->gdelay_time_current);
+    }
     if (x->grain_delay->mode == DELAY_MODE_STUT) {
         post("Inlet 12: stut_reduction (stut mode)");
         post("       Current: %.3f", x->gdelay_feedback_current);
