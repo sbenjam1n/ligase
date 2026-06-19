@@ -1,5 +1,6 @@
 # Build artifacts
 *.o
+*.d
 *.pd_darwin
 *.pd_linux
 *.dll
