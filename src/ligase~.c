@@ -566,16 +566,14 @@ static void ligase_update_inlets(ligase_t *x,
 
     // Inlet 11: delay time (DD-4/Bencina) or stut count (Stut).
     if (x->grain_delay->mode == DELAY_MODE_STUT) {
-        // Stut mode: inlet 11 sets the repeat COUNT (TidalCycles `count`, 1-16). Drive it
-        // from the inlet ONLY in headless 0 (perfect-signal/all-inlets-driven mode). In
-        // headless 1 the inlet is ignored so the `stut_reps` MESSAGE/modulation stays
-        // authoritative — you should NOT have to disconnect inlet 11 (which is the
-        // delay-time inlet in DD-4/Bencina and may legitimately carry a value there).
-        if (!x->headless_mode) {
-            int reps = (int)gdelay_time;
-            if (reps >= 1) {
-                grain_delay_stut_set_repetitions(x->delay_stut, reps);
-            }
+        // Stut: inlet 11 = repeat COUNT (TidalCycles `count`, 1-16). Same epsilon convention as
+        // every other inlet — a count >= 1 from a connected signal/slider drives it; an
+        // unconnected inlet (reads 0 -> count 0) is below the floor and ignored, so the stut_reps
+        // message holds. Identical in BOTH headless modes: a count has no valid 0/off state, so
+        // the >= 1 floor IS the epsilon (no special-casing, nothing to disconnect).
+        int reps = (int)gdelay_time;
+        if (reps >= 1) {
+            grain_delay_stut_set_repetitions(x->delay_stut, reps);
         }
     } else {
         // Delay time: 0.0 = off (musically valid)
@@ -592,20 +590,16 @@ static void ligase_update_inlets(ligase_t *x,
 
     // Inlet 12: feedback (DD-4/Bencina) or stut_reduction (Stut)
     if (x->grain_delay->mode == DELAY_MODE_STUT) {
-        // Stut: inlet 12 = gain reduction (0-1). Drive from the inlet ONLY in headless 0
-        // (perfect-signal / all-inlets-driven mode). In headless 1 the inlet is ignored so the
-        // stut_reduction MESSAGE/modulation stays authoritative — inlet 12 is the feedback inlet
-        // in DD-4/Bencina and may carry a value there; you should not have to disconnect it.
-        // (Same contract as inlet 11/stut_reps and inlet 13/stut_spacing.)
-        //
-        // Require a value STRICTLY > 0: an UNCONNECTED inlet 12 reads exactly 0.0, and applying
-        // that would force reduction to 0 — which silences ALL trailing repeats (rep 0 is always
-        // full gain; rep i scales by reduction^i), making stut sound like a single click and
-        // making reps/spacing appear inert. Skipping the bare 0 lets the stut_reduction message
-        // (or the 0.5 default) survive, matching inlets 11 (reps>=1) and 13 (spacing>=1) which
-        // already skip an unconnected zero.
-        if (!x->headless_mode) {
-            if (gdelay_feedback > 0.0f && gdelay_feedback <= 1.0f) {
+        // Stut: inlet 12 = gain reduction (0-1). IDENTICAL epsilon handling to the gdelay_feedback
+        // inlet (the else branch below), just routed to the stut setter: headless 1 ignores
+        // < 0.001 so an unconnected inlet lets the stut_reduction message hold; headless 0 honors
+        // the full range. A connected signal/slider drives it in either mode.
+        if (x->headless_mode) {
+            if (gdelay_feedback >= 0.001f && gdelay_feedback <= 1.0f) {
+                grain_delay_stut_set_reduction(x->delay_stut, gdelay_feedback);
+            }
+        } else {
+            if (gdelay_feedback >= 0.0f && gdelay_feedback <= 1.0f) {
                 grain_delay_stut_set_reduction(x->delay_stut, gdelay_feedback);
             }
         }
@@ -624,13 +618,12 @@ static void ligase_update_inlets(ligase_t *x,
 
     // Inlet 13: tone (DD-4/Bencina) or stut_spacing (Stut)
     if (x->grain_delay->mode == DELAY_MODE_STUT) {
-        // Stut: inlet 13 = spacing ms (1-5000). Drive from the inlet ONLY in headless 0; in
-        // headless 1 the inlet is ignored so the stut_spacing MESSAGE/modulation stays
-        // authoritative (inlet 13 is the tone inlet in DD-4/Bencina). Same contract as inlets 11/12.
-        if (!x->headless_mode) {
-            if (gdelay_tone >= 1.0f && gdelay_tone <= 5000.0f) {
-                grain_delay_stut_set_spacing(x->delay_stut, gdelay_tone);
-            }
+        // Stut: inlet 13 = spacing ms (1-5000). Same epsilon convention as the other inlets: a
+        // value >= 1 ms from a connected signal/slider drives it; below the 1 ms floor (an
+        // unconnected inlet reads 0) it is ignored so the stut_spacing message holds. Identical in
+        // both headless modes — spacing has no valid sub-1 ms state, so the 1 ms floor IS the epsilon.
+        if (gdelay_tone >= 1.0f && gdelay_tone <= 5000.0f) {
+            grain_delay_stut_set_spacing(x->delay_stut, gdelay_tone);
         }
     } else {
         // Tone: 0.0 = dark (musically valid)
