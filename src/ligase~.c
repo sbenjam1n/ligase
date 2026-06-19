@@ -53,6 +53,7 @@ static void ligase_send_current_splice_msg(ligase_t *x);
 extern envelope_t* envelope_create(envelope_type_t type, int length);
 extern void envelope_destroy(envelope_t *env);
 extern void envelope_set_skew(envelope_t *env, float skew);
+extern void envelope_set_type(envelope_t *env, envelope_type_t type);
 extern float envelope_sample(envelope_t *env, float phase);
 
 extern scheduler_t* scheduler_create(envelope_t *env, int sample_rate);
@@ -2333,19 +2334,17 @@ static void ligase_envelope(ligase_t *x, t_floatarg type) {
             return;
     }
 
-    // Preserve current skew value
-    float current_skew = x->envelope ? x->envelope->skew : 0.5f;
-
-    // Recreate envelope with new type
-    if (x->envelope) envelope_destroy(x->envelope);
-    x->envelope = envelope_create(new_type, 4096);
-    x->scheduler->envelope = x->envelope;
-
-    // Restore skew value (preserves skew across envelope mode changes)
-    x->envelope->skew = current_skew;
-    envelope_set_skew(x->envelope, current_skew);
-
-    post("ligase~: envelope set to %s (skew: %.2f)", type_name, current_skew);
+    // Rebuild the envelope IN PLACE for the new type. Do NOT free + recreate the
+    // envelope struct: the scheduler AND the Bencina delay cache this pointer, and a
+    // recreate left them pointing at freed memory — a use-after-free that crashed in
+    // envelope_sample (garbage env->length → out-of-bounds table read) while using
+    // Bencina delay mode after an envelope-type change. Regenerating the table in place
+    // (same struct/allocation, like envelope_set_skew) keeps every holder valid and
+    // preserves skew automatically.
+    if (x->envelope) {
+        envelope_set_type(x->envelope, new_type);
+        post("ligase~: envelope set to %s (skew: %.2f)", type_name, x->envelope->skew);
+    }
 }
 
 static void ligase_env_skew(ligase_t *x, t_floatarg skew) {

@@ -320,6 +320,34 @@ void envelope_set_skew(envelope_t *env, float skew) {
     }
 }
 
+void envelope_set_type(envelope_t *env, envelope_type_t type) {
+    if (!env || !env->table) return;
+
+    env->type = type;
+
+    // Regenerate the table IN PLACE for the new type (same struct, same allocation,
+    // same length) — exactly like envelope_set_skew. This is critical: other objects
+    // (the scheduler and the Bencina delay) cache this envelope POINTER, so the struct
+    // must never be freed/recreated underneath them. Skew/sigma/alpha are preserved.
+    switch(env->type) {
+        case ENVELOPE_PARABOLIC:
+            envelope_parabolic_generate(env->table, env->length, env->skew);
+            break;
+        case ENVELOPE_TRAPEZOIDAL:
+            envelope_trapezoidal_generate(env->table, env->length, 0.1f, 0.1f, env->skew);
+            break;
+        case ENVELOPE_COSINE:
+            envelope_cosine_generate(env->table, env->length, env->skew);
+            break;
+        case ENVELOPE_GAUSSIAN:
+            envelope_gaussian_generate(env->table, env->length, env->skew, env->sigma);
+            break;
+        case ENVELOPE_EXPONENTIAL:
+            envelope_exponential_generate(env->table, env->length, env->skew, env->alpha);
+            break;
+    }
+}
+
 void envelope_set_sigma(envelope_t *env, float sigma) {
     if (!env) return;
 
