@@ -597,8 +597,15 @@ static void ligase_update_inlets(ligase_t *x,
         // stut_reduction MESSAGE/modulation stays authoritative — inlet 12 is the feedback inlet
         // in DD-4/Bencina and may carry a value there; you should not have to disconnect it.
         // (Same contract as inlet 11/stut_reps and inlet 13/stut_spacing.)
+        //
+        // Require a value STRICTLY > 0: an UNCONNECTED inlet 12 reads exactly 0.0, and applying
+        // that would force reduction to 0 — which silences ALL trailing repeats (rep 0 is always
+        // full gain; rep i scales by reduction^i), making stut sound like a single click and
+        // making reps/spacing appear inert. Skipping the bare 0 lets the stut_reduction message
+        // (or the 0.5 default) survive, matching inlets 11 (reps>=1) and 13 (spacing>=1) which
+        // already skip an unconnected zero.
         if (!x->headless_mode) {
-            if (gdelay_feedback >= 0.0f && gdelay_feedback <= 1.0f) {
+            if (gdelay_feedback > 0.0f && gdelay_feedback <= 1.0f) {
                 grain_delay_stut_set_reduction(x->delay_stut, gdelay_feedback);
             }
         }

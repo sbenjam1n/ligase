@@ -1628,6 +1628,19 @@ Per headless mode:
   block. Because headless 0 expects every inlet to be driven, send the values you want on those
   inlets; the messages will be continuously overwritten by the inlet signal.
 
+  WARNING — the headless-0 unconnected-inlet trap. In headless 0 an UNCONNECTED signal inlet
+  reads 0.0 and that 0 is honored (that is the whole point of "perfect signal"). So leaving the
+  delay inlets unconnected in Stut mode forces stut_reduction to 0 (which silences ALL trailing
+  repeats — only the first hit sounds) and forces gdelay_mix to 0 (no wet at all). The only stut
+  controls that still respond to messages are stut_length / stut_length_mode, because they have
+  no inlet. If stut "only plays one sound, reps/reduction/spacing/mix do nothing," you are almost
+  certainly in headless 0 with these inlets unconnected. Fix: switch to headless 1 (the default),
+  where unconnected inlets are ignored and every stut message takes effect with nothing connected
+  — OR, if you must stay in headless 0, drive inlets 11/12/13 and 14 (gdelay_mix) with the values
+  you want. (As a safety net, the reduction inlet now ignores a bare 0 so an unconnected inlet 12
+  no longer zeroes stut_reduction; gdelay_mix has no such guard, so headless 1 is still the right
+  mode for message control.)
+
 IMPORTANT — what makes stut audible. The stut wet only reaches the output through the
 granular/delayed monitor path, which is gated by TWO controls in series:
   - gdelay_mix: dry granular vs stut wet WITHIN the delayed signal. Toward 1 = more stut.
