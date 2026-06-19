@@ -50,6 +50,7 @@ typedef struct {
     float feedback;            // Feedback amount (0-1)
     float tone;                // Low-pass filter coefficient (0-1)
     float mix;                 // Dry/wet mix (0=dry, 1=wet)
+    float delay_glide_ms;      // Glide time (ms) smoothing delay-time changes (DD-4 de-zipper)
 
     // Filter state for low-pass filter in feedback loop
     float lpf_state_left;

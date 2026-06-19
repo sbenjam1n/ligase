@@ -66,6 +66,7 @@ extern grain_delay_t* grain_delay_create(int sample_rate);
 extern void grain_delay_destroy(grain_delay_t *delay);
 extern void grain_delay_process(grain_delay_t *delay, grain_delay_stut_t *stut, grain_delay_bencina_t *bencina, float *in_left, float *in_right, float *out_left, float *out_right, int blocksize, uint32_t splice_start, uint32_t splice_end);
 extern void grain_delay_set_time(grain_delay_t *delay, float time_seconds);
+extern void grain_delay_set_glide(grain_delay_t *delay, float glide_ms);
 extern void grain_delay_set_feedback(grain_delay_t *delay, float feedback);
 extern void grain_delay_set_tone(grain_delay_t *delay, float tone);
 extern void grain_delay_set_mix(grain_delay_t *delay, float mix);
@@ -2783,6 +2784,13 @@ static void ligase_gdelay_time(ligase_t *x, t_floatarg time) {
     post("ligase~: grain delay time set to %.3f seconds", time);
 }
 
+// DD-4 delay-time glide: smoothing time (ms) for delay-time changes, to avoid the pitch-zip when
+// the read tap moves. Smooths both message- and signal-driven (inlet 11) delay-time changes.
+static void ligase_delay_glide(ligase_t *x, t_floatarg ms) {
+    grain_delay_set_glide(x->grain_delay, ms);
+    post("ligase~: delay glide set to %.1f ms", ms);
+}
+
 static void ligase_gdelay_feedback(ligase_t *x, t_floatarg feedback) {
     grain_delay_set_feedback(x->grain_delay, feedback);
     post("ligase~: grain delay feedback set to %.2f", feedback);
@@ -4627,6 +4635,7 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_delay_quantize, gensym("delay_quantize"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_delay_quant_amount, gensym("delay_quant"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_gdelay_time, gensym("gdelay_time"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_delay_glide, gensym("delay_glide"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_gdelay_feedback, gensym("gdelay_feed"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_gdelay_tone, gensym("gdelay_tone"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_gdelay_mix, gensym("gdelay_mix"), A_DEFFLOAT, 0);

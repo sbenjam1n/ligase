@@ -198,6 +198,7 @@ delay_quant <0-1>
 Grain Delay
 
 gdelay_time <0-9.5> - Delay time in seconds
+delay_glide <0-5000> - DD-4 delay-time glide/smoothing in ms (de-zipper; default 20)
 gdelay_feed <0-1> - Feedback amount
 gdelay_tone <0-1> - Lowpass filter (0=dark, 1=bright)
 gdelay_mix <0-1> - Dry/wet mix
@@ -1482,7 +1483,15 @@ Range: 0.0 to 9.5 seconds
 
 Clamped to bounds.
 
-Smoothed internally to prevent clicks during time changes. Smoothing coefficient: 0.001 (approximately 20ms transition at 48kHz).
+Smoothed internally by the delay_glide parameter (see below) to prevent the pitch-zip when the delay time changes.
+
+delay_glide <float> Glide (smoothing) time in milliseconds for DD-4 delay-time changes.
+
+Range: 0.0 to 5000.0 ms. Default: 20 ms.
+
+DD-4 is a single moving read tap, so changing the delay time sweeps the tap and repitches the signal; an abrupt change is heard as a zipper/click. delay_glide one-pole-smooths the delay time toward its target over the set time, turning an abrupt jump into a clean glide. It applies to BOTH message-driven and signal-inlet-driven (inlet 11 / CV) delay-time changes, so it de-zippers a control or CV sweeping the delay time. 0 = instant (no glide; the old zippery behavior). Larger = slower, smoother sweep. (Bencina does not need this — its grains capture a fixed read offset at trigger time, so a delay-time change only affects newly triggered grains, not a continuous tap. Stut has no delay tap.)
+
+Note: delay_glide is message-controlled (there is no free signal inlet for it); it sets HOW the delay time is smoothed, while the delay time itself is what you drive from inlet 11 / a control.
 
 Signal inlet 11: In DD-4/Bencina modes, updates delay time if value in range (0.0, 10.0]. In Stut mode (delay_mode 2) it is SIGNAL-DRIVEN too: the same 0-10 input is mapped linearly to stut_reps 1-16 (0->1, 10->16). Inlets 12 and 13 are likewise signal-driven in Stut — inlet 12 (feedback range 0-1) passes straight through to stut_reduction (0-1, same range), and inlet 13 (tone range 0-1) maps EXPONENTIALLY to stut_spacing 1-5000 ms (0->1 ms, 0.5->~71 ms, 1->5000 ms). This lets one physical control/CV per inlet drive the parameter across all three delay modes. See "Setting stut parameters" below.
 

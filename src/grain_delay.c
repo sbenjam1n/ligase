@@ -47,6 +47,7 @@ grain_delay_t* grain_delay_create(int sample_rate) {
     delay->feedback = 0.0f;       // Default no feedback
     delay->tone = 0.5f;           // Default neutral tone
     delay->mix = 0.0f;            // Default dry (effect off)
+    delay->delay_glide_ms = 20.0f; // Default ~20ms glide on delay-time changes (de-zippers the tap)
 
     // Initialize filter state
     delay->lpf_state_left = 0.0f;
@@ -119,10 +120,13 @@ static void grain_delay_process_dd4(grain_delay_t *delay, float *in_left, float 
     // Using one-pole IIR filter coefficient
     float lpf_coeff = delay->tone;
 
-    // Smoothing coefficient for delay time changes
-    // Lower value = smoother transitions but slower response
-    // 0.001 gives ~1000 sample transition time (about 20ms at 48kHz)
-    float smoothing = 0.001f;
+    // Glide: smooth current_delay_samples toward the target so the read tap doesn't jump when the
+    // delay time changes (a moving tap repitches the signal — an abrupt move = zipper/click). The
+    // glide time is user-set (delay_glide ms) and converted to a one-pole coefficient here. This
+    // smooths BOTH message- and signal-inlet-driven delay-time changes (e.g. CV sweeping inlet 11).
+    // glide 0 => coefficient 1.0 => instant (no glide). Larger glide => slower, cleaner sweep.
+    float glide_samples = (delay->delay_glide_ms * 0.001f) * (float)delay->sample_rate;
+    float smoothing = (glide_samples > 1.0f) ? (1.0f - expf(-1.0f / glide_samples)) : 1.0f;
 
     for (int i = 0; i < blocksize; i++) {
         // Smooth delay time interpolation to prevent clicks
@@ -290,6 +294,15 @@ void grain_delay_set_time(grain_delay_t *delay, float time_seconds) {
         if (time_seconds < 0.0f) time_seconds = 0.0f;
         if (time_seconds > 9.5f) time_seconds = 9.5f;
         delay->delay_time = time_seconds;
+    }
+}
+
+// Glide time (ms) for smoothing delay-time changes (DD-4 de-zipper). 0 = instant.
+void grain_delay_set_glide(grain_delay_t *delay, float glide_ms) {
+    if (delay) {
+        if (glide_ms < 0.0f) glide_ms = 0.0f;
+        if (glide_ms > 5000.0f) glide_ms = 5000.0f;
+        delay->delay_glide_ms = glide_ms;
     }
 }
 
