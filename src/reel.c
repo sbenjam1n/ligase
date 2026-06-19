@@ -5,6 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
+#include <math.h>
 
 // @region:ligase_pd.core.buffer.reel Reel Buffer
 
@@ -174,12 +175,13 @@ void recorder_process(recorder_t *rec, float *in_left, float *in_right, int bloc
         }
 
         // Recording logic based on mode
+        float wl, wr;
         if (rec->mode == RECORD_MODE_INPUT_ONLY) {
             // Input-only mode: record input directly without mixing with existing audio
-            rec->reel->buffer_left[rec->record_position] = in_left[i];
-            rec->reel->buffer_right[rec->record_position] = in_right[i];
+            wl = in_left[i];
+            wr = in_right[i];
         } else {
-            // STABILITY FIX: Sound-on-Sound mixing with clamped crossfade (OVERDUB and NEW_SPLICE modes)
+            // Sound-on-Sound mixing with clamped crossfade (OVERDUB and NEW_SPLICE modes)
             float existing_left = rec->reel->buffer_left[rec->record_position];
             float existing_right = rec->reel->buffer_right[rec->record_position];
 
@@ -188,11 +190,19 @@ void recorder_process(recorder_t *rec, float *in_left, float *in_right, int bloc
             if (mix < 0.0f) mix = 0.0f;
             if (mix > 1.0f) mix = 1.0f;
 
-            rec->reel->buffer_left[rec->record_position] =
-                in_left[i] * mix + existing_left * (1.0f - mix);
-            rec->reel->buffer_right[rec->record_position] =
-                in_right[i] * mix + existing_right * (1.0f - mix);
+            wl = in_left[i] * mix + existing_left * (1.0f - mix);
+            wr = in_right[i] * mix + existing_right * (1.0f - mix);
         }
+
+        // FIREWALL the reel write: flush NaN/Inf to zero and hard-clamp to +-1. NEW_SPLICE
+        // records the SOS monitor (which can reach +-4 when delay is hot); without this clamp
+        // that hot content bakes into the splice, and re-granulating it (overlap-add multiplies)
+        // then recording again escalates unboundedly -> Inf/NaN in the reel -> blow-up / silence
+        // on playback. The reel must only ever hold finite, full-scale-bounded audio.
+        if (!isfinite(wl)) wl = 0.0f; else if (wl > 1.0f) wl = 1.0f; else if (wl < -1.0f) wl = -1.0f;
+        if (!isfinite(wr)) wr = 0.0f; else if (wr > 1.0f) wr = 1.0f; else if (wr < -1.0f) wr = -1.0f;
+        rec->reel->buffer_left[rec->record_position]  = wl;
+        rec->reel->buffer_right[rec->record_position] = wr;
 
         rec->record_position++;
 
