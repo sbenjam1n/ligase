@@ -425,6 +425,12 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->bencina_iot_range = default_range;
     sched->bencina_grainsize_range = default_range;
 
+    // Initialize smear parameter ranges (disabled by default)
+    sched->smear_frequency_range = default_range;
+    sched->smear_resonance_range = default_range;
+    sched->smear_stages_range = default_range;
+    sched->smear_feedback_range = default_range;
+
     // Initialize grain distortion (enabled by default with zero intensity)
     sched->distortion = grain_distortion_create(sample_rate);
     if (!sched->distortion) {

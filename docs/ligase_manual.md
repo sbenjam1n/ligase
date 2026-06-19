@@ -2033,6 +2033,10 @@ stut_reps
 
 bencina_iot, bencina_grainsize
 
+- Smear / allpass (sampled per DSP block):
+
+smear_frequency, smear_resonance, smear_stages, smear_feedback
+
 - Modulation outlets (the four send outlets are themselves modulatable targets):
 
 modout1, modout2, modout3, modout4

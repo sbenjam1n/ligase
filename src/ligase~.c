@@ -876,6 +876,30 @@ static void ligase_update_inlets(ligase_t *x,
         x->bencina_grainsize_current = sampled;
     }
 
+    // Sample smear (allpass) parameters with range (if enabled). Sampled once per DSP block,
+    // same as the other effect params, so smear_frequency/resonance/stages/feedback can be
+    // driven by any modulation generator via param_range. grain_smear_t is opaque here and
+    // sample_param_range ignores base_value when enabled (it only returns it when disabled,
+    // and we sample only inside the enabled guard), so a 0 placeholder base is fine.
+    if (x->smear) {
+        if (x->scheduler->smear_frequency_range.enabled) {
+            grain_smear_set_frequency(x->smear,
+                sample_param_range(&x->scheduler->smear_frequency_range, &x->scheduler->perlin_state, 0.0f));
+        }
+        if (x->scheduler->smear_resonance_range.enabled) {
+            grain_smear_set_resonance(x->smear,
+                sample_param_range(&x->scheduler->smear_resonance_range, &x->scheduler->perlin_state, 0.0f));
+        }
+        if (x->scheduler->smear_stages_range.enabled) {
+            grain_smear_set_stages(x->smear,
+                (int)sample_param_range(&x->scheduler->smear_stages_range, &x->scheduler->perlin_state, 0.0f));
+        }
+        if (x->scheduler->smear_feedback_range.enabled) {
+            grain_smear_set_feedback(x->smear,
+                sample_param_range(&x->scheduler->smear_feedback_range, &x->scheduler->perlin_state, 0.0f));
+        }
+    }
+
     // Sample scanrate with range (if enabled)
     if (x->scheduler->scanrate_range.enabled) {
         float sampled = sample_param_range(&x->scheduler->scanrate_range,
@@ -3129,6 +3153,10 @@ static param_range_t* get_param_range_by_name(ligase_t *x, const char *name) {
     // Bencina
     if (strcmp(name, "bencina_iot") == 0) return &x->scheduler->bencina_iot_range;
     if (strcmp(name, "bencina_grainsize") == 0) return &x->scheduler->bencina_grainsize_range;
+    if (strcmp(name, "smear_frequency") == 0) return &x->scheduler->smear_frequency_range;
+    if (strcmp(name, "smear_resonance") == 0) return &x->scheduler->smear_resonance_range;
+    if (strcmp(name, "smear_stages") == 0) return &x->scheduler->smear_stages_range;
+    if (strcmp(name, "smear_feedback") == 0) return &x->scheduler->smear_feedback_range;
 
     // Modulation outlets as first-class parameters
     if (strcmp(name, "modout1") == 0) return &x->modout1_range;
@@ -3403,6 +3431,10 @@ static void ligase_rand_type(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
             &x->scheduler->stut_reps_range,
             &x->scheduler->bencina_iot_range,
             &x->scheduler->bencina_grainsize_range,
+            &x->scheduler->smear_frequency_range,
+            &x->scheduler->smear_resonance_range,
+            &x->scheduler->smear_stages_range,
+            &x->scheduler->smear_feedback_range,
             &x->modout1_range,
             &x->modout2_range,
             &x->modout3_range,
