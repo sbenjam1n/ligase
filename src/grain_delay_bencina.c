@@ -8,6 +8,12 @@
 // Forward declaration for envelope functions
 extern float envelope_sample(envelope_t *env, float phase);
 
+// Makeup gain on the Bencina wet output so the granular cloud sits prominently in the mix
+// (the raw, overlap-normalized grain sum is ~unity with the dry, which felt too subtle).
+// Applied to the OUTPUT only — NOT to the feedback path — so the recirculation loop stays
+// stable (loop gain = feedback < 1) while the audible wet is boosted. Tunable.
+#define BENCINA_WET_GAIN 1.8f
+
 // @region:ligase_pd.core.grain.delay_bencina.types Bencina Type Management
 
 // Create bencina mode processor
@@ -19,7 +25,8 @@ grain_delay_bencina_t* grain_delay_bencina_create(envelope_t *envelope, int samp
     bencina->envelope = envelope;  // Share envelope with main scheduler
 
     // Initialize parameters
-    bencina->grain_spacing_ms = 50.0f;  // Default 50ms IOT (20 grains/second)
+    bencina->grain_spacing_ms = 25.0f;  // Default 25ms IOT (denser ~4x-overlap cloud; level
+                                        // is overlap-normalized so this sets texture, not gain)
     bencina->grain_size = 0.1f;          // Default 100ms grain size
     bencina->default_wrap_mode = 0;      // Default GLOBAL wrap (straight grain delay that works)
 
@@ -115,6 +122,16 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
     // Calculate splice length for wrapping
     uint32_t splice_length = (splice_end > splice_start) ? (splice_end - splice_start) : 1;
 
+    // Overlap normalization: grain DENSITY (overlap = grain length / trigger spacing) should
+    // shape TEXTURE, not LEVEL. All grains share the read offset, so the summed envelope grows
+    // ~overlap/2 (COLA) — without this, sparse settings whisper and dense ones rail. Scale the
+    // grain sum back to the ~2x-overlap reference so the wet level AND the feedback loop gain
+    // stay consistent across any bencina_iot / bencina_grainsize. (Applied before lpf/feedback.)
+    float grain_len_s = bencina->grain_size * (float)bencina->sample_rate;
+    float overlap = (bencina->trigger_period_samples > 0)
+        ? grain_len_s / (float)bencina->trigger_period_samples : 2.0f;
+    float gnorm = 2.0f / (overlap > 2.0f ? overlap : 2.0f);
+
     // Process each sample in the block
     for (int s = 0; s < blocksize; s++) {
         // Check if we should trigger a new grain
@@ -202,6 +219,10 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
             }
         }
 
+        // Normalize the summed grains for overlap so density = texture, not level.
+        grain_sum_left  *= gnorm;
+        grain_sum_right *= gnorm;
+
         // TRUE FEEDBACK (Ross Bencina architecture):
         // Mix grain output back into the buffer BEFORE write head advances
         // This creates the "shimmer" where delayed grains get re-granulated
@@ -236,9 +257,11 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
         // Advance write position
         delay->write_pos = (delay->write_pos + 1) % delay->buffer_size;
 
-        // Output: dry/wet mix (grain sum is the wet signal)
-        out_left[s] = in_left[s] * (1.0f - delay->mix) + filtered_left * delay->mix;
-        out_right[s] = in_right[s] * (1.0f - delay->mix) + filtered_right * delay->mix;
+        // Output: dry/wet mix. The wet gets BENCINA_WET_GAIN (output-only makeup) so the
+        // cloud is prominent; the feedback path above uses the un-boosted filtered signal,
+        // keeping the recirculation loop stable.
+        out_left[s] = in_left[s] * (1.0f - delay->mix) + filtered_left * BENCINA_WET_GAIN * delay->mix;
+        out_right[s] = in_right[s] * (1.0f - delay->mix) + filtered_right * BENCINA_WET_GAIN * delay->mix;
     }
 }
 
