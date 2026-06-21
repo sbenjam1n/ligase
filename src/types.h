@@ -138,6 +138,9 @@ typedef struct {
                                    // skew edges stay as-is (the skew-edge clickiness is a usable
                                    // character). >0 ramps each grain in/out over edge*0.5 grain
                                    // lengths (raised cosine) to de-click. bencina_edge sets this.
+    float level;                   // wet makeup gain driven INTO the tanh soft-limit. DEFAULT 6.0
+                                   // (BENCINA_WET_GAIN) compensates for the incoherent scatter sum;
+                                   // tanh still bounds the output to ±1. bencina_level sets this.
 } grain_delay_bencina_t;
 
 // @endregion:ligase_pd.core.types.grain_delay_bencina

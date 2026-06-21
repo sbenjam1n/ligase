@@ -88,6 +88,7 @@ extern void grain_delay_bencina_set_spacing(grain_delay_bencina_t *bencina, floa
 extern void grain_delay_bencina_set_grain_size(grain_delay_bencina_t *bencina, float size_seconds);
 extern void grain_delay_bencina_set_scatter(grain_delay_bencina_t *bencina, float amount);
 extern void grain_delay_bencina_set_edge(grain_delay_bencina_t *bencina, float amount);
+extern void grain_delay_bencina_set_level(grain_delay_bencina_t *bencina, float gain);
 extern void grain_delay_bencina_set_wrap_mode(grain_delay_bencina_t *bencina, int mode);
 extern void grain_delay_bencina_clear(grain_delay_bencina_t *bencina);
 extern void grain_delay_bencina_set_sample_rate(grain_delay_bencina_t *bencina, int sample_rate);
@@ -2924,6 +2925,13 @@ static void ligase_bencina_edge(ligase_t *x, t_floatarg amount) {
     post("ligase~: bencina edge-round set to %.2f", amount);
 }
 
+// Bencina wet makeup gain (into the tanh soft-limit), default 6.0. Higher = louder/more saturated;
+// tanh keeps the output bounded to +-1 so it can't clip.
+static void ligase_bencina_level(ligase_t *x, t_floatarg gain) {
+    grain_delay_bencina_set_level(x->delay_bencina, gain);
+    post("ligase~: bencina level set to %.2f", gain);
+}
+
 // Set bencina wrap mode
 static void ligase_bencina_wrap(ligase_t *x, t_floatarg mode) {
     int m = (int)mode;
@@ -4679,6 +4687,7 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_bencina_grainsize, gensym("bencina_grainsize"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_bencina_spread, gensym("bencina_spread"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_bencina_edge, gensym("bencina_edge"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_bencina_level, gensym("bencina_level"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_bencina_wrap, gensym("bencina_wrap"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_bencina_clear, gensym("bencina_clear"), 0);
 

@@ -43,6 +43,7 @@ grain_delay_bencina_t* grain_delay_bencina_create(envelope_t *envelope, int samp
     bencina->edge = 0.0f;                // Default: edge-round OFF — leave the envelope/skew edges
                                          // intact (the skew-edge clickiness is usable character).
                                          // bencina_edge > 0 rounds the grain in/out to de-click.
+    bencina->level = BENCINA_WET_GAIN;   // Default wet makeup (into the tanh). bencina_level sets it.
 
     // Initialize grain pool
     bencina->num_active_grains = 0;
@@ -315,8 +316,8 @@ void grain_delay_bencina_process(grain_delay_bencina_t *bencina,
         // soft-limit so it stays prominent but can never exceed ±1 (the clipping fix). The
         // feedback path above uses the un-boosted, un-limited filtered signal, keeping the
         // recirculation loop stable (loop gain = feedback only).
-        float wet_left  = tanhf(filtered_left  * BENCINA_WET_GAIN);
-        float wet_right = tanhf(filtered_right * BENCINA_WET_GAIN);
+        float wet_left  = tanhf(filtered_left  * bencina->level);
+        float wet_right = tanhf(filtered_right * bencina->level);
         out_left[s]  = in_left[s]  * (1.0f - delay->mix) + wet_left  * delay->mix;
         out_right[s] = in_right[s] * (1.0f - delay->mix) + wet_right * delay->mix;
     }
@@ -363,6 +364,16 @@ void grain_delay_bencina_set_edge(grain_delay_bencina_t *bencina, float amount) 
         if (amount < 0.0f) amount = 0.0f;
         if (amount > 1.0f) amount = 1.0f;
         bencina->edge = amount;
+    }
+}
+
+// Wet makeup gain driven into the tanh soft-limit (default 6.0). Higher = louder/more saturated;
+// tanh always bounds the output to ±1, so this can sit well above unity without clipping.
+void grain_delay_bencina_set_level(grain_delay_bencina_t *bencina, float gain) {
+    if (bencina) {
+        if (gain < 0.0f) gain = 0.0f;
+        if (gain > 64.0f) gain = 64.0f;  // generous ceiling; tanh handles the saturation
+        bencina->level = gain;
     }
 }
 
