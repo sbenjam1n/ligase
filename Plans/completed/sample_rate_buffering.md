@@ -2,7 +2,7 @@
 
 **Owner:** SLB
 **Date:** 2026-06-16
-**Status:** IN PROGRESS — Step 1 implemented & builds clean; smoke-passes at 96 kHz (**GATE B reached**). GATE D functional verification pending (needs `test_delay.pd`/`test_dist.pd` + the Focusrite).
+**Status:** ✅ DONE (2026-06-16; archived 2026-06-22). Steps 1+2 implemented and verified headless (Tier-1) at 44.1/48/96 kHz — delay tap correct, distortion bounded, reel duration consistent + WAV header rate correct, 96 k round-trip intact (QUEUE §6 Seq 5/6/12). Only the optional user Tier-2 Focusrite ear-check remains — that is hardware sign-off, not code. (Header below predates completion; left as the original plan record.)
 **Tracked in:** `QUEUE.md` §1 (AGENT lane, B1). Verification harness: `TEST_PLAN_MACOS.md`.
 **Related:** Plan B2 (`reel_io_macos.md`) shares the WAV-header sample-rate fix (§Fix-4 below).
 

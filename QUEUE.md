@@ -6,18 +6,25 @@ to §1. Section numbers are stable references — append, never renumber. -->
 
 # QUEUE.md — Work Queue
 
-**Queue Seq:** 30
-**Date:** 2026-06-18
+**Queue Seq:** 45
+**Date:** 2026-06-22
 **What this queue draws from:** active execution plans (`Plans/*.md`) and the project's own indexes (`README.md`, `TODO.md`).
 
 ---
 
 ## §0. STRATEGIC MAP — where the project is, where it's going
 
-ligase~ is a Pure Data granular synthesizer/sampler/looper/delay external (C, GPL-v2). A
-2026-06-16 session fixed every reported runtime bug and refreshed the docs. All work is
-**implemented and verified headless** on branch `fix/audio-engine-and-manual` (unpushed).
-Nothing is left to code — remaining items are **user hardware/ear sign-off + a push/PR**.
+ligase~ is a Pure Data granular synthesizer/sampler/looper/delay external (C, GPL-v2). Two
+sessions — 2026-06-16 (runtime-bug + docs pass) and 2026-06-19→22 (delay/stut/bencina overhaul) —
+fixed every reported issue. All work is **implemented and verified headless**, was on
+`fix/audio-engine-and-manual`, and is now **merged into `main`** (2026-06-22, fast-forward, 74
+commits). Nothing is left to code on reported items — remaining is **user hardware/ear sign-off**.
+The 2026-06-19→22 work (B13–B35) added: the envelope-type-change crash fix; delay no-wet /
+instability / headless-0 / init-wipe fixes; the full signal-driven Stut model (count/reduction/
+spacing mapped from the shared delay inlets, layering voice pool, length system); DD-4 `delay_glide`;
+the Bencina granular-cloud rebuild (per-grain position scatter + random pan, with `bencina_spread`/
+`bencina_edge`/`bencina_level`/`bencina_pan` controls + tanh-limited makeup); and the Makefile
+header-dependency fix (B26) that had been silently masking earlier work.
 
 | Objective | Status | Source |
 |-----------|--------|--------|
@@ -39,7 +46,13 @@ Nothing is left to code — remaining items are **user hardware/ear sign-off + a
 - `TEST_PLAN_MACOS.md` — macOS + Focusrite test plan (SR sweep, buffering, reel I/O); verifies B1/B2.
 - `Plans/` — execution plans.
 
-## §1. ACTIVE QUEUE (ordered; take the top UNBLOCKED item)
+## §1. WORK LOG — all items COMPLETE (this table is now the changelog)
+
+**ACTIVE QUEUE: (none.)** Every B/M item in the table below is implemented and verified headless,
+committed, and merged into `main`. No agent-actionable code work remains on reported items — what's
+left is **user hardware/ear sign-off** (not agent work) plus the two open stubs tracked elsewhere:
+the §2 manual-content remainder and the §4 build-naming cleanup. The completed B/M rows are retained
+here as the project changelog (newest fixes — B13–B35 — are the 2026-06-19→22 delay/stut/bencina arc).
 
 _Branch `fix/audio-engine-and-manual` PUSHED to origin (2026-06-18, as owner). The FFT fog (B9) was removed entirely and replaced by the allpass smear (Seq 29–30); owner ear-tested it positively (resonator/bell mode works). The "silence/CPU after recording a splice" reports (B10/B11) were ultimately a STALE plugdata binary loading the old fog build — resolved once the smear build was actually loaded; recsplice then got a REAL bug fixed (B12, Seq 31): it overdubbed the current splice + left a quiet wrong copy in the new splice, because the last splice's end tracks reel->length, so the take grew the current splice and the granulator fed back on its own recording. Fixed by planting the new-splice boundary marker at recsplice START (pins the current splice's end) + honoring the existing `jump_to_new` flag on stop. Verified headless. Other items (B1/B2/B4/B5/B6/B8) + the smear ear-test remain at owner hardware sign-off._
 
@@ -102,10 +115,10 @@ _Branch `fix/audio-engine-and-manual` PUSHED to origin (2026-06-18, as owner). T
 
 | Item | Plan | Status |
 |------|------|--------|
-| B1 Sample-rate / buffering | `Plans/sample_rate_buffering.md` | ✓ |
-| B2 Reel load/save on macOS | `Plans/reel_io_macos.md` | ✓ |
-| M1 PDF manual regeneration | `Plans/pdf_manual_regeneration.md` | ✓ |
-| Manual content edits | `Plans/manual_content_edits.md` | ◐ Worklist A + engine/record-mode updates done; deep SOS prose optional |
+| B1 Sample-rate / buffering | `Plans/completed/sample_rate_buffering.md` | ✓ (archived 2026-06-22) |
+| B2 Reel load/save on macOS | `Plans/completed/reel_io_macos.md` | ✓ (archived 2026-06-22) |
+| M1 PDF manual regeneration | `Plans/completed/pdf_manual_regeneration.md` | ✓ (archived 2026-06-22) |
+| Manual content edits | `Plans/manual_content_edits.md` | ◐ Worklist A + engine/record-mode updates done; deep SOS prose optional (still active) |
 | Build-naming cleanup | _(none; backlog stub)_ | — |
 
 ## §5. HOW THE AGENT USES THIS (read-only protocol)
@@ -130,6 +143,7 @@ _Branch `fix/audio-engine-and-manual` PUSHED to origin (2026-06-18, as owner). T
 | 2026-06-16 | 6 | B1 Step 1 functionally verified headless (Tier-1) at 44.1/48/96 kHz: `test_delay.pd` (6 s tap correct, 96 k clamp gone) + `test_dist.pd` (resonant distortion bounded, no NaN). Focusrite (Scarlett 2i2) now enumerated. Remaining: Tier-2 audible tests (user) + Step 2 reel/WAV SR (reel-sizing decision still open). | SLB |
 | 2026-06-16 | 7 | B3 added + FIXED: empty-reel OVERDUB recorded silence when SOS up (recorded `input×(1−sos)`; pre-existing, NOT a B1 regression — recording code untouched by B1). Fix in `reel.c`: per-record `initial_length`; virgin samples capture full input regardless of SOS, SOS-crossfade only for genuine overdub onto existing content. Verified headless (sos 1.0 silent→full). Tests `test_rec.pd`, `test_input.pd` added. Awaiting user hardware confirmation (live input via Focusrite, `record 1` with SOS up). | SLB |
 | 2026-06-16 | 8 | B3 CLOSED — NOT A BUG. Owner confirmed SOS is designed to attenuate the initial recording too; OVERDUB `input×(1−sos)` is intended. Seq-7 "fix" reverted in full (`reel.c`/`types.h` restored). Build clean; B1 changes remain intact and untouched. | SLB |
+| 2026-06-22 | 45 | Catch-up + housekeeping + merge. (a) Logs B22–B35 (the 2026-06-19→22 arc; full detail in the §1 table): stut malloc-garbage param_range root cause + inlet/headless epsilon convention + layering voice-pool + length system, ending in a signal-driven *mapped* Stut (B22–B28); DD-4 `delay_glide` (B29); the Bencina rebuild — clip→tanh soft-limit, plain-delay→granular cloud via per-grain position scatter, per-grain random pan as a modulation target, then made the smoothing OPT-IN (`bencina_spread`/`bencina_edge`) to preserve the grainy character the owner wanted, restored the level, and exposed `bencina_level` (B30–B35); plus the Makefile header-dependency fix (B26) that had been silently masking earlier work. (b) Housekeeping: archived the 3 completed plans (B1/B2/M1) to `Plans/completed/` and corrected their stale SCOPED/IN-PROGRESS headers to DONE; relabeled §1 as the completed changelog (active queue now empty); refreshed §0 + Queue Seq. (c) Merged `fix/audio-engine-and-manual` → `main` (fast-forward, 74 commits). Remaining project-wide: user hardware/ear sign-off; §2 manual-content remainder + §4 build-naming stub. | SLB |
 | 2026-06-19 | 44 | B21 FIXED — in headless 1, inlet 11 was overriding the stut_reps message ('only one stut'). The Seq-36 inlet-11→stut_reps read wasn't headless-gated, so a delay-time value on inlet 11 (shared with gdelay_time) was read as the count every block, stomping the message even in headless 1. Fix: inlet 11 drives stut_reps ONLY in headless 0; headless 1 ignores it (message authoritative — owner's point: shouldn't need to disconnect in headless 1). Verified headless 1 → message wins (count 8), headless 0 → inlet drives (count 2). Manual updated. | SLB |
 | 2026-06-19 | 43 | B20 DONE (owner): stut repeated-unit length was hardwired to the spacing. Added `stut_length_mode` (0=independent, 1=grainsize), `stut_length` (ms), and `stut_length_quantize`/`stut_length_quant` (BPM note-grid, same pattern as delay/iot quant). Slice length now decoupled from spacing (gated/gapless/overlap). grain_delay_stut_trigger gained a play_length_samples arg; ligase_stut computes the length per mode. Verified: ms (30/250), grainsize (100), and BPM-quantized (1/8 @120 = 250ms). Manual + quick-list updated. | SLB |
 | 2026-06-19 | 42 | B19 DONE (owner): smear params are now param_range modulation targets. Added smear_frequency/resonance/stages/feedback ranges (scheduler struct + scheduler_create init + perform sample/apply + get_param_range_by_name + rand_type all-list). grain_smear_t is opaque in ligase~.c and sample_param_range ignores base_value when enabled, so a 0 placeholder base is used (sampling only inside the enabled guard). Verified: all 4 accept param_range/rand_type (no 'unknown parameter'); modulated freq+feedback bounded/non-silent (max 0.20). Manual modulation list updated. | SLB |

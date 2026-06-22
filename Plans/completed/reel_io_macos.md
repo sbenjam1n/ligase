@@ -2,7 +2,7 @@
 
 **Owner:** SLB
 **Date:** 2026-06-16
-**Status:** SCOPED — awaiting go-ahead (GATE A).
+**Status:** ✅ DONE (2026-06-16; archived 2026-06-22). Core (canvas-relative load/save paths) + polish (robust chunk-walking WAV parser, 16-bit PCM accepted, read/write checks, failures routed via `pd_error`) implemented and verified headless — float round-trip w/ cue, 16-bit load, clear errors (QUEUE §6 Seq 11/14). (Header below predates completion; left as the original plan record.)
 **Tracked in:** `QUEUE.md` §1 (AGENT lane, B2).
 **Related:** Plan B1 (`sample_rate_buffering.md`) — the WAV-header sample-rate fix (§Fix-5) is shared; coordinate edits to `reel_load_wav`/`reel_save_wav`.
 
