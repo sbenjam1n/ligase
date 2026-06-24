@@ -542,6 +542,9 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->smear_resonance_range = default_range;
     sched->smear_stages_range = default_range;
     sched->smear_feedback_range = default_range;
+    sched->smear_pitch_fine_range = default_range;                 // P3: smear fine-tune (disabled)
+    sched->smear_pitch_fine_range.min = -0.5f;
+    sched->smear_pitch_fine_range.max =  0.5f;
 
     // Initialize grain distortion (enabled by default with zero intensity)
     sched->distortion = grain_distortion_create(sample_rate);
@@ -562,6 +565,10 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->pitch_control.midi_enabled = 0;
     sched->pitch_control.last_semitone = 0.0f;  // Initialize for change detection
     sched->pitch_control.pitch_pattern_slot = -1;  // -1 = no pattern slot bound (0 is a valid slot)
+    sched->pitch_control.pitch_fine = 0.0f;                         // P3: no fine offset by default
+    sched->pitch_control.pitch_fine_range = default_range;          // P3: disabled
+    sched->pitch_control.pitch_fine_range.min = -0.5f;             // -50 cents
+    sched->pitch_control.pitch_fine_range.max =  0.5f;             // +50 cents
 
     // SMEAR pitch destination defaults (memset already zeroed enabled/source/note/midi_enabled).
     // Explicit non-zero musical defaults: A440 reference, no slot bound (0 is a valid slot).
@@ -575,6 +582,7 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->smear_pitch_control.scale.count  = 0;                 // no scale loaded
     sched->smear_pitch_control.semitone_range = default_range;   // disabled by default
     sched->smear_pitch_control.last_hz      = 0.0f;
+    sched->smear_pitch_control.semitone_fine = 0.0f;               // P3: no smear fine offset by default
 
     // Initialize pan mode (default: constant-power mono panning)
     sched->pan_mode = 0;
@@ -854,6 +862,16 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
             }
             // else: use base_speed as-is (no MIDI input)
             break;
+    }
+
+    // FINE TUNE (P3, +/-0.5 semitone = +/-50 cents): overall offset on top of whatever the source
+    // produced. Sampled per grain; range disabled -> returns pitch_fine (base, default 0) -> no offset.
+    // Recompute final_speed once so the fine applies uniformly across ALL modes (incl. OFF).
+    {
+        float fine = sample_param_range(&sched->pitch_control.pitch_fine_range,
+                                        &sched->perlin_state, sched->pitch_control.pitch_fine);
+        current_semitone += fine;
+        final_speed = base_speed * semitones_to_speed(current_semitone);
     }
 
     // Store the semitone value for change detection in ligase~.c

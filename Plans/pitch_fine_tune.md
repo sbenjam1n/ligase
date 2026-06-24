@@ -2,13 +2,28 @@
 
 **Owner:** SLB
 **Date:** 2026-06-24
-**Status:** PLANNED (not started)
+**Status:** ✅ DONE (2026-06-24) — implemented (BOTH halves; P1 is landed) and headless-verified; `make clean && make` warning-free; no regression. grain fine per-grain in `scheduler_trigger_grain`, smear fine per-block riding P1's smear stanza; both modulatable `param_range` targets. See Progress.
 **Tracked in:** `QUEUE.md` §4a (PLAN COVERAGE — pitch-destination build-out). (NOT §1 — §1 is the COMPLETE-work changelog.)
 **Related:** Plan P1 `Plans/smear_pitch.md` (the SMEAR note→Hz destination + its per-block sampling stanza this plan adds a *fine* offset to — **the smear half of P3 depends on P1**, see Mechanics) and Plan P2 `Plans/midi_channel_routing.md` (the channel-aware `midi <note> [vel] [channel]` ingress; orthogonal to the fine offset, which sits *on top of* whatever source each destination resolves). Anchored on three existing sections: the **modulation** section — the B19/Seq 42 `param_range_t`/`get_param_range_by_name`/`rand_type`-all-list five-touchpoint precedent (`smear_frequency`/`_resonance`/`_stages`/`_feedback` ranges, `ligase~.c:909-924`, `:3756-3759`, `:4046-4049`); the **grain pitch** section — `pitch_control_t` (`types.h:416-426`), the per-grain pitch switch + `semitones_to_speed` (`grain.c:779-846`, `:86`), and `ligase_pitch_semitones` (`ligase~.c:4357`); the **smear pitch** section — P1's per-block note→Hz stanza inside `if (x->smear)` (`ligase~.c:908-925`) and the sole frequency clamp in `smear_update_coeffs` (`grain_smear.c:50-51`). This is **P3 of the pitch-destination arc** (siblings P1 smear destination, P2 channel routing); P3 adds a Moog-style ±50-cent fine tune to BOTH pitch destinations.
 
 > **ADVERSARIAL VERIFICATION (2026-06-24).** All load-bearing file:line refs for the GRAIN half were re-read in `src/types.h`, `src/grain.c`, `src/ligase~.c` and confirmed REAL and accurate: the pitch switch closes at `grain.c:843` and the `last_semitone` store is at `grain.c:846` (the insertion point is between them); `semitones_to_speed` is `powf(2,n/12)` at `grain.c:86`; `pitch_control_t` (`types.h:416-426`) ends with `pitch_pattern_slot` at `:424-425`; the `get_param_range_by_name` smear cluster ends at `ligase~.c:3759`; the `rand_type` all-list smear cluster ends at `ligase~.c:4049`; `ligase_pitch_semitones` is at `ligase~.c:4357` and its registration at `ligase~.c:5276`; the `scheduler_create` pitch_control init block runs `grain.c:553-563`. The SMEAR half is a **forward dependency on P1** (the `if (x->smear)` stanza at `ligase~.c:908-925` exists today, but P1's `semitone` accumulator + note→Hz `powf` + `smear_pitch_control_t` into which the fine adds do NOT — they land when P1 merges). The GRAIN half is fully independent and ships now. `sample_param_range` returning `base_value` verbatim when `!enabled` (`grain.c:202-204`) is the un-modulated base path; `&sched->perlin_state` is already passed to it inside `scheduler_trigger_grain` (`grain.c:794-796`), so per-grain modulation of the fine is reachable with zero new plumbing.
 
 ---
+
+## Progress (2026-06-24) — IMPLEMENTED + VERIFIED (both halves)
+
+P1 having landed, both the grain (independent) and smear (P1-dependent) halves shipped together; `make clean && make` warning-free; `test_delay.pd` clean.
+- **Types/init:** `pitch_fine` + `pitch_fine_range` on `pitch_control_t`; `semitone_fine` on `smear_pitch_control_t`; `smear_pitch_fine_range` on `scheduler_t`. Defaults 0 + disabled range, bounds ±0.5 semitone, in `scheduler_create`.
+- **Apply:** grain fine sampled **per grain** in `scheduler_trigger_grain` (after the switch, before `last_semitone`; recompute `final_speed` once so it reaches every mode incl. OFF; base = `pitch_fine`, NOT 0). Smear fine **per block** in P1's smear stanza, added to `semitone` before the `powf` (base = `semitone_fine`).
+- **Modulation targets + setters:** `get_param_range_by_name` + `rand_type` all-list entries for `pitch_fine`/`smear_pitch_fine`; `pitch_fine <cents>` / `smear_pitch_fine <cents>` setters (cents→semitones = /100; ±50¢ = ±0.5 semitone).
+
+| AC | Test (`tests/pattern/SM[4-6]*.pd`) | Result |
+|----|------|--------|
+| Smear fine | `smear_pitch_fine 50 / -50 / 25 / 0` on `smear_pitch_semitones 0` | 452.89 / 427.47 / 446.40 / 440 Hz ✓ |
+| Grain fine | `pitch_fine 50 / -50 / 0` on `pattern pitch [0]` (degree 0) | last_semitone 0.50 / -0.50 / 0.00 ✓ (additive on the source) |
+| Modulatable | `param_range smear_pitch_fine -0.5 0.5` (rand) | Hz wobbles in [427.5, 452.9] (±50¢) ✓ |
+| Units | 50 cents → 0.5 semitone (not 50) | confirmed (no 100× error) ✓ |
+| Backward compat | fine 0 + disabled range | no offset, no behavior change ✓ |
 
 ## Problem
 

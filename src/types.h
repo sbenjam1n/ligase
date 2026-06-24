@@ -423,6 +423,8 @@ typedef struct {
     float last_semitone;         // Last semitone value used (for change detection)
     int pitch_pattern_slot;      // perlin_state.pattern[] slot supplying scale degrees for
                                  // PITCH_MODE_PATTERN; -1 = none/inactive (wired in P3)
+    float pitch_fine;            // P3: base fine-tune offset, SEMITONES (+/-0.5 = +/-50 cents); default 0
+    param_range_t pitch_fine_range; // P3: modulatable fine-tune, SEMITONES, sampled per grain
 } pitch_control_t;
 
 // SMEAR (resonator) pitch destination — an independent note->Hz controller for the allpass
@@ -449,6 +451,7 @@ typedef struct {
     pitch_scale_t   scale;          // for SMEAR_PITCH_SCALE (degree -> semitone)
     param_range_t   semitone_range; // for SMEAR_PITCH_SCALE random source
     float last_hz;        // last applied Hz (precedence/override bookkeeping + state dump)
+    float semitone_fine;  // P3: base fine-tune offset, SEMITONES (+/-0.5 = +/-50 cents); default 0
 } smear_pitch_control_t;
 
 // @endregion:ligase_pd.core.pitch.types
@@ -665,6 +668,7 @@ typedef struct scheduler {
     param_range_t smear_resonance_range;     // Smear pole radius / sharpness (0.0-0.999)
     param_range_t smear_stages_range;        // Smear allpass stages / depth (0-48)
     param_range_t smear_feedback_range;      // Smear global feedback (-0.99-0.99)
+    param_range_t smear_pitch_fine_range;    // P3: modulatable smear fine-tune, SEMITONES (per block)
 
     // Perlin noise state
     perlin_state_t perlin_state;

@@ -967,6 +967,9 @@ static void ligase_update_inlets(ligase_t *x,
                     default: have_note = 0; break;                      // SMEAR_PITCH_OFF with enabled set
                 }
                 if (have_note) {
+                    semitone += sample_param_range(&x->scheduler->smear_pitch_fine_range,
+                                                   &x->scheduler->perlin_state,
+                                                   sp->semitone_fine);   // P3 fine (semitones; base when disabled)
                     float hz = sp->ref_hz * powf(2.0f, semitone / 12.0f);
                     sp->last_hz = hz;                                   // raw Hz; clamp lives in smear_update_coeffs
                     grain_smear_set_frequency(x->smear, hz);
@@ -3607,6 +3610,14 @@ static void ligase_smear_pitch_debug(ligase_t *x, t_floatarg f) {
     post("ligase~: smear_pitch_debug %s", x->smear_pitch_debug ? "on" : "off");
 }
 
+// Smear pitch fine-tune (P3): message in CENTS, stored in SEMITONES. +/-50 cents = +/-0.5 semitone.
+static void ligase_smear_pitch_fine(ligase_t *x, t_floatarg cents) {
+    if (cents < -50.0f) cents = -50.0f;
+    if (cents >  50.0f) cents =  50.0f;
+    x->scheduler->smear_pitch_control.semitone_fine = cents / 100.0f;
+    post("ligase~: smear pitch fine %.1f cents (%.4f semitone)", cents, cents / 100.0f);
+}
+
 static void ligase_smear_pitch_rand_type(ligase_t *x, t_symbol *s) {
     const char *t = s->s_name;
     rand_type_t rt; int inst = 0;
@@ -3943,6 +3954,8 @@ static param_range_t* get_param_range_by_name(ligase_t *x, const char *name) {
     if (strcmp(name, "smear_resonance") == 0) return &x->scheduler->smear_resonance_range;
     if (strcmp(name, "smear_stages") == 0) return &x->scheduler->smear_stages_range;
     if (strcmp(name, "smear_feedback") == 0) return &x->scheduler->smear_feedback_range;
+    if (strcmp(name, "pitch_fine") == 0) return &x->scheduler->pitch_control.pitch_fine_range;
+    if (strcmp(name, "smear_pitch_fine") == 0) return &x->scheduler->smear_pitch_fine_range;
 
     // Modulation outlets as first-class parameters
     if (strcmp(name, "modout1") == 0) return &x->modout1_range;
@@ -4233,6 +4246,8 @@ static void ligase_rand_type(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
             &x->scheduler->smear_resonance_range,
             &x->scheduler->smear_stages_range,
             &x->scheduler->smear_feedback_range,
+            &x->scheduler->pitch_control.pitch_fine_range,
+            &x->scheduler->smear_pitch_fine_range,
             &x->modout1_range,
             &x->modout2_range,
             &x->modout3_range,
@@ -4543,6 +4558,14 @@ static void ligase_pitch_mode(ligase_t *x, t_floatarg mode) {
 static void ligase_pitch_semitones(ligase_t *x, t_floatarg semitones) {
     x->scheduler->pitch_control.semitones = semitones;
     post("ligase~: pitch semitones set to %.2f", semitones);
+}
+
+// Grain pitch fine-tune (P3): message in CENTS, stored in SEMITONES (cents/100). +/-50 cents = +/-0.5 semitone.
+static void ligase_pitch_fine(ligase_t *x, t_floatarg cents) {
+    if (cents < -50.0f) cents = -50.0f;
+    if (cents >  50.0f) cents =  50.0f;
+    x->scheduler->pitch_control.pitch_fine = cents / 100.0f;
+    post("ligase~: pitch fine %.1f cents (%.4f semitone)", cents, cents / 100.0f);
 }
 
 // Set semitone range (for PITCH_MODE_RANGE and PITCH_MODE_SCALE)
@@ -5409,6 +5432,7 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_smear_pitch_scale, gensym("smear_pitch_scale"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_smear_pitch_rand_type, gensym("smear_pitch_rand_type"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_smear_pitch_debug, gensym("smear_pitch_debug"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_pitch_fine, gensym("smear_pitch_fine"), A_DEFFLOAT, 0);
 
     class_addmethod(ligase_class, (t_method)ligase_distortion_enable, gensym("distortion_enable"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_distortion_intensity, gensym("distortion"), A_DEFFLOAT, 0);
@@ -5468,6 +5492,7 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_sphere_mode, gensym("sphere_mode"), A_DEFFLOAT, A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_mode, gensym("pitch_mode"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_semitones, gensym("pitch_semitones"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_pitch_fine, gensym("pitch_fine"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_range, gensym("pitch_range"), A_DEFFLOAT, A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_rand_type, gensym("pitch_rand_type"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_scale, gensym("pitch_scale"), A_GIMME, 0);
