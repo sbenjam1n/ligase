@@ -302,6 +302,7 @@ struct _ligase {
     // Outlet 3 (splice_end_out) mode: 0=splice end/wrap (default), 1=bang on note change
     int outlet3_mode;
     int prev_midi_note;      // Previous MIDI note for change detection
+    int midi_msg_active;     // P2: 1 once a 'midi' message owns the grain dest -> suppress the inlet-19 write
     float prev_scale_semitone; // Previous scale semitone for change detection
 
     // @region:ligase_pd.pd_external.outlets.state.tracking Value Tracking Variables
@@ -495,7 +496,8 @@ static void ligase_update_inlets(ligase_t *x,
 
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Checking MIDI mode...\n");
     // Update MIDI note if in MIDI mode (only if inlet connected)
-    if (x->scheduler->pitch_control.mode == PITCH_MODE_MIDI) {
+    if (x->scheduler->pitch_control.mode == PITCH_MODE_MIDI && !x->midi_msg_active) {
+        // P2: suppress the channel-less signal-inlet write once a 'midi' message owns the grain dest.
         if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: In MIDI mode, reading midi_in[0]...\n");
         int midi_note = (int)midi_in[0];
         // Only update if inlet has valid MIDI note value (1-127, 0 = unconnected)
@@ -4660,6 +4662,69 @@ static void ligase_pitch_scale(ligase_t *x, t_symbol *s, int argc, t_atom *argv)
     post("ligase~: pitch scale set with %d notes", argc);
 }
 
+// --- P2: channel-aware MIDI ingress + dual-destination routing ---
+
+// midi <note> [vel] [channel] : fed from Pd [notein] (note/vel/channel). Routes by channel to the two
+// pitch destinations. Same channel for both => unison; different => separate. Velocity accepted, unused.
+static void ligase_midi(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 1 || argv[0].a_type != A_FLOAT) {
+        pd_error(x, "ligase~: midi requires <note> [vel] [channel]");
+        return;
+    }
+    int note    = (int)argv[0].a_w.w_float;
+    int channel = (argc >= 3 && argv[2].a_type == A_FLOAT) ? (int)argv[2].a_w.w_float : 1;
+    if (note < 1 || note > 127) {
+        pd_error(x, "ligase~: midi note %d out of range (1-127)", note);
+        return;
+    }
+    if (channel < 1 || channel > 16) {
+        pd_error(x, "ligase~: midi channel %d out of range (1-16)", channel);
+        return;
+    }
+    scheduler_t *sch = x->scheduler;
+    // Route to GRAIN destination (independent test => same channel = unison, different = separate).
+    if (channel == sch->grain_midi_channel) {
+        sch->pitch_control.midi_note    = note;
+        sch->pitch_control.midi_enabled = 1;
+        x->midi_msg_active = 1;              // message owns the grain dest; inlet-19 write suppressed
+        // prev_midi_note is owned by the outlet-3 detector in perform; do not touch it here.
+    }
+    // Route to SMEAR destination.
+    if (channel == sch->smear_midi_channel) {
+        sch->smear_pitch_control.note         = note;
+        sch->smear_pitch_control.midi_enabled = 1;
+        sch->smear_pitch_control.source       = SMEAR_PITCH_MIDI;
+        sch->smear_pitch_control.enabled      = 1;
+    }
+}
+
+// midi_channel <grain_ch> <smear_ch> : set both routing channels at once (equal values = unison config).
+static void ligase_midi_channel(ligase_t *x, t_floatarg g, t_floatarg sm) {
+    int gi = (int)g, si = (int)sm;
+    if (gi < 1 || gi > 16 || si < 1 || si > 16) {
+        pd_error(x, "ligase~: midi_channel needs two channels 1-16");
+        return;
+    }
+    x->scheduler->grain_midi_channel = gi;
+    x->scheduler->smear_midi_channel = si;
+    post("ligase~: MIDI routing grain<-ch%d, smear<-ch%d (%s)", gi, si, (gi == si) ? "UNISON" : "separate");
+}
+
+static void ligase_pitch_channel(ligase_t *x, t_floatarg ch) {
+    int c = (int)ch;
+    if (c < 1 || c > 16) { pd_error(x, "ligase~: pitch_channel must be 1-16"); return; }
+    x->scheduler->grain_midi_channel = c;
+    post("ligase~: grain MIDI channel %d", c);
+}
+
+static void ligase_smear_pitch_channel(ligase_t *x, t_floatarg ch) {
+    int c = (int)ch;
+    if (c < 1 || c > 16) { pd_error(x, "ligase~: smear_pitch_channel must be 1-16"); return; }
+    x->scheduler->smear_midi_channel = c;
+    post("ligase~: smear MIDI channel %d", c);
+}
+
 // @endregion:ligase_pd.core.pitch
 
 // @region:ligase_pd.pd_external.methods.query Query and State Export Methods
@@ -5251,6 +5316,7 @@ static void *ligase_new(void) {
     x->pattern_pitch_last_printed = -999.0f;
     x->smear_pitch_debug = 0;
     x->smear_pitch_dbg_last = -999.0f;
+    x->midi_msg_active = 0;
     for (int ci = 0; ci < PATTERN_MAX_SEGS; ci++) {
         x->cycle_segments[ci].num = 0;
         x->cycle_segments[ci].den = 0;
@@ -5496,6 +5562,10 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_pitch_range, gensym("pitch_range"), A_DEFFLOAT, A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_rand_type, gensym("pitch_rand_type"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_scale, gensym("pitch_scale"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_midi, gensym("midi"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_midi_channel, gensym("midi_channel"), A_DEFFLOAT, A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_pitch_channel, gensym("pitch_channel"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_pitch_channel, gensym("smear_pitch_channel"), A_DEFFLOAT, 0);
     // Modulation outlet methods
     // Modulation outlets now use unified param_range and rand_type messages (no dedicated methods)
     // @region:ligase_pd.pd_external.methods.query.registration Query System Message Handlers

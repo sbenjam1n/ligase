@@ -584,6 +584,10 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->smear_pitch_control.last_hz      = 0.0f;
     sched->smear_pitch_control.semitone_fine = 0.0f;               // P3: no smear fine offset by default
 
+    // P2: channel-aware MIDI routing defaults (independent: grain ch1, smear ch2; equal channels = unison).
+    sched->grain_midi_channel = 1;
+    sched->smear_midi_channel = 2;
+
     // Initialize pan mode (default: constant-power mono panning)
     sched->pan_mode = 0;
 

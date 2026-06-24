@@ -679,6 +679,8 @@ typedef struct scheduler {
     // Pitch control system
     pitch_control_t pitch_control;
     smear_pitch_control_t smear_pitch_control;  // SMEAR (resonator) pitch destination — independent of pitch_control
+    int grain_midi_channel;   // P2: MIDI channel routed to the GRAIN pitch destination (default 1)
+    int smear_midi_channel;   // P2: MIDI channel routed to the SMEAR pitch destination (default 2)
 
     // Pan mode (0 = constant-power mono panning, 1 = stereo balance)
     int pan_mode;

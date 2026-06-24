@@ -2,13 +2,29 @@
 
 **Owner:** SLB
 **Date:** 2026-06-24
-**Status:** PLANNED (not started)
+**Status:** ✅ DONE (2026-06-24) — implemented (P1 landed) and headless-verified; `make clean && make` warning-free; no regression. Channel-aware `midi <note> [vel] [channel]` + `midi_channel`/`pitch_channel`/`smear_pitch_channel`; same channel = unison, different = separate; inlet-19 coexistence via `midi_msg_active`. See Progress.
 **Tracked in:** `QUEUE.md` §4a (PLAN COVERAGE — pitch-destination build-out). (NOT §1 — §1 is the COMPLETE-work changelog.)
 **Related:** Plan P1 `Plans/smear_pitch.md` (the SMEAR pitch DESTINATION + its `smear_pitch_control_t` controller and note→Hz math — **P2 depends on it being merged first**); the existing pitch/MIDI surface (`pitch_*` messages, the inlet-19 signal-MIDI path); the pattern subsystem (`Plans/pattern_notation.md` / `pattern_modulation.md` / `pattern_pitch.md`, all ✅ DONE) which supplies the per-block smear-pitch and per-grain grain-pitch PATTERN sources that the "MIDI-on-one / pattern-on-other" acceptance criterion exercises.
 
 > **VERIFY NOTE (2026-06-24, adversarial pass against the actual tree):** All file:line refs and symbols below were re-checked by reading `src/ligase~.c`, `src/types.h`, `src/grain.c`, `src/grain_smear.c`. Verdict **revised** — the plan is sound; two small code-accuracy corrections were applied in place: (1) `scheduler_trigger_grain` STARTS at `grain.c:725` (the pattern-slot read is at `:816`); (2) the `midi_msg_active` FIELD DECLARATION goes in `struct _ligase` (`ligase~.c:144`, fields ~`:300-322`), NOT inside `ligase_new` at `:4969` — only its *initialization* lives at `:4969`/`:5006`. MIDI-channel soundness, smear clamp/precedence, backward-compat, and threading all PASS. One **P1-scope** hazard surfaced (not a P2 defect, deferred): P1's recommended smear pattern slot `PATTERN_SLOTS-2`=6 collides with the param-pattern auto-allocator range (slots 0-6); the P1 author must pick a non-colliding slot.
 
 ---
+
+## Progress (2026-06-24) — IMPLEMENTED + VERIFIED
+
+P1 having landed, the smear-routing fields exist; shipped end to end. `make clean && make` warning-free; `test_delay.pd` clean.
+- **Types/init:** `grain_midi_channel`/`smear_midi_channel` on `scheduler_t` (default 1 / 2 = independent); `midi_msg_active` on `ligase_t` (init 0).
+- **`midi <note> [vel] [channel]`** (A_GIMME): note 1-127 + channel 1-16 validated; two independent `if (channel == grain/smear_midi_channel)` routes (grain -> `pitch_control.midi_note`/`midi_enabled` + `midi_msg_active=1`; smear -> `smear_pitch_control.note`/`midi_enabled`/`source=SMEAR_PITCH_MIDI`/`enabled=1`). Same channel => both fire => unison; different => one => separate. Velocity accepted, unused.
+- **Setters:** `midi_channel <g> <sm>` (posts UNISON/separate), `pitch_channel <n>`, `smear_pitch_channel <n>`.
+- **Inlet-19 coexistence:** the signal-inlet MIDI read gated on `!x->midi_msg_active` (one-line) -> once a `midi` message owns grain, the inlet stops writing; with no `midi` message it is byte-identical to today. `prev_midi_note` left to the outlet-3 detector.
+
+| AC | Test (`tests/pattern/P2_midi.pd`) | Result |
+|----|------|--------|
+| Separation | `midi_channel 1 2`; `midi 64..1` / `midi 81..2` | grain bang only / smear 880 Hz only ✓ |
+| Dropped | `midi 72..3` (no listener) | neither destination changes ✓ |
+| Unison | `midi_channel 1 1`; `midi 55..1` | grain bang AND smear 196 Hz (one note, both) ✓ |
+| Range reject | `midi 0..1`, `midi 60..17` | note/channel out-of-range errors, no write ✓ |
+| Backward compat | no `midi` message (`midi_msg_active=0`) | inlet-19 path unchanged (guard is the only inlet edit) ✓ |
 
 ## Problem
 
