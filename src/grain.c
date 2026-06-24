@@ -92,7 +92,8 @@ static float semitones_to_speed(float semitones) {
 // @region:ligase_pd.core.pitch.scale Pitch Scale Management
 
 // Sample a random semitone value from a scale
-static float sample_scale_semitones(pitch_scale_t *scale, perlin_state_t *perlin_state, param_range_t *semitone_range) {
+// Non-static so the SMEAR pitch SCALE source (ligase~.c smear stanza) can reuse it (extern-declared there).
+float sample_scale_semitones(pitch_scale_t *scale, perlin_state_t *perlin_state, param_range_t *semitone_range) {
     if (scale->count == 0) {
         return 0.0f;  // No scale defined, return 0 semitones
     }
@@ -561,6 +562,19 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->pitch_control.midi_enabled = 0;
     sched->pitch_control.last_semitone = 0.0f;  // Initialize for change detection
     sched->pitch_control.pitch_pattern_slot = -1;  // -1 = no pattern slot bound (0 is a valid slot)
+
+    // SMEAR pitch destination defaults (memset already zeroed enabled/source/note/midi_enabled).
+    // Explicit non-zero musical defaults: A440 reference, no slot bound (0 is a valid slot).
+    sched->smear_pitch_control.enabled      = 0;                  // off -> backward compat (manual smear_frequency)
+    sched->smear_pitch_control.source       = SMEAR_PITCH_OFF;
+    sched->smear_pitch_control.semitone     = 0.0f;
+    sched->smear_pitch_control.ref_hz       = 440.0f;            // A4
+    sched->smear_pitch_control.ref_note     = 69;                // note 69 -> 440 Hz (standard A440 MIDI)
+    sched->smear_pitch_control.pattern_slot = -1;                // -1 = no slot bound (0 is a valid slot)
+    sched->smear_pitch_control.midi_channel = 2;                 // default smear MIDI channel (used by P2)
+    sched->smear_pitch_control.scale.count  = 0;                 // no scale loaded
+    sched->smear_pitch_control.semitone_range = default_range;   // disabled by default
+    sched->smear_pitch_control.last_hz      = 0.0f;
 
     // Initialize pan mode (default: constant-power mono panning)
     sched->pan_mode = 0;

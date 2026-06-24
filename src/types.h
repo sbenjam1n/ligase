@@ -425,6 +425,32 @@ typedef struct {
                                  // PITCH_MODE_PATTERN; -1 = none/inactive (wired in P3)
 } pitch_control_t;
 
+// SMEAR (resonator) pitch destination — an independent note->Hz controller for the allpass
+// center frequency. Deliberately NOT pitch_control_t (that is the shared GRAIN-speed controller).
+// Emits a single Hz via grain_smear_set_frequency. Source menu mirrors grain pitch.
+typedef enum {
+    SMEAR_PITCH_OFF,        // 0 — default; manual smear_frequency + smear_frequency_range own freq
+    SMEAR_PITCH_SEMITONE,   // 1 — fixed transpose: hz = ref_hz * 2^(semitone/12)
+    SMEAR_PITCH_SCALE,      // 2 — stochastic scale-degree via sample_scale_semitones
+    SMEAR_PITCH_MIDI,       // 3 — note from the channel-aware 'midi' message (fed in P2; field reserved)
+    SMEAR_PITCH_PATTERN     // 4 — mini-notation scale-degree stepper on a dedicated pattern slot
+} smear_pitch_source_t;
+
+typedef struct {
+    int   enabled;        // 0 = smear pitch off (default) -> manual/range path owns freq (backward compat)
+    int   source;         // smear_pitch_source_t: OFF / SEMITONE / SCALE / MIDI / PATTERN
+    float semitone;       // fixed transpose for SMEAR_PITCH_SEMITONE
+    int   note;           // last MIDI note (SMEAR_PITCH_MIDI; written by P2's 'midi' message)
+    int   midi_enabled;   // a valid MIDI note has arrived (SMEAR_PITCH_MIDI)
+    float ref_hz;         // reference Hz (default 440)
+    int   ref_note;       // reference note (default 69 = A4 -> 440 Hz, standard A440 MIDI tuning)
+    int   pattern_slot;   // perlin_state.pattern[] slot for SMEAR_PITCH_PATTERN; -1 = none
+    int   midi_channel;   // which MIDI channel routes here (used by P2; stored, unused in P1)
+    pitch_scale_t   scale;          // for SMEAR_PITCH_SCALE (degree -> semitone)
+    param_range_t   semitone_range; // for SMEAR_PITCH_SCALE random source
+    float last_hz;        // last applied Hz (precedence/override bookkeeping + state dump)
+} smear_pitch_control_t;
+
 // @endregion:ligase_pd.core.pitch.types
 
 // @region:ligase_pd.core.types.pattern Pattern (mini-notation) Types
@@ -648,6 +674,7 @@ typedef struct scheduler {
 
     // Pitch control system
     pitch_control_t pitch_control;
+    smear_pitch_control_t smear_pitch_control;  // SMEAR (resonator) pitch destination — independent of pitch_control
 
     // Pan mode (0 = constant-power mono panning, 1 = stereo balance)
     int pan_mode;

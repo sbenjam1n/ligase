@@ -2,13 +2,33 @@
 
 **Owner:** SLB
 **Date:** 2026-06-24
-**Status:** PLANNED (not started)
+**Status:** ✅ DONE (2026-06-24) — implemented and headless-verified; `make clean && make` warning-free at every gate; no regression in the existing audio path or `smear_frequency`/`pattern pitch`. Full source menu (off/semitone/scale/MIDI-via-`smear_note`/pattern) shipped incl. the de-static'd SCALE source. See Progress.
 **Tracked in:** `QUEUE.md` §4a (PLAN COVERAGE — pitch-destination build-out). (NOT §1 — §1 is the COMPLETE-work changelog.)
 **Related:** Plan P2 `Plans/midi_channel_routing.md` (the channel-aware `midi <note> [vel] [channel]` ingress that *feeds* the `source=MIDI` field this plan reserves but does not drive — P2 **depends on** P1). The **smear** section (`ligase_smear_frequency` + the per-block `smear_frequency_range` modulation at `ligase~.c:908-925`), the **pitch** section (the grain `pitch_control_t` + `PITCH_MODE_*` machinery this plan deliberately does NOT reuse), and the **pattern** section (`Plans/pattern_pitch.md` / P3, whose `pattern <target>` handler + degree→scale→semitone math this plan mirrors for a second destination). This is the first of a two-plan arc that splits "MIDI + modulation for the resonator pitch" from the existing grain pitch: **P1 builds the smear destination + its non-MIDI sources; P2 adds the channel-aware MIDI routing across both destinations.**
 
 > **ADVERSARIAL VERIFICATION (2026-06-24).** All load-bearing file:line refs and symbols were re-read in `src/types.h`, `src/grain.c`, `src/ligase~.c`, `src/grain_smear.c`/`.h` and confirmed REAL and accurate, with three corrections folded in below (flagged ⟦V⟧): (1) the `scheduler_t` member-placement note was wrong — `pitch_control` is **not** the last member before the brace (see Data structures); (2) the optional SCALE source's `sample_scale_semitones` is **`static`** in `grain.c` and cannot be called from `ligase~.c` as written — needs de-static-ing/wrapper (SCALE is deferred, so lean P1 is unaffected); (3) slot-6 "reservation" via the two `pattern_alloc_param_slot` guards is only partial — the `pattern_N` manual instance-bind bypasses it (same as slot 7 today). MIDI-channel handling, the note→Hz math + clamp, backward-compat, and block-thread/slot threading all verified sound. Baseline `make clean && make` is warning-free (`-Wall -O2`), so the build gates are grounded.
 
 ---
+
+## Progress (2026-06-24) — IMPLEMENTED + VERIFIED
+
+Built across the five gates; `make clean && make` warning-free at each; no regression (`test_delay.pd` clean).
+- **Step 1 (types):** `smear_pitch_source_t` enum + `smear_pitch_control_t` (a dedicated controller, NOT `pitch_control_t`) in `types.h`; `smear_pitch_control` member on `scheduler_t`; A440 musical defaults (`ref_hz=440`, `ref_note=69`, `pattern_slot=-1`, `enabled=0`) in `scheduler_create`.
+- **Step 2 (per-block apply + override):** de-static'd `sample_scale_semitones` (+ extern in `ligase~.c`) so the SCALE source links; the source→semitone→Hz branch in the smear stanza (`ref_hz·2^(semitone/12)` → `grain_smear_set_frequency`); **override** = the `smear_frequency_range` branch is gated on `!smear_pitch_control.enabled` (true bypass, consistent with grain's `speed_range` bypass); clamp stays solely in `smear_update_coeffs`; rest/no-note holds the previous Hz.
+- **Step 3 (messages):** `smear_pitch_source <0-4>`, `smear_pitch_semitones` (auto-selects SEMITONE), `smear_note <note> [ref_note] [ref_hz]`, `smear_pitch_scale`, `smear_pitch_rand_type` (+ `smear_pitch_debug`).
+- **Step 4 (pattern target):** slot 6 reserved (param auto-allocator shrunk to 0..PATTERN_SLOTS-3); `pattern smear_pitch` dispatch + commit (`SMEAR_PITCH_PATTERN`) + `pattern_clear smear_pitch`, mirroring the grain `pattern pitch` path with per-block wrap+octave reads.
+- **Step 5 (verify):** headless patches (`tests/pattern/SM*.pd`), asserting the resolved Hz via the `smear_pitch_debug` stderr trace.
+
+| AC | Test | Result |
+|----|------|--------|
+| Fixed semitone | `smear_pitch_semitones 0 / 12 / -12` | 440 / 880 / 220 Hz ✓ |
+| MIDI note (A440 ref) | `smear_note 60 / 69` | 261.63 / 440 Hz (middle C / A4) ✓ |
+| Pattern (slot 6, wrap+octave) | `pattern smear_pitch [ 0 4 7 ]` on scale `0 2 4 5 7 9 11` | 440 / 659.26 / 880 Hz, tempo-locked ✓ |
+| SCALE (random) | `smear_pitch_source 2` + scale | random picks land on scale notes (493.88/554.37/587.33/659.26/739.99/830.61) ✓ |
+| Override | `smear_frequency_range 200-2000` enabled + `smear_pitch_semitones 0` | resonator pinned to 440 (range bypassed) ✓ |
+| Backward compat | `smear_pitch_source 0` | trace stops; manual/modulated `smear_frequency` resume ownership ✓ |
+
+**Carried forward:** the `source=MIDI` field is fed channel-free by `smear_note` in P1; the channel-aware `midi` ingress is **P2**. The ±50-cent fine-tune (`smear_pitch_fine`) is **P3** (rides this stanza's `semitone`). `smear_pitch_range` was dropped (functionally unused — `sample_scale_semitones` ignores min/max).
 
 ## Problem
 

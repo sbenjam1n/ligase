@@ -62,6 +62,7 @@ extern void scheduler_trigger_grain(scheduler_t *sched, float position, float sp
 extern void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float *out_right, int blocksize);
 extern float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, float base_value);
 extern void pattern_eval_slot(perlin_state_t *perlin_state, int slot);
+extern float sample_scale_semitones(pitch_scale_t *scale, perlin_state_t *perlin_state, param_range_t *semitone_range);
 
 extern grain_delay_t* grain_delay_create(int sample_rate);
 extern void grain_delay_destroy(grain_delay_t *delay);
@@ -279,6 +280,8 @@ struct _ligase {
     struct { int num; int den; } cycle_segments[PATTERN_MAX_SEGS];
     int    pattern_debug;                   // 1 => log step changes to stderr (verification aid)
     float  pattern_pitch_last_printed;      // last pitch semitone logged (de-dupe the pitch trace)
+    int    smear_pitch_debug;               // 1 => log resolved smear pitch Hz to stderr (verification aid)
+    float  smear_pitch_dbg_last;            // last smear Hz logged (de-dupe the trace)
 
     // SOS mode: 0=Record Only (legacy), 1=Morphagene (crossfade input/granular at output)
     int sos_mode;
@@ -906,7 +909,10 @@ static void ligase_update_inlets(ligase_t *x,
     // sample_param_range ignores base_value when enabled (it only returns it when disabled,
     // and we sample only inside the enabled guard), so a 0 placeholder base is fine.
     if (x->smear) {
-        if (x->scheduler->smear_frequency_range.enabled) {
+        // OVERRIDE: when the smear pitch destination is enabled it OWNS freq_hz this block, so the
+        // continuous smear_frequency_range modulation is BYPASSED here (consistent with grain pitch,
+        // where engaging a pitch source bypasses speed_range). Disabled -> exactly today's behavior.
+        if (x->scheduler->smear_frequency_range.enabled && !x->scheduler->smear_pitch_control.enabled) {
             grain_smear_set_frequency(x->smear,
                 sample_param_range(&x->scheduler->smear_frequency_range, &x->scheduler->perlin_state, 0.0f));
         }
@@ -921,6 +927,56 @@ static void ligase_update_inlets(ligase_t *x,
         if (x->scheduler->smear_feedback_range.enabled) {
             grain_smear_set_feedback(x->smear,
                 sample_param_range(&x->scheduler->smear_feedback_range, &x->scheduler->perlin_state, 0.0f));
+        }
+
+        // SMEAR pitch destination: resolve the source to a semitone, then hz = ref_hz * 2^(semitone/12).
+        // When enabled this is the sole writer of freq_hz this block (the range branch above is bypassed).
+        // Reads the pattern cache only; one powf at block rate. Raw Hz -> grain_smear_set_frequency, whose
+        // smear_update_coeffs [20, 0.45*sr] clamp is the SOLE bounds owner (not duplicated here).
+        {
+            smear_pitch_control_t *sp = &x->scheduler->smear_pitch_control;
+            if (sp->enabled) {
+                float semitone = 0.0f;
+                int have_note = 1;
+                switch (sp->source) {
+                    case SMEAR_PITCH_SEMITONE:
+                        semitone = sp->semitone;
+                        break;
+                    case SMEAR_PITCH_MIDI:                       // note fed by P2's 'midi' message
+                        if (sp->midi_enabled) semitone = (float)(sp->note - sp->ref_note);
+                        else                  have_note = 0;     // no note yet -> hold previous Hz
+                        break;
+                    case SMEAR_PITCH_SCALE:
+                        semitone = sample_scale_semitones(&sp->scale,
+                                       &x->scheduler->perlin_state, &sp->semitone_range);
+                        break;
+                    case SMEAR_PITCH_PATTERN: {
+                        int slot = sp->pattern_slot, count = sp->scale.count;
+                        pattern_table_t *pt = (slot >= 0 && slot < PATTERN_SLOTS)
+                                              ? &x->scheduler->perlin_state.pattern[slot] : NULL;
+                        if (pt && pt->step_count > 0 && count > 0 && !pt->cached_is_rest) {
+                            int degree = (int)pt->cached_value;          // leaf value = scale degree
+                            int idx = ((degree % count) + count) % count; // wrap (mirror grain PATTERN)
+                            int oct = (int)floorf((float)degree / (float)count);
+                            semitone = sp->scale.semitones[idx] + 12.0f * (float)oct;
+                        } else {
+                            have_note = 0;                              // rest / not ready -> hold
+                        }
+                        break;
+                    }
+                    default: have_note = 0; break;                      // SMEAR_PITCH_OFF with enabled set
+                }
+                if (have_note) {
+                    float hz = sp->ref_hz * powf(2.0f, semitone / 12.0f);
+                    sp->last_hz = hz;                                   // raw Hz; clamp lives in smear_update_coeffs
+                    grain_smear_set_frequency(x->smear, hz);
+                    if (x->smear_pitch_debug && hz != x->smear_pitch_dbg_last) {
+                        x->smear_pitch_dbg_last = hz;
+                        fprintf(stderr, "ligase~ smear_pitch: source %d semitone %.3f -> %.2f Hz\n",
+                                sp->source, semitone, hz);
+                    }
+                }
+            }
         }
     }
 
@@ -2679,11 +2735,13 @@ static const char* get_rand_type_name(rand_type_t type);
 // is reserved for pitch. Returns -1 if every param slot is occupied.
 static int pattern_alloc_param_slot(ligase_t *x, param_range_t *range) {
     perlin_state_t *ps = &x->scheduler->perlin_state;
+    // Slots PATTERN_SLOTS-1 (grain pitch) and PATTERN_SLOTS-2 (smear pitch) are reserved; the param
+    // auto-allocator hands out only 0 .. PATTERN_SLOTS-3.
     if (range->rand_type == RAND_TYPE_PATTERN &&
-        range->rand_instance >= 0 && range->rand_instance < PATTERN_SLOTS - 1) {
+        range->rand_instance >= 0 && range->rand_instance < PATTERN_SLOTS - 2) {
         return range->rand_instance;
     }
-    for (int i = 0; i < PATTERN_SLOTS - 1; i++) {
+    for (int i = 0; i < PATTERN_SLOTS - 2; i++) {
         if (ps->pattern[i].step_count == 0) return i;
     }
     return -1;
@@ -2778,6 +2836,19 @@ static void ligase_pattern_clear(ligase_t *x, t_symbol *s, int argc, t_atom *arg
         if (x->scheduler->pitch_control.mode == PITCH_MODE_PATTERN)
             x->scheduler->pitch_control.mode = PITCH_MODE_OFF;   // GATE A(b): clear -> OFF
         post("ligase~: pitch pattern cleared (slot %d, pitch_mode -> off)", slot);
+        return;
+    }
+    if (strcmp(name, "smear_pitch") == 0) {
+        int slot = PATTERN_SLOTS - 2;
+        ps->pattern[slot].step_count = 0;
+        ps->pattern_phase[slot] = 0.0f;
+        ps->pattern_cycle_index[slot] = 0;
+        x->scheduler->smear_pitch_control.pattern_slot = -1;
+        if (x->scheduler->smear_pitch_control.source == SMEAR_PITCH_PATTERN) {
+            x->scheduler->smear_pitch_control.source  = SMEAR_PITCH_OFF;
+            x->scheduler->smear_pitch_control.enabled = 0;
+        }
+        post("ligase~: smear pitch pattern cleared (slot %d, smear_pitch off)", slot);
         return;
     }
 
@@ -2885,9 +2956,13 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     int slot;
     param_range_t *attach_range = NULL;      // non-NULL => attach this range to the slot after commit
     int attach_pitch = 0;                    // 1 => set PITCH_MODE_PATTERN on this slot after commit
+    int attach_smear_pitch = 0;              // 1 => set smear SMEAR_PITCH_PATTERN on this slot after commit
     if (argv[0].a_type == A_SYMBOL && strcmp(argv[0].a_w.w_symbol->s_name, "pitch") == 0) {
-        slot = PATTERN_SLOTS - 1;            // pitch: dedicated last slot
+        slot = PATTERN_SLOTS - 1;            // grain pitch: dedicated last slot
         attach_pitch = 1;
+    } else if (argv[0].a_type == A_SYMBOL && strcmp(argv[0].a_w.w_symbol->s_name, "smear_pitch") == 0) {
+        slot = PATTERN_SLOTS - 2;            // smear pitch: dedicated slot 6
+        attach_smear_pitch = 1;
     } else if (argv[0].a_type == A_SYMBOL) {
         const char *name = argv[0].a_w.w_symbol->s_name;
         attach_range = get_param_range_by_name(x, name);
@@ -3067,6 +3142,16 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
         if (x->scheduler->pitch_control.scale.count == 0)
             post("ligase~: pattern pitch set, but no pitch_scale loaded yet (unison until you send one)");
         post("ligase~: pitch pattern set (slot %d), pitch_mode -> pattern", slot);
+    }
+
+    // ---- Smear pitch attach: set the slot + switch the smear destination into SMEAR_PITCH_PATTERN ----
+    if (attach_smear_pitch) {
+        x->scheduler->smear_pitch_control.pattern_slot = slot;
+        x->scheduler->smear_pitch_control.source       = SMEAR_PITCH_PATTERN;
+        x->scheduler->smear_pitch_control.enabled      = 1;
+        if (x->scheduler->smear_pitch_control.scale.count == 0)
+            post("ligase~: pattern smear_pitch set, but no smear_pitch_scale loaded yet (unison until you send one)");
+        post("ligase~: smear pitch pattern set (slot %d), smear_pitch_source -> pattern", slot);
     }
 
 #undef PAT_FAIL
@@ -3444,6 +3529,107 @@ static void ligase_smear_stages(ligase_t *x, t_floatarg stages) {
 }
 static void ligase_smear_feedback(ligase_t *x, t_floatarg fb) {
     if (x->smear) grain_smear_set_feedback(x->smear, fb);
+}
+
+// --- SMEAR pitch destination (note->Hz resonator pitch; independent of grain pitch) ---
+
+static void ligase_smear_pitch_source(ligase_t *x, t_floatarg src) {
+    int s = (int)src;
+    if (s < 0 || s > 4) {
+        pd_error(x, "ligase~: smear_pitch_source must be 0-4 (0=off,1=semitone,2=scale,3=midi,4=pattern)");
+        return;
+    }
+    x->scheduler->smear_pitch_control.source  = s;
+    x->scheduler->smear_pitch_control.enabled = (s != SMEAR_PITCH_OFF) ? 1 : 0;
+    const char *names[] = {"off", "semitone", "scale", "midi", "pattern"};
+    post("ligase~: smear_pitch_source -> %s", names[s]);
+}
+
+static void ligase_smear_pitch_semitones(ligase_t *x, t_floatarg n) {
+    x->scheduler->smear_pitch_control.semitone = n;
+    x->scheduler->smear_pitch_control.source   = SMEAR_PITCH_SEMITONE;   // auto-select
+    x->scheduler->smear_pitch_control.enabled  = 1;
+    post("ligase~: smear pitch %.2f semitones (source -> semitone)", n);
+}
+
+// smear_note <note> [ref_note] [ref_hz] : a single explicit note for the resonator (channel-free; P2's
+// channel-aware 'midi' message writes the same note/midi_enabled fields by channel).
+static void ligase_smear_note(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 1 || argv[0].a_type != A_FLOAT) {
+        pd_error(x, "ligase~: smear_note requires <note> [ref_note] [ref_hz]");
+        return;
+    }
+    int note = (int)argv[0].a_w.w_float;
+    if (note < 1 || note > 127) {
+        pd_error(x, "ligase~: smear_note %d out of range (1-127)", note);
+        return;
+    }
+    smear_pitch_control_t *sp = &x->scheduler->smear_pitch_control;
+    sp->note = note;
+    sp->midi_enabled = 1;
+    sp->source = SMEAR_PITCH_MIDI;
+    sp->enabled = 1;
+    if (argc >= 2 && argv[1].a_type == A_FLOAT) {
+        int rn = (int)argv[1].a_w.w_float;
+        if (rn >= 0 && rn <= 127) sp->ref_note = rn;
+    }
+    if (argc >= 3 && argv[2].a_type == A_FLOAT) {
+        float rh = argv[2].a_w.w_float;
+        if (rh > 0.0f) sp->ref_hz = rh;
+    }
+    post("ligase~: smear_note %d (ref note %d = %.1f Hz)", note, sp->ref_note, sp->ref_hz);
+}
+
+// smear_pitch_scale <semitones...> : degree->semitone scale for the SMEAR SCALE + PATTERN sources.
+static void ligase_smear_pitch_scale(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!argv) return;
+    if (argc == 0 || argc > MAX_SCALE_NOTES) {
+        pd_error(x, "ligase~: smear_pitch_scale requires 1-%d semitone values", MAX_SCALE_NOTES);
+        return;
+    }
+    for (int i = 0; i < argc; i++) {
+        if (argv[i].a_type != A_FLOAT) {
+            pd_error(x, "ligase~: smear_pitch_scale requires float values (previous scale preserved)");
+            return;
+        }
+    }
+    x->scheduler->smear_pitch_control.scale.count = argc;
+    for (int i = 0; i < argc; i++)
+        x->scheduler->smear_pitch_control.scale.semitones[i] = argv[i].a_w.w_float;
+    post("ligase~: smear pitch scale set with %d notes", argc);
+}
+
+// smear_pitch_rand_type <type> : stochastic generator for the SMEAR SCALE source (mirrors pitch_rand_type).
+static void ligase_smear_pitch_debug(ligase_t *x, t_floatarg f) {
+    x->smear_pitch_debug = (f != 0.0f) ? 1 : 0;
+    post("ligase~: smear_pitch_debug %s", x->smear_pitch_debug ? "on" : "off");
+}
+
+static void ligase_smear_pitch_rand_type(ligase_t *x, t_symbol *s) {
+    const char *t = s->s_name;
+    rand_type_t rt; int inst = 0;
+    if      (strncmp(t, "rand_", 5) == 0)       { rt = RAND_TYPE_RAND;      inst = atoi(t+5)-1; }
+    else if (strncmp(t, "perlin_1d_", 10) == 0) { rt = RAND_TYPE_PERLIN_1D; inst = atoi(t+10)-1; }
+    else if (strncmp(t, "perlin_2d_", 10) == 0) { rt = RAND_TYPE_PERLIN_2D; inst = atoi(t+10)-1; }
+    else if (strncmp(t, "lorenz_", 7) == 0)     { rt = RAND_TYPE_LORENZ;    inst = atoi(t+7)-1; }
+    else if (strncmp(t, "nbody_", 6) == 0)      { rt = RAND_TYPE_NBODY;     inst = atoi(t+6)-1; }
+    else if (strncmp(t, "sphere_", 7) == 0)     { rt = RAND_TYPE_SPHERE;    inst = atoi(t+7)-1; }
+    else if (strncmp(t, "saw_", 4) == 0)        { rt = RAND_TYPE_SAW;       inst = atoi(t+4)-1; }
+    else if (strncmp(t, "sine_", 5) == 0)       { rt = RAND_TYPE_SINE;      inst = atoi(t+5)-1; }
+    else if (strncmp(t, "square_", 7) == 0)     { rt = RAND_TYPE_SQUARE;    inst = atoi(t+7)-1; }
+    else {
+        pd_error(x, "ligase~: invalid smear_pitch_rand_type '%s' (rand_N/perlin_1d_N/perlin_2d_N/lorenz_N/nbody_N/sphere_N/saw_N/sine_N/square_N, N=1-4)", t);
+        return;
+    }
+    if (inst < 0 || inst > 3) {
+        pd_error(x, "ligase~: smear pitch rand instance must be 1-4");
+        return;
+    }
+    x->scheduler->smear_pitch_control.semitone_range.rand_type = rt;
+    x->scheduler->smear_pitch_control.semitone_range.rand_instance = inst;
+    post("ligase~: smear pitch random type set to %s", t);
 }
 // @endregion:ligase_pd.core.grain.smear.messages
 
@@ -5040,6 +5226,8 @@ static void *ligase_new(void) {
     x->cycle_seg_count = 0;
     x->pattern_debug = 0;
     x->pattern_pitch_last_printed = -999.0f;
+    x->smear_pitch_debug = 0;
+    x->smear_pitch_dbg_last = -999.0f;
     for (int ci = 0; ci < PATTERN_MAX_SEGS; ci++) {
         x->cycle_segments[ci].num = 0;
         x->cycle_segments[ci].den = 0;
@@ -5215,6 +5403,12 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_smear_resonance, gensym("smear_resonance"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_smear_stages, gensym("smear_stages"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_smear_feedback, gensym("smear_feedback"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_pitch_source, gensym("smear_pitch_source"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_pitch_semitones, gensym("smear_pitch_semitones"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_note, gensym("smear_note"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_pitch_scale, gensym("smear_pitch_scale"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_pitch_rand_type, gensym("smear_pitch_rand_type"), A_DEFSYMBOL, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_pitch_debug, gensym("smear_pitch_debug"), A_DEFFLOAT, 0);
 
     class_addmethod(ligase_class, (t_method)ligase_distortion_enable, gensym("distortion_enable"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_distortion_intensity, gensym("distortion"), A_DEFFLOAT, 0);
