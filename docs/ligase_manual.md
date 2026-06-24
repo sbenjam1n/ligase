@@ -122,6 +122,8 @@ play <0|1> - Start/stop playback
 record <0|1> - Start/stop recording
 recsplice - Record and create splice on stop
 recinput - Input-only recording, create splice on stop
+loop <0|1> - 1=loop forever (default), 0=one-shot (stop at splice end)
+trigger - (Re)start playback from the start of the current splice (one-shot re-arm; does not cut active grains)
 
 Recording Configuration
 
@@ -236,6 +238,16 @@ smear_stages <0-48> - Number of allpass sections / smear depth (default 12)
 smear_feedback <-0.99 to 0.99> - Global feedback (0 = pure smear, toward ±1 = resonant)
 (mix is signal inlet 15, 0-1)
 
+Smear Pitch (resonator pitch — note->Hz; at high feedback the smear rings at smear_frequency)
+
+smear_pitch_source <0-4> - 0=off / 1=semitone / 2=scale / 3=midi / 4=pattern (off = manual smear_frequency owns it)
+smear_pitch_semitones <n> - Fixed transpose vs the A440 reference (auto-selects source 1)
+smear_note <note> [ref_note] [ref_hz] - Set a note directly (default ref note 69 = 440 Hz); auto-selects source 3
+smear_pitch_scale <semitones...> - Scale for the smear SCALE + PATTERN sources
+smear_pitch_rand_type <gen> - Stochastic generator for the smear SCALE source (rand_N/perlin_*/...)
+smear_pitch_fine <cents> - ±50-cent fine tune on the smear pitch (modulatable: param_range smear_pitch_fine)
+pattern smear_pitch <tokens...> - Mini-notation scale-degree pattern on the smear pitch (see PATTERNS)
+
 Moogladder Filter
 
 moog_cutoff <20-20000> - Cutoff frequency (Hz)
@@ -328,6 +340,14 @@ pitch_semitones <-24 to 24> - Fixed transposition
 pitch_range <min> <max> - Semitone range
 pitch_rand_type <type> - Random generator for pitch
 pitch_scale <note1> <note2> ... <noteN> - Scale definition (semitones)
+pitch_fine <cents> - ±50-cent fine tune on the grain pitch (modulatable: param_range pitch_fine)
+
+MIDI (channel-aware; from Pd [notein] -> note/vel/channel)
+
+midi <note> [vel] [channel] - Channel-routed MIDI note. Same channel for grain+smear = unison; different = separate
+midi_channel <grain_ch> <smear_ch> - Set both routing channels (equal = unison); default grain 1, smear 2
+pitch_channel <ch> - MIDI channel routed to the GRAIN pitch destination
+smear_pitch_channel <ch> - MIDI channel routed to the SMEAR pitch destination
 
 Patterns (TidalCycles Mini-Notation)
 
@@ -618,6 +638,30 @@ splice_split 0|1 Control splice splitting behavior.
 0 = allow splitting current splice (default)
 
 1 = preserve current splice length
+
+One-Shot Playback (loop / trigger)
+
+loop <0|1> sets whether playback loops at the splice end:
+
+  loop 1   (default) the playhead wraps at the splice boundary and keeps playing — the normal looping behavior.
+  loop 0   one-shot: when the playhead reaches the END of the splice, playback STOPS on its own.
+
+One-shot is orthogonal to the playhead mode — it is meaningful when the playhead advances (Scanning and
+Clock-Advance modes; in Static mode there is no advancing playhead, so loop has no effect). play 1 and the
+dedicated trigger message already start from the beginning of the current splice, so a one-shot pass runs
+start-to-end and then stops.
+
+trigger re-arms a one-shot from the start of the current splice:
+
+  trigger   restart playback at splice_start.
+
+Crucially, stopping (or re-triggering) NEVER cuts grains that are already sounding — already-scheduled grains
+ring out to their natural envelope end. So you can fire trigger repeatedly for a rhythmic, overlapping one-shot
+texture without clicks. (Use trigger rather than play 1 to re-arm: play 1 prints a status dump on every call.)
+
+bang is the tempo clock (see TIMING & QUANTIZATION), so the one-shot (re)trigger is its own message, not a
+bang. If a splice navigation is queued at the boundary, the navigation WINS and playback continues into the
+next splice; the one-shot stop fires only when nothing is queued.
 
 # RECORDING CONFIGURATION
 
@@ -1515,6 +1559,51 @@ sparse grains can skip steps, dense grains re-trigger the same step. A rest (~) 
 note. pattern_clear pitch returns to pitch_mode 0 (OFF). With no pitch_scale loaded the result is
 unison until one is sent.
 
+Fine Tune
+
+pitch_fine <cents> applies an overall ±50-cent (±half-semitone) detune ON TOP of whatever the pitch mode
+produces — a Moog-style fine knob. It is sampled per grain and is a modulation TARGET, so it can drift or
+wobble:
+
+  pitch_fine 7                            slightly sharp (7 cents)
+  param_range pitch_fine -0.5 0.5
+  rand_type sine pitch_fine               slow chorus-like detune
+
+The dedicated pitch_fine message takes CENTS (−50..50); the param_range target is in SEMITONES (−0.5..0.5,
+where ±0.5 = ±50 cents). pitch_fine 0 is a no-op.
+
+Two pitch destinations
+
+ligase~ has TWO independent pitch destinations: the GRAIN pitch (this section — drives playback speed) and
+the SMEAR/resonator pitch (see SMEAR > Smear Pitch — drives the allpass center frequency). Each has its own
+source (off / semitone / scale / MIDI / pattern) and its own fine tune (pitch_fine / smear_pitch_fine), so you
+can, for example, run a scale-pattern on the smear while playing the grains live over MIDI.
+
+Channel-Aware MIDI Routing
+
+The MIDI signal inlet (inlet 19) carries a bare note number with no channel. To play the two destinations
+from one keyboard and route by channel, use the MESSAGE form, fed from a Pd [notein] (note / velocity /
+channel):
+
+  midi <note> [vel] [channel]
+
+A note is routed to a destination when its channel matches that destination's channel:
+
+  midi_channel <grain_ch> <smear_ch>      set both at once (default grain 1, smear 2)
+  pitch_channel <ch>                      grain channel only
+  smear_pitch_channel <ch>                smear channel only
+
+  - Same channel for both  => one note drives BOTH  => UNISON.
+  - Different channels      => each follows only its own channel => SEPARATE.
+  - A note on a channel no destination listens to is dropped.
+
+Velocity is accepted (for [notein] compatibility) but not used for pitch. Valid note 1..127, channel 1..16.
+Wire [notein] -> [pack f f f] (note, velocity, channel) -> a "midi $1 $2 $3" message box.
+
+Backward compatibility: the inlet-19 signal MIDI (pitch_mode 4) keeps working exactly as before. The first
+time a `midi` message routes a note to the grain channel it takes over the grain destination (one source of
+truth) and the inlet is ignored; if you never send a `midi` message, nothing changes.
+
 # DELAY
 
 Delay effect applied to the mixed grain output before recording. Three modes available: DD-4 (analog-style), Bencina (pitch-preserving granular), and Stut (quantized rhythmic). All modes share a 9.5-second stereo circular buffer (sized to the host rate) and common control parameters (time, feedback, tone, mix). Mode-specific parameters are set via messages.
@@ -1819,6 +1908,39 @@ At high feedback (≈0.9-0.99) the smear becomes a pitched, bell-like resonator:
 - Negative feedback selects a different (more hollow/odd-harmonic) set of partials.
 
 Because the wet output is bounded (unity-gain allpass), the resonator can be driven straight into the Moog filter without the level running away — the filter then shapes the ring.
+
+Smear Pitch (resonator pitch)
+
+At high feedback the smear rings at smear_frequency — so it can be PLAYED like a resonator. Rather than
+setting a raw Hz, drive it from a musical note. This is a second pitch destination, fully independent of the
+grain pitch:
+
+  smear_pitch_source <0-4>   0=off (manual smear_frequency owns it) / 1=semitone / 2=scale / 3=midi / 4=pattern
+
+Sources:
+  - semitone:  smear_pitch_semitones <n>            fixed transpose vs the reference (auto-selects source 1)
+  - midi:      smear_note <note> [ref_note] [ref_hz] one explicit note (or route MIDI by channel — see
+               PITCH & SPEED > Channel-Aware MIDI Routing). Auto-selects source 3.
+  - scale:     smear_pitch_scale <semitones...> + smear_pitch_rand_type <gen>   random notes from a scale
+  - pattern:   smear_pitch_scale <scale...> then  pattern smear_pitch <tokens...>   mini-notation (see PATTERNS)
+
+Mapping: hz = ref_hz * 2^((note − ref_note)/12). The default reference is note 69 = 440 Hz (A4), so note 60 ≈
+261.6 Hz (middle C). smear_note can re-reference: smear_note 60 0 261.63 makes note 0 = middle C. The resulting
+Hz is bounded to [20, 0.45·samplerate].
+
+Precedence: when smear pitch is enabled (source ≠ off) the note OWNS smear_frequency for the block, and the
+manual smear_frequency message / smear_frequency_range modulation are BYPASSED — exactly as engaging a grain
+pitch mode bypasses the speed range. smear_pitch_source 0 hands control back to the manual/modulated frequency.
+
+Fine tune: smear_pitch_fine <cents> adds a ±50-cent detune (modulatable: param_range smear_pitch_fine, in
+semitones) on top of the smear note — the same fine-tune role the grains get from pitch_fine.
+
+Example — arpeggiate the resonator (root / fifth / octave, one per cycle):
+
+  smear_resonance 0.9
+  smear_feedback 0.85
+  smear_pitch_scale 0 2 4 5 7 9 11
+  pattern smear_pitch < 0 4 7 >
 
 # DISTORTION
 
@@ -2166,7 +2288,7 @@ Modulatable Parameters Include:
 
 - Grain synthesis (sampled per grain trigger):
 
-speed, grainsize, grainstart, amplitude, pan, maxgrains, env_skew
+speed, grainsize, grainstart, amplitude, pan, maxgrains, env_skew, pitch_fine (grain fine tune, ±0.5 semitone)
 
 - Timing / playback (sampled per DSP block):
 
@@ -2174,7 +2296,7 @@ iot (interonset time), scanrate, organize (splice select), sos (sound-on-sound)
 
 - Effects (sampled per DSP block):
 
-gdelay (delay time), gdelay_feed, gdelay_tone, gdelay_mix, moog_cutoff, moog_resonance, moog_mix
+gdelay (delay time), gdelay_feed, gdelay_tone, gdelay_mix, moog_cutoff, moog_resonance, moog_mix, smear_frequency, smear_resonance, smear_stages, smear_feedback, smear_pitch_fine (smear fine tune, ±0.5 semitone)
 
 - Distortion:
 

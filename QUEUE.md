@@ -6,7 +6,7 @@ to §1. Section numbers are stable references — append, never renumber. -->
 
 # QUEUE.md — Work Queue
 
-**Queue Seq:** 55
+**Queue Seq:** 56
 **Date:** 2026-06-24
 **What this queue draws from:** active execution plans (`Plans/*.md`) and the project's own indexes (`README.md`, `TODO.md`).
 

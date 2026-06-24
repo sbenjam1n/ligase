@@ -99,6 +99,8 @@ _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md`;
   plans (P1/P2/P3), each with a Progress + headless-verification section (all DONE).
 - `tests/pattern/` — the headless pattern acceptance patches (`P1*`/`P2*`/`P3*`) + `README.md`.
 - `Plans/completed/` — archived B1/B2/M1 plans. `Plans/manual_content_edits.md` — partial, still active.
-- `docs/ligase_manual.md` — manual source (PDF held). Now documents the pattern subsystem (dedicated
-  PATTERNS section + MESSAGES/PITCH Mode 5/MODULATION integration). **PDF is stale vs the `.md`** — run
-  `make manual` only when the owner asks.
+- `docs/ligase_manual.md` — manual source (PDF held). Now documents the pattern subsystem AND the
+  pitch-destination arc + one-shot: SMEAR > Smear Pitch (resonator note->Hz, sources, override, fine),
+  PITCH & SPEED > Fine Tune + Channel-Aware MIDI Routing, PLAYBACK CONTROL > One-Shot (loop/trigger),
+  plus the MESSAGES quick-list + MODULATION targets (pitch_fine/smear_pitch_fine). **PDF is stale vs the
+  `.md`** — run `make manual` only when the owner asks (much has accumulated).
