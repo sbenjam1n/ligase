@@ -2,9 +2,32 @@
 
 **Owner:** SLB
 **Date:** 2026-06-24
-**Status:** PLANNED (not started)
+**Status:** ✅ DONE (2026-06-24) — implemented and headless-verified (GATE E); all 8 acceptance criteria pass; `make clean && make` warning-free at every gate; no regression in the existing audio path. **One sanctioned deviation from the GATE A sign-off:** the `RAND_TYPE_PATTERN` / `PITCH_MODE_PATTERN` enum *values* are **deferred to P2/P3** (added atomically with their switch cases) rather than added here — adding them in P1 produced dangling `-Wswitch` warnings with no P1 code using either value, and deferral was the explicitly-offered GATE-A alternative. (Header below predates completion; left as the original plan record. See Progress.)
 **Tracked in:** `QUEUE.md` §4a (PLAN COVERAGE — pattern subsystem build-out); promote into §2 (ON DECK) when scheduled. (NOT §1 — §1 is the COMPLETE-work changelog.) Verification harness: `AUTOMATED_TEST_PROCEDURE.md` (headless `pd -nogui -nosound -stderr`).
 **Related (forthcoming, not yet written):** Plan P2 (`pattern_modulation.md`, attaches a pattern to any `param_range_t` target via `RAND_TYPE_PATTERN`) and Plan P3 (`pattern_pitch.md`, `PITCH_MODE_PATTERN` scale-degree stepper). P1 is the foundation both depend on; it builds the parser + clock + nesting but **attaches to nothing** — a slot can be loaded and advanced, observed only via a debug `post()`.
+
+## Progress (2026-06-24) — IMPLEMENTED + VERIFIED
+
+Built across the four gates; `make clean && make` warning-free at each.
+- **Step 1 (types):** `pattern_step_t` / `pattern_table_t` / `pattern_node_t` + `PATTERN_*` caps in `types.h`; `pattern[PATTERN_SLOTS]` / `pattern_phase[]` / `pattern_cycle_index[]` in `perlin_state_t` (memset-covered); `pitch_pattern_slot` in `pitch_control_t` (init `-1` in `scheduler_create`); `cycle_total_sec` / `cycle_seg_count` / `cycle_segments[]` / `pattern_debug` in `ligase_t` (+ `ligase_new` init). Enum-value deferral per Status.
+- **Step 2 (clock):** `ligase_recompute_cycle()` helper (dual-recompute, guarded `bpm<=0`), wired into `ligase_bang`; `pattern_cycle` (validate-then-commit `%d/%d` segments) + `pattern_clear` handlers, registered.
+- **Step 3 (parser + eval):** `pattern_eval_slot()` (`grain.c`, non-static + `extern` in `ligase~.c`); two-stage `ligase_pattern` (recursive-descent tree → span-descent flatten → validate-then-commit, `step_count` published LAST); per-block phase-advance loop in `ligase_perform` just before `ligase_update_inlets` (guarded `scheduler && bpm>1.0 && cycle_total_sec>0`); `pattern` + `pattern_debug` registered.
+- **Step 4 (verify):** 7 headless patches (`/tmp/pat_tests/`) under `pd -nogui -nosound`, asserting against the `pattern_debug` stderr trace (logical-time-stamped step changes).
+
+| AC | Test | Result |
+|----|------|--------|
+| 1 Even timing | `pattern_cycle 4/4` + `pattern 0 0.0 0.25 0.5 0.75` @120BPM | steps 0→1→2→3 at 0.500 s (= 2.0/4); ✓ |
+| 2 `4/4 3/8` cycle | `pattern_cycle 4/4 3/8` | cycle 2.750 s, step period 1.375 s; ✓ |
+| 3 Nested | `pattern 0 [ 0.2 0.4 ] 0.8` | spans 0.5/0.5/1.0 s (¼,¼,½); ✓ |
+| 4 Weighted | `pattern 0 0.2@3 0.8` | spans 1.5/0.5 s (¾,¼); ✓ |
+| 5 Alternation | `pattern 0 < 0.1 0.5 0.9 >` (default cycle) | one value/cycle, cycle%3, 2.0 s computed in `ligase_bang`; ✓ |
+| 6 Pitch load | `pattern pitch < 0 4 7 >` | slot 7, RAW degrees 0/4/7 (not normalized), pitch mode unchanged; ✓ |
+| 7 Robustness | standalone brackets, glued/`foo` token, unbalanced | clean `pd_error`, prior slot preserved; ✓ |
+| 8 Guards | pre-BPM load + zero-init | clock frozen at phase 0 (no NaN/div0), resumes once BPM set; no crash; ✓ |
+
+Regression: the existing `test_delay.pd` runs clean and writes its WAV — the audio path is untouched.
+
+**Carried forward to P2/P3 (out of P1 scope, as planned):** the `pattern <name>` param-name target + `RAND_TYPE_PATTERN` attach (P2); the `PITCH_MODE_PATTERN` pitch case + mode-set on `pattern pitch …` commit (P3). Also deferred (grammar reserves the tokens; not needed for P1 acceptance): Euclid `(k,n)`, and group-glued suffixes like `]*2`. Single-level alternation only (ALT-inside-ALT is rejected with a clean error).
 
 ## Problem
 

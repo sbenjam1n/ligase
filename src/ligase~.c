@@ -61,6 +61,7 @@ extern void scheduler_destroy(scheduler_t *sched);
 extern void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, uint32_t splice_start, uint32_t splice_end, float amplitude, float pan, float saw_cycles, float saw_depth);
 extern void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float *out_right, int blocksize);
 extern float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, float base_value);
+extern void pattern_eval_slot(perlin_state_t *perlin_state, int slot);
 
 extern grain_delay_t* grain_delay_create(int sample_rate);
 extern void grain_delay_destroy(grain_delay_t *delay);
@@ -269,6 +270,14 @@ struct _ligase {
     int stut_len_quant_note;        // Stut-length quantization note value (1..128)
     float stut_len_quant_amount;    // Stut-length quantization amount (0.0-1.0)
     float stut_len_quant_grid_ms;   // Stut-length quantization grid in milliseconds (from BPM)
+
+    // Pattern cycle clock — a FIFTH, isolated free-running clock for the mini-notation patterns
+    // (NOT one of the four quant grids). Total cycle length derives from the cycle_segments list
+    // via the same (60000/bpm)*4 grid math; phase advances once per DSP block in ligase_perform.
+    double cycle_total_sec;                 // total cycle length in seconds (0 => clock idle)
+    int    cycle_seg_count;                 // # pattern_cycle segments (0 => default 1-bar cycle)
+    struct { int num; int den; } cycle_segments[PATTERN_MAX_SEGS];
+    int    pattern_debug;                   // 1 => log step changes to stderr (verification aid)
 
     // SOS mode: 0=Record Only (legacy), 1=Morphagene (crossfade input/granular at output)
     int sos_mode;
@@ -1584,6 +1593,30 @@ null_ptr_error:
 
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: All signal pointers validated\n");
 
+    // Advance the free-running pattern cycle clock once per block, then evaluate each active slot.
+    // (Fifth clock — independent of the four quant grids.) Guards mirror the grid guards: BPM must
+    // be set (>1.0), the cycle length valid (>0), and the scheduler present. Until then the clock
+    // holds at phase 0 (no NaN, no div-by-zero). pattern_eval_slot is the sole writer of the cache.
+    if (x->scheduler && x->bpm > 1.0 && x->cycle_total_sec > 0.0) {
+        perlin_state_t *ps = &x->scheduler->perlin_state;
+        double inc = ((double)n / (double)x->sample_rate) / x->cycle_total_sec;  // real samples / cycle
+        for (int s = 0; s < PATTERN_SLOTS; s++) {
+            if (ps->pattern[s].step_count < 1) continue;
+            ps->pattern_phase[s] += (float)inc;
+            while (ps->pattern_phase[s] >= 1.0f) {           // handles >1 cycle/block (tiny cycle)
+                ps->pattern_phase[s] -= 1.0f;
+                ps->pattern_cycle_index[s] += 1;             // integer counter drives <> alternation
+            }
+            pattern_eval_slot(ps, s);
+            if (x->pattern_debug && ps->pattern[s].changed) {
+                fprintf(stderr, "ligase~ pat t=%.1fms slot %d: step %d value %.4f rest %d cycle %ld\n",
+                        (double)clock_getlogicaltime() / 14112.0, s,
+                        ps->pattern[s].last_step_index, ps->pattern[s].cached_value,
+                        ps->pattern[s].cached_is_rest, ps->pattern_cycle_index[s]);
+            }
+        }
+    }
+
     ligase_update_inlets(x, grain_size_in, grain_start_in, speed_in, organize_in,
         scanrate_in, sos_in, iot_in, maxgrains_in,
         gdelay_time_in, gdelay_feedback_in, gdelay_tone_in, gdelay_mix_in,
@@ -2509,6 +2542,26 @@ static void ligase_outlet3_mode(ligase_t *x, t_floatarg mode) {
 
 // @region:ligase_pd.core.timing.clock Clock Management
 
+// Recompute the pattern cycle-clock length from the current BPM and the cycle_segments list
+// (or the default 1-bar 4/4 cycle when no pattern_cycle segments are set). Mirrors the four
+// quant-grid recomputes; guarded so bpm<=0 leaves the clock idle (cycle_total_sec = 0).
+static void ligase_recompute_cycle(ligase_t *x) {
+    if (x->bpm <= 0.0) { x->cycle_total_sec = 0.0; return; }
+    double ms_per_whole_note = (60000.0 / x->bpm) * 4.0;  // identical to the four grid recomputes
+    double total_ms;
+    if (x->cycle_seg_count > 0) {
+        total_ms = 0.0;
+        for (int i = 0; i < x->cycle_seg_count; i++) {
+            int den = x->cycle_segments[i].den;
+            int num = x->cycle_segments[i].num;
+            if (den > 0) total_ms += (ms_per_whole_note / (double)den) * (double)num;
+        }
+    } else {
+        total_ms = ms_per_whole_note;  // default: one bar of 4/4 = a whole note
+    }
+    x->cycle_total_sec = total_ms / 1000.0;
+}
+
 static void ligase_bang(ligase_t *x) {
     double current_time = clock_getlogicaltime();
 
@@ -2551,6 +2604,9 @@ static void ligase_bang(ligase_t *x) {
                 double ms_per_whole_note = (60000.0 / x->bpm) * 4.0;
                 x->stut_len_quant_grid_ms = ms_per_whole_note / (float)x->stut_len_quant_note;
             }
+
+            // Recalculate the pattern cycle-clock length (segment list or default 1-bar cycle)
+            ligase_recompute_cycle(x);
         }
     }
 
@@ -2595,6 +2651,306 @@ static void ligase_timesig(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
 }
 
 // @endregion:ligase_pd.core.timing.time_signature
+
+// @region:ligase_pd.core.pattern Pattern (mini-notation) cycle + slot control
+
+// pattern_cycle <N/D> <N/D> ... : set the quantization-cycle segment list. Each segment is a
+// musical duration ("num" notes of value 1/den) at the detected BPM; the cycle length is their
+// sum. A bare "pattern_cycle" (no args) resets to the default 1-bar 4/4 cycle. Validate-then-commit
+// over the whole list (prior cycle preserved on any error). Mirrors the ligase_timesig %d/%d parse.
+static void ligase_pattern_cycle(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 1) {
+        x->cycle_seg_count = 0;
+        ligase_recompute_cycle(x);
+        post("ligase~: pattern_cycle reset to default 1-bar cycle");
+        return;
+    }
+    if (argc > PATTERN_MAX_SEGS) {
+        pd_error(x, "ligase~: pattern_cycle accepts at most %d segments", PATTERN_MAX_SEGS);
+        return;
+    }
+    int nums[PATTERN_MAX_SEGS], dens[PATTERN_MAX_SEGS];
+    for (int i = 0; i < argc; i++) {
+        if (argv[i].a_type != A_SYMBOL) {
+            pd_error(x, "ligase~: pattern_cycle segment %d must be a fraction like 4/4", i + 1);
+            return;
+        }
+        const char *seg = argv[i].a_w.w_symbol->s_name;
+        int num, den;
+        if (sscanf(seg, "%d/%d", &num, &den) != 2) {
+            pd_error(x, "ligase~: pattern_cycle segment '%s' must be 'num/den' (e.g. 4/4)", seg);
+            return;
+        }
+        if (num <= 0) {
+            pd_error(x, "ligase~: pattern_cycle segment '%s' numerator must be > 0", seg);
+            return;
+        }
+        if (den != 1 && den != 2 && den != 4 && den != 8 && den != 16 && den != 32 && den != 64 && den != 128) {
+            pd_error(x, "ligase~: pattern_cycle denominator in '%s' must be 1,2,4,8,16,32,64,128", seg);
+            return;
+        }
+        nums[i] = num; dens[i] = den;
+    }
+    x->cycle_seg_count = argc;
+    for (int i = 0; i < argc; i++) {
+        x->cycle_segments[i].num = nums[i];
+        x->cycle_segments[i].den = dens[i];
+    }
+    ligase_recompute_cycle(x);
+    if (x->bpm > 0.0)
+        post("ligase~: pattern_cycle set (%d segments, %.3f s at %.1f BPM)", argc, x->cycle_total_sec, x->bpm);
+    else
+        post("ligase~: pattern_cycle set (%d segments; cycle length pending first BPM)", argc);
+}
+
+// pattern_clear <slot> : clear a pattern slot (step_count := 0, phase reset). In P1 the target is a
+// numeric slot 0..PATTERN_SLOTS-1; P2 generalizes the argument to a param name.
+static void ligase_pattern_clear(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->scheduler) return;
+    if (argc != 1 || argv[0].a_type != A_FLOAT) {
+        pd_error(x, "ligase~: pattern_clear requires a slot index 0..%d", PATTERN_SLOTS - 1);
+        return;
+    }
+    int slot = (int)argv[0].a_w.w_float;
+    if (slot < 0 || slot >= PATTERN_SLOTS) {
+        pd_error(x, "ligase~: pattern_clear slot must be 0..%d", PATTERN_SLOTS - 1);
+        return;
+    }
+    perlin_state_t *ps = &x->scheduler->perlin_state;
+    ps->pattern[slot].step_count = 0;
+    ps->pattern_phase[slot] = 0.0f;
+    ps->pattern_cycle_index[slot] = 0;
+    post("ligase~: pattern slot %d cleared", slot);
+}
+
+static void ligase_pattern_debug(ligase_t *x, t_floatarg f) {
+    x->pattern_debug = (f != 0.0f) ? 1 : 0;
+    post("ligase~: pattern_debug %s", x->pattern_debug ? "on" : "off");
+}
+
+// Stage-2 flatten: recursively descend the parse tree, assigning each leaf an absolute span
+// (fractions multiply down per the Tidal nesting rule) and an alternation tag. Emits pattern_step_t
+// leaves into the scratch table. Single-level alternation only in P1 (ALT-inside-ALT is rejected).
+typedef struct {
+    pattern_node_t  *pool;
+    pattern_table_t *out;
+    int   next_group;
+    int   ok;
+    ligase_t *x;
+} pattern_flatten_ctx_t;
+
+static void pattern_flatten(pattern_flatten_ctx_t *ctx, int node_idx, float span,
+                            int alt_group, int alt_member) {
+    if (!ctx->ok) return;
+    pattern_node_t *n = &ctx->pool[node_idx];
+
+    if (n->kind == PN_LEAF) {
+        if (ctx->out->step_count >= PATTERN_MAX_STEPS) {
+            pd_error(ctx->x, "ligase~: pattern exceeds %d steps", PATTERN_MAX_STEPS);
+            ctx->ok = 0; return;
+        }
+        pattern_step_t *st = &ctx->out->steps[ctx->out->step_count++];
+        st->value = n->value;
+        st->weight = span;
+        st->is_rest = n->is_rest;
+        st->alt_group = alt_group;
+        st->alt_member = alt_member;
+        return;
+    }
+
+    if (n->kind == PN_SEQ) {
+        float total_w = 0.0f;
+        for (int c = n->first_child; c >= 0; c = ctx->pool[c].next_sibling)
+            total_w += (float)ctx->pool[c].weight;
+        if (total_w <= 0.0f) total_w = 1.0f;
+        for (int c = n->first_child; c >= 0; c = ctx->pool[c].next_sibling) {
+            float child_span = span * ((float)ctx->pool[c].weight / total_w);
+            pattern_flatten(ctx, c, child_span, alt_group, alt_member);
+            if (!ctx->ok) return;
+        }
+        return;
+    }
+
+    // PN_ALT: a new alternation group; each child (member) gets the FULL span, one present per cycle.
+    if (alt_group >= 0) {
+        pd_error(ctx->x, "ligase~: nested alternation <...<...>...> not supported in P1");
+        ctx->ok = 0; return;
+    }
+    if (ctx->next_group >= PATTERN_MAX_STEPS) {
+        pd_error(ctx->x, "ligase~: pattern has too many alternation groups");
+        ctx->ok = 0; return;
+    }
+    int G = ctx->next_group++;
+    int members = 0;
+    for (int c = n->first_child; c >= 0; c = ctx->pool[c].next_sibling) members++;
+    ctx->out->alt_group_count[G] = members;
+    if (G + 1 > ctx->out->alt_group_total) ctx->out->alt_group_total = G + 1;
+    int m = 0;
+    for (int c = n->first_child; c >= 0; c = ctx->pool[c].next_sibling) {
+        pattern_flatten(ctx, c, span, G, m);
+        if (!ctx->ok) return;
+        m++;
+    }
+}
+
+// pattern <slot|pitch> <token>... : load a mini-notation pattern into a slot. P1 target is a
+// numeric slot 0..PATTERN_SLOTS-1 or the literal 'pitch' (the dedicated last slot; P3 wires the
+// pitch mode). Two-stage parse (tree -> flat table) with validate-then-commit (prior slot preserved
+// on any error; step_count published LAST). All parse work is on the message thread.
+static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->scheduler) return;
+    if (argc < 2) { pd_error(x, "ligase~: pattern requires <slot|pitch> then tokens"); return; }
+
+    int slot;
+    if (argv[0].a_type == A_SYMBOL && strcmp(argv[0].a_w.w_symbol->s_name, "pitch") == 0) {
+        slot = PATTERN_SLOTS - 1;            // pitch uses the dedicated last slot (P3 wires the mode)
+    } else if (argv[0].a_type == A_FLOAT) {
+        slot = (int)argv[0].a_w.w_float;
+    } else {
+        pd_error(x, "ligase~: pattern target must be a slot 0..%d or 'pitch' (P1)", PATTERN_SLOTS - 1);
+        return;
+    }
+    if (slot < 0 || slot >= PATTERN_SLOTS) {
+        pd_error(x, "ligase~: pattern slot must be 0..%d", PATTERN_SLOTS - 1);
+        return;
+    }
+
+#define PAT_FAIL(...) do { pd_error(x, __VA_ARGS__); return; } while (0)
+
+    // ---- Stage 1: parse tokens argv[1..] into a node tree (function-local scratch pool) ----
+    pattern_node_t pool[PATTERN_MAX_NODES];
+    int node_count = 0;
+    int stack[PATTERN_MAX_DEPTH];
+    int last_child[PATTERN_MAX_DEPTH];
+
+    pool[0].kind = PN_SEQ; pool[0].value = 0.0f; pool[0].is_rest = 0;
+    pool[0].weight = 1; pool[0].first_child = -1; pool[0].next_sibling = -1;
+    stack[0] = 0; last_child[0] = -1;
+    int depth = 1; node_count = 1;
+
+    for (int i = 1; i < argc; i++) {
+        int open_seq = 0, open_alt = 0, close_seq = 0, close_alt = 0, is_leaf = 0;
+        int leaf_rest = 0, leaf_weight = 1, leaf_mult = 1, leaf_repl = 1;
+        float leaf_val = 0.0f;
+
+        if (argv[i].a_type == A_FLOAT) {
+            is_leaf = 1; leaf_val = argv[i].a_w.w_float;
+        } else if (argv[i].a_type == A_SYMBOL) {
+            const char *t = argv[i].a_w.w_symbol->s_name;
+            if      (strcmp(t, "[") == 0) open_seq = 1;
+            else if (strcmp(t, "]") == 0) close_seq = 1;
+            else if (strcmp(t, "<") == 0) open_alt = 1;
+            else if (strcmp(t, ">") == 0) close_alt = 1;
+            else {
+                is_leaf = 1;
+                const char *p = t;
+                if (t[0] == '~') { leaf_rest = 1; p = t + 1; }
+                else {
+                    char *endp;
+                    leaf_val = strtof(t, &endp);
+                    if (endp == t) PAT_FAIL("ligase~: pattern: bad token '%s'", t);
+                    p = endp;
+                }
+                if      (*p == '@') { leaf_weight = atoi(p + 1); if (leaf_weight < 1) leaf_weight = 1; }
+                else if (*p == '*') { leaf_mult   = atoi(p + 1); if (leaf_mult   < 1) leaf_mult   = 1; }
+                else if (*p == '!') { leaf_repl   = atoi(p + 1); if (leaf_repl   < 1) leaf_repl   = 1; }
+                else if (*p != '\0') PAT_FAIL("ligase~: pattern: bad suffix in '%s'", t);
+            }
+        } else {
+            PAT_FAIL("ligase~: pattern: unsupported atom at position %d", i);
+        }
+
+        if (open_seq || open_alt) {
+            if (depth >= PATTERN_MAX_DEPTH) PAT_FAIL("ligase~: pattern nesting too deep (max %d)", PATTERN_MAX_DEPTH);
+            if (node_count >= PATTERN_MAX_NODES) PAT_FAIL("ligase~: pattern too large (max %d nodes)", PATTERN_MAX_NODES);
+            int idx = node_count++;
+            pool[idx].kind = open_seq ? PN_SEQ : PN_ALT;
+            pool[idx].value = 0.0f; pool[idx].is_rest = 0; pool[idx].weight = 1;
+            pool[idx].first_child = -1; pool[idx].next_sibling = -1;
+            int parent = stack[depth - 1];
+            if (last_child[depth - 1] < 0) pool[parent].first_child = idx;
+            else pool[last_child[depth - 1]].next_sibling = idx;
+            last_child[depth - 1] = idx;
+            stack[depth] = idx; last_child[depth] = -1; depth++;
+        } else if (close_seq || close_alt) {
+            if (depth <= 1) PAT_FAIL("ligase~: pattern: unmatched '%s'", close_seq ? "]" : ">");
+            int open = stack[depth - 1];
+            if (close_seq && pool[open].kind != PN_SEQ) PAT_FAIL("ligase~: pattern: ']' closing a '<' group");
+            if (close_alt && pool[open].kind != PN_ALT) PAT_FAIL("ligase~: pattern: '>' closing a '[' group");
+            depth--;
+        } else if (is_leaf) {
+            for (int r = 0; r < leaf_repl; r++) {
+                int target_idx;
+                if (leaf_mult > 1) {
+                    if (node_count >= PATTERN_MAX_NODES) PAT_FAIL("ligase~: pattern too large (max %d nodes)", PATTERN_MAX_NODES);
+                    int seqidx = node_count++;
+                    pool[seqidx].kind = PN_SEQ; pool[seqidx].value = 0.0f; pool[seqidx].is_rest = 0;
+                    pool[seqidx].weight = leaf_weight; pool[seqidx].first_child = -1; pool[seqidx].next_sibling = -1;
+                    int lastc = -1;
+                    for (int k = 0; k < leaf_mult; k++) {
+                        if (node_count >= PATTERN_MAX_NODES) PAT_FAIL("ligase~: pattern too large (max %d nodes)", PATTERN_MAX_NODES);
+                        int li = node_count++;
+                        pool[li].kind = PN_LEAF; pool[li].value = leaf_val; pool[li].is_rest = leaf_rest;
+                        pool[li].weight = 1; pool[li].first_child = -1; pool[li].next_sibling = -1;
+                        if (lastc < 0) pool[seqidx].first_child = li; else pool[lastc].next_sibling = li;
+                        lastc = li;
+                    }
+                    target_idx = seqidx;
+                } else {
+                    if (node_count >= PATTERN_MAX_NODES) PAT_FAIL("ligase~: pattern too large (max %d nodes)", PATTERN_MAX_NODES);
+                    int li = node_count++;
+                    pool[li].kind = PN_LEAF; pool[li].value = leaf_val; pool[li].is_rest = leaf_rest;
+                    pool[li].weight = leaf_weight; pool[li].first_child = -1; pool[li].next_sibling = -1;
+                    target_idx = li;
+                }
+                int parent = stack[depth - 1];
+                if (last_child[depth - 1] < 0) pool[parent].first_child = target_idx;
+                else pool[last_child[depth - 1]].next_sibling = target_idx;
+                last_child[depth - 1] = target_idx;
+            }
+        }
+    }
+    if (depth != 1) PAT_FAIL("ligase~: pattern: unbalanced brackets");
+
+    // ---- Stage 2: flatten the tree into a scratch table ----
+    pattern_table_t scratch;
+    memset(&scratch, 0, sizeof(scratch));
+    pattern_flatten_ctx_t ctx;
+    ctx.pool = pool; ctx.out = &scratch; ctx.next_group = 0; ctx.ok = 1; ctx.x = x;
+    pattern_flatten(&ctx, stack[0], 1.0f, -1, 0);
+    if (!ctx.ok) return;                                  // error posted; prior slot preserved
+    if (scratch.step_count < 1) PAT_FAIL("ligase~: pattern produced no steps");
+
+    // Seed cache fields; force a fresh present-step/prefix recompute on the first eval.
+    scratch.total_weight   = 0.0f;
+    scratch.last_alt_cycle = -1;
+    scratch.last_step_index = -1;
+    scratch.changed = 0;
+    scratch.cached_is_rest = 0;
+    scratch.cached_value = 0.0f;
+    for (int i = 0; i < scratch.step_count; i++) {
+        if (!scratch.steps[i].is_rest) { scratch.cached_value = scratch.steps[i].value; break; }
+    }
+
+    // ---- Commit: copy scratch -> live slot, publish step_count LAST ----
+    perlin_state_t *ps = &x->scheduler->perlin_state;
+    pattern_table_t *live = &ps->pattern[slot];
+    int committed_steps = scratch.step_count;
+    scratch.step_count = 0;                               // memcpy carries 0; real count set after
+    memcpy(live, &scratch, sizeof(pattern_table_t));
+    ps->pattern_phase[slot] = 0.0f;
+    ps->pattern_cycle_index[slot] = 0;
+    live->step_count = committed_steps;                  // publish barrier
+    post("ligase~: pattern slot %d set (%d steps, %d alt groups)",
+         slot, committed_steps, scratch.alt_group_total);
+
+#undef PAT_FAIL
+}
+
+// @endregion:ligase_pd.core.pattern
 
 // @region:ligase_pd.core.timing.quantization Grain Quantization
 
@@ -4532,6 +4888,15 @@ static void *ligase_new(void) {
     x->quant_grid_ms = 0.0f;
     x->samples_since_quant = 0;
 
+    // Pattern cycle clock defaults (idle until a pattern_cycle/bang sets it)
+    x->cycle_total_sec = 0.0;
+    x->cycle_seg_count = 0;
+    x->pattern_debug = 0;
+    for (int ci = 0; ci < PATTERN_MAX_SEGS; ci++) {
+        x->cycle_segments[ci].num = 0;
+        x->cycle_segments[ci].den = 0;
+    }
+
     // Grain size quantization defaults
     x->gs_time_sig_numerator = 4;
     x->gs_time_sig_denominator = 4;  // Default 4/4
@@ -4658,6 +5023,10 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_timesig, gensym("timesig"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_quantize, gensym("quantize"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_quant_amount, gensym("quant"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_pattern, gensym("pattern"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_pattern_cycle, gensym("pattern_cycle"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_pattern_clear, gensym("pattern_clear"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_pattern_debug, gensym("pattern_debug"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_gs_timesig, gensym("gs_timesig"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_gs_quantize, gensym("gs_quantize"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_gs_quant_amount, gensym("gs_quant"), A_DEFFLOAT, 0);

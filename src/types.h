@@ -376,6 +376,7 @@ typedef enum {
     RAND_TYPE_SAW,       // Sawtooth wave LFO
     RAND_TYPE_SINE,      // Sine wave LFO
     RAND_TYPE_SQUARE     // Square wave LFO
+    // RAND_TYPE_PATTERN is appended in P2, together with its sample_param_range case (keeps -Wswitch clean)
 } rand_type_t;
 
 typedef struct {
@@ -400,6 +401,7 @@ typedef enum {
     PITCH_MODE_RANGE,        // Semitone range with random source
     PITCH_MODE_SCALE,        // Scale (list of semitones) with random source
     PITCH_MODE_MIDI          // MIDI note input (assumes sample tuned to middle C = 60)
+    // PITCH_MODE_PATTERN is appended in P3, together with its scheduler_trigger_grain case
 } pitch_mode_t;
 
 #define MAX_SCALE_NOTES 128  // Maximum notes in a scale
@@ -417,9 +419,55 @@ typedef struct {
     int midi_note;               // Current MIDI note (PITCH_MODE_MIDI, 0-127)
     int midi_enabled;            // Whether MIDI input is active
     float last_semitone;         // Last semitone value used (for change detection)
+    int pitch_pattern_slot;      // perlin_state.pattern[] slot supplying scale degrees for
+                                 // PITCH_MODE_PATTERN; -1 = none/inactive (wired in P3)
 } pitch_control_t;
 
 // @endregion:ligase_pd.core.pitch.types
+
+// @region:ligase_pd.core.types.pattern Pattern (mini-notation) Types
+
+#define PATTERN_MAX_STEPS  64    // compiled flat-table cap (runtime); >64-leaf patterns are rejected
+#define PATTERN_MAX_NODES  256   // parse-time tree node pool cap (scratch, message-thread stack)
+#define PATTERN_MAX_DEPTH  8     // recursive-descent open-group stack cap
+#define PATTERN_SLOTS      8     // independent pattern slots (>4 generator instances => per-target independence)
+#define PATTERN_MAX_SEGS   16    // pattern_cycle segment-list cap
+
+// One compiled flat leaf (runtime representation, produced by flattening the parse tree)
+typedef struct {
+    float value;        // normalized 0..1 (params) OR raw scale degree as float (pitch)
+    float weight;       // @-weight; default 1.0
+    int   is_rest;      // ~ : hold previous value, emit no fresh step
+    int   alt_group;    // -1 = always present; >=0 = member of alternation group G
+    int   alt_member;   // index within its alt group (one present per cycle)
+} pattern_step_t;
+
+// One pattern slot's compiled table + cached evaluator output (the ONLY thing perform touches)
+typedef struct {
+    pattern_step_t steps[PATTERN_MAX_STEPS];
+    int   step_count;                          // 0 => slot inactive (publish barrier; set LAST on commit)
+    int   alt_group_count[PATTERN_MAX_STEPS];  // members per alternation group G (cycle-mod select)
+    int   alt_group_total;                     // number of distinct alternation groups
+    float cum_weight[PATTERN_MAX_STEPS];       // prefix sums over PRESENT steps (recomputed on reselection)
+    float total_weight;                        // sum of present-step weights this cycle
+    // evaluator cache (written ONLY by pattern_eval_slot once per block; read by P2/P3):
+    float cached_value;        // current normalized value / degree for this block
+    int   cached_is_rest;      // current step is a rest
+    int   changed;             // 1 on the block where the active present-step index changed
+    int   last_step_index;     // for change detection
+    long  last_alt_cycle;      // cycle index of last alt reselection (skip recompute when unchanged)
+} pattern_table_t;
+
+// Parse-time ONLY (function-local automatic array inside ligase_pattern; never in perform state)
+typedef enum { PN_LEAF, PN_SEQ, PN_ALT } pattern_node_kind_t;
+typedef struct {
+    pattern_node_kind_t kind;
+    float value; int is_rest;        // LEAF fields
+    int   weight;                    // @N (default 1)
+    int   first_child, next_sibling; // index links into the node pool (-1 if none)
+} pattern_node_t;
+
+// @endregion:ligase_pd.core.types.pattern
 
 // @region:ligase_pd.core.types.lorenz_state Lorenz Attractor State
 
@@ -510,6 +558,13 @@ typedef struct {
 
     // Waveform LFO phase accumulators (one per instance, 0.0-1.0)
     float waveform_phase[4];
+
+    // Pattern (mini-notation) slots — compiled tables + free-running cycle phase per slot.
+    // Covered by the scheduler_create memset (perlin_state is a value member of scheduler_t),
+    // so step_count==0 (inactive) for every slot on construction.
+    pattern_table_t pattern[PATTERN_SLOTS];
+    float           pattern_phase[PATTERN_SLOTS];        // free-running 0..1 cycle phase per slot
+    long            pattern_cycle_index[PATTERN_SLOTS];  // integer cycle counter per slot (<> alternation)
 } perlin_state_t;
 
 // @endregion:ligase_pd.core.types.perlin_state

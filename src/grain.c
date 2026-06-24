@@ -375,6 +375,76 @@ static void update_perlin_coords(perlin_state_t *perlin_state, float iot_seconds
 
 // @endregion:ligase_pd.core.params.range.mapping
 
+// @region:ligase_pd.core.pattern_eval Pattern Slot Evaluator
+
+// pattern_eval_slot: the once-per-block evaluator for a mini-notation pattern slot. Called from
+// ligase_perform AFTER the slot's free-running cycle phase has been advanced. On a new cycle it
+// re-selects which alternation members are present and rebuilds the present-step prefix sums; then
+// it maps the current phase to the active present-step and writes the slot cache. This is the SOLE
+// writer of cached_value / cached_is_rest / changed / last_step_index. No allocation; perform-safe.
+void pattern_eval_slot(perlin_state_t *ps, int slot) {
+    if (slot < 0 || slot >= PATTERN_SLOTS) return;
+    pattern_table_t *pt = &ps->pattern[slot];
+    if (pt->step_count < 1) return;  // inactive slot
+
+    long cycle = ps->pattern_cycle_index[slot];
+    float phase = ps->pattern_phase[slot];
+    if (phase < 0.0f) phase = 0.0f;
+    if (phase >= 1.0f) phase = 0.999999f;
+
+    // (1) Re-select alternation members + rebuild present-step prefix sums on a new cycle.
+    if (cycle != pt->last_alt_cycle || pt->total_weight <= 0.0f) {
+        float cum = 0.0f;
+        for (int i = 0; i < pt->step_count; i++) {
+            pattern_step_t *st = &pt->steps[i];
+            int present = 1;
+            if (st->alt_group >= 0) {
+                int members = pt->alt_group_count[st->alt_group];
+                int sel = (members > 0) ? (int)(((cycle % members) + members) % members) : 0;
+                present = (st->alt_member == sel);
+            }
+            if (present) cum += st->weight;  // present steps advance the prefix; absent copy prev
+            pt->cum_weight[i] = cum;
+        }
+        pt->total_weight = cum;
+        pt->last_alt_cycle = cycle;
+    }
+
+    // (2) Map phase -> the present step whose [prev_cum, cum) span contains phase*total_weight.
+    int idx = -1;
+    if (pt->total_weight > 0.0f) {
+        float target = phase * pt->total_weight;
+        float prev = 0.0f;
+        for (int i = 0; i < pt->step_count; i++) {
+            float c = pt->cum_weight[i];
+            if (c > prev) {              // a present step (nonzero span)
+                if (target < c) { idx = i; break; }
+                prev = c;
+            }
+        }
+        if (idx < 0) {                   // fp edge (target == total): take the last present step
+            for (int i = pt->step_count - 1; i >= 0; i--) {
+                float p = (i > 0) ? pt->cum_weight[i - 1] : 0.0f;
+                if (pt->cum_weight[i] > p) { idx = i; break; }
+            }
+        }
+    }
+    if (idx < 0) idx = 0;
+
+    // (3) Write the cache. A rest holds the previous cached_value.
+    pattern_step_t *cur = &pt->steps[idx];
+    if (cur->is_rest) {
+        pt->cached_is_rest = 1;          // cached_value unchanged (hold-previous)
+    } else {
+        pt->cached_is_rest = 0;
+        pt->cached_value = cur->value;
+    }
+    pt->changed = (idx != pt->last_step_index) ? 1 : 0;
+    pt->last_step_index = idx;
+}
+
+// @endregion:ligase_pd.core.pattern_eval
+
 // @region:ligase_pd.core.grain.scheduler Grain Scheduler
 
 scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
@@ -468,6 +538,7 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->pitch_control.midi_note = 60;  // Middle C
     sched->pitch_control.midi_enabled = 0;
     sched->pitch_control.last_semitone = 0.0f;  // Initialize for change detection
+    sched->pitch_control.pitch_pattern_slot = -1;  // -1 = no pattern slot bound (0 is a valid slot)
 
     // Initialize pan mode (default: constant-power mono panning)
     sched->pan_mode = 0;
