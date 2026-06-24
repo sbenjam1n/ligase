@@ -5,10 +5,14 @@ _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md`;
 
 ## Where we are (2026-06-24)
 - **All work merged into `main`.** `main` == `fix/audio-engine-and-manual` == `origin/main` ==
-  `origin/fix/...` == **`da34fff`**; 0 commits unmerged; working tree clean.
-- Every reported bug/feature (B1–B35, M1) is **implemented and verified headless**. The QUEUE
-  active list is **empty** (`QUEUE.md` §1 is now the changelog).
-- Remaining is **user hardware/ear sign-off** (not code) + a few stubs (below).
+  `origin/fix/...` == **`9495b5e`**; 0 commits unmerged; working tree clean.
+- Every reported bug/feature (B1–B35, M1) is **implemented and verified headless**.
+- **NEW — TidalCycles pattern subsystem (P1+P2+P3) is feature-complete + headless-verified**
+  (QUEUE Seq 47–49; plans `Plans/pattern_*.md`). Mini-notation step-sequencing of any param, a BPM
+  quantization cycle, and scale-degree pitch — all built on the existing modulation/BPM/scale engine.
+  See the pattern control-surface section below. The only remaining pattern work is the **owner
+  ear-test** (musical feel) — not code.
+- Remaining overall is **user hardware/ear sign-off** (not code) + a few stubs (below).
 
 ## What ligase~ is
 - Pure Data granular synth / sampler / looper / delay external. C, GPL-v2. Repo `sbenjam1n/ligase`.
@@ -36,6 +40,9 @@ _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md`;
   - To actually HEAR the delay wet: **`sos 0` + `gdelay_mix 1`** (default `sos 0.5` masks it with dry input).
   - Headless 0 honors an unconnected inlet's literal 0 → it overwrites params; use headless 1 for
     message-only tests, or drive the inlets.
+  - Pattern tests live in `tests/pattern/` (`P1*`/`P2*`/`P3*`). They drive the clock with two `bang`s
+    500 ms apart (→ 120 BPM), enable `pattern_debug 1`, and read step/semitone changes from stderr;
+    the pitch tests must `record` + `play 1` so grains actually trigger (pitch is applied per grain).
 
 ## Control surface added/changed in the 2026-06-19→22 arc
 - **DD-4:** `delay_glide <ms>` (0–5000, default 20) — de-zippers delay-time changes (msg + CV on inlet 11).
@@ -51,6 +58,29 @@ _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md`;
   - `bencina_pan` — per-grain random pan as a `param_range` modulation target (the range = stereo
     width+skew; base = pan inlet 22). `bencina_iot` / `bencina_grainsize` / `bencina_wrap` / `bencina_clear`.
 
+## Pattern subsystem (TidalCycles mini-notation) — NEW (Seq 47–49), feature-complete + verified
+- **Canonical Tidal mini-notation, space-separated (NO commas — comma=stack is unsupported, and Pd's
+  binbuf eats `,` anyway).** `< >` alternation (one member per cycle), `[ ]` subdivision (nestable),
+  `@N` weight, `*N`/`!N`, `~` rest.
+- `pattern <param> <tokens…>` — step-sequence any `get_param_range_by_name` target (`moog_cutoff`,
+  `smear_frequency`, `amplitude`, `modout1`–`4`, …; **NOT** bare `smear`). Auto-allocates a slot +
+  attaches via the new `RAND_TYPE_PATTERN` source, reusing the existing invert/map/slew tail. Values
+  are 0..1, mapped to the param's `param_range` min/max. `pattern <N>` (numeric slot) loads WITHOUT
+  attaching (testing / two-step with `rand_type pattern_N <param>`).
+- `pattern pitch <tokens…>` — tokens are **scale degrees** (index into the loaded `pitch_scale`), with
+  octave wrap (degree == count → +12 semitones). Auto-sets `PITCH_MODE_PATTERN` (pitch mode 5). Load a
+  `pitch_scale` first or it plays unison.
+- `pattern_cycle <N/D> <N/D> …` — the quantization cycle as musical durations at the detected BPM
+  (`pattern_cycle 4/4 3/8` = 2.75 s @120). No `pattern_cycle` → default 1-bar cycle. Built from the SAME
+  `(60000/bpm)*4` grid math as the quant grids; it is a FIFTH free-running clock, independent of them.
+- `pattern_clear <param|pitch|N>` — restore the param's prior source / pitch → OFF / free a numeric slot.
+- `pattern_debug 1` — log step + applied-semitone changes to stderr (verification aid; off by default).
+- Internals: `PATTERN_SLOTS=8` (slot 7 reserved for pitch). Parse is message-thread only into a flat
+  weighted step table (validate-then-commit, `step_count` published LAST); the audio thread only READS
+  the per-block cache (`pattern_eval_slot` is its sole writer). BPM unset (≤1) → clock frozen at phase 0
+  (no NaN). Single-level alternation (ALT-inside-ALT is rejected); Euclid `(k,n)` + group-glued suffixes
+  not yet implemented (grammar reserves them).
+
 ## Open / next
 - **Stubs (the only non-complete items):**
   1. Build-naming / stale-artifact cleanup — `erosion` leftovers in the Makefile + `src/*.1` backups.
@@ -59,11 +89,15 @@ _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md`;
   3. Empty advisory lanes (FRIEND / AUDITOR) in QUEUE.
 - **Standing:** regenerate `ligase_manual.pdf` (`make manual`) when asked — many `.md` edits have
   accumulated since the last PDF.
-- **Pending sign-off:** the "owner verify / ear-test pending" items across B6–B35 — needs a hardware/ear
-  pass in plugdata on the Focusrite. If something misbehaves there, capture `get_inlets` / `get_state`
-  from the bad state.
+- **Pending sign-off:** the "owner verify / ear-test pending" items across B6–B35 **and the new pattern
+  subsystem** — needs a hardware/ear pass in plugdata on the Focusrite. If something misbehaves there,
+  capture `get_inlets` / `get_state` from the bad state.
 
 ## Pointers
-- `QUEUE.md` — full changelog (§1 completed B/M table; §6 history to Seq 45).
+- `QUEUE.md` — full changelog (§1 completed B/M table; §4a plan coverage; §6 history to Seq 49).
+- `Plans/pattern_notation.md` / `pattern_modulation.md` / `pattern_pitch.md` — the pattern subsystem
+  plans (P1/P2/P3), each with a Progress + headless-verification section (all DONE).
+- `tests/pattern/` — the headless pattern acceptance patches (`P1*`/`P2*`/`P3*`) + `README.md`.
 - `Plans/completed/` — archived B1/B2/M1 plans. `Plans/manual_content_edits.md` — partial, still active.
-- `docs/ligase_manual.md` — manual source (PDF held).
+- `docs/ligase_manual.md` — manual source (PDF held). **NOTE: the manual does NOT yet document the
+  pattern subsystem** — a future content edit when the owner is ready.

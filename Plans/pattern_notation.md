@@ -12,7 +12,7 @@ Built across the four gates; `make clean && make` warning-free at each.
 - **Step 1 (types):** `pattern_step_t` / `pattern_table_t` / `pattern_node_t` + `PATTERN_*` caps in `types.h`; `pattern[PATTERN_SLOTS]` / `pattern_phase[]` / `pattern_cycle_index[]` in `perlin_state_t` (memset-covered); `pitch_pattern_slot` in `pitch_control_t` (init `-1` in `scheduler_create`); `cycle_total_sec` / `cycle_seg_count` / `cycle_segments[]` / `pattern_debug` in `ligase_t` (+ `ligase_new` init). Enum-value deferral per Status.
 - **Step 2 (clock):** `ligase_recompute_cycle()` helper (dual-recompute, guarded `bpm<=0`), wired into `ligase_bang`; `pattern_cycle` (validate-then-commit `%d/%d` segments) + `pattern_clear` handlers, registered.
 - **Step 3 (parser + eval):** `pattern_eval_slot()` (`grain.c`, non-static + `extern` in `ligase~.c`); two-stage `ligase_pattern` (recursive-descent tree → span-descent flatten → validate-then-commit, `step_count` published LAST); per-block phase-advance loop in `ligase_perform` just before `ligase_update_inlets` (guarded `scheduler && bpm>1.0 && cycle_total_sec>0`); `pattern` + `pattern_debug` registered.
-- **Step 4 (verify):** 7 headless patches (`/tmp/pat_tests/`) under `pd -nogui -nosound`, asserting against the `pattern_debug` stderr trace (logical-time-stamped step changes).
+- **Step 4 (verify):** 7 headless patches (`tests/pattern/P1*.pd`) under `pd -nogui -nosound`, asserting against the `pattern_debug` stderr trace (logical-time-stamped step changes).
 
 | AC | Test | Result |
 |----|------|--------|

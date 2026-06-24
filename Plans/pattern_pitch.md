@@ -15,7 +15,7 @@ Built on top of P1+P2; `make clean && make` warning-free.
 - **grain.c:** `case PITCH_MODE_PATTERN:` in `scheduler_trigger_grain` between SCALE and MIDI — reads `pattern[pitch_pattern_slot].cached_value` as a scale degree, applies **wrap + octave** (`idx = ((deg%count)+count)%count`, `oct = floorf(deg/count)`, `semitone = scale.semitones[idx] + 12*oct`), holds the previous semitone on a rest, then `base_speed * semitones_to_speed()`; reuses the existing `last_semitone` store + ±4.0 clamp verbatim. Slot/scale-not-ready → unison (0), never crashes.
 - **ligase~.c:** `pattern pitch …` commit now sets `pitch_pattern_slot = slot` + `mode = PITCH_MODE_PATTERN` (P1 had loaded slot 7 with raw degrees; P3 wires the mode); `pattern_clear pitch` restores `mode → OFF` + `pitch_pattern_slot = -1` (GATE A(b)); `ligase_pitch_mode` widened to `0-5` (+ `"pattern"` name); outlet-3 note-change test extended to include `PITCH_MODE_PATTERN`. A `pattern_debug`-gated pitch trace logs the applied semitone on change.
 
-| AC | Test (`/tmp/pat_tests/P3*.pd`; record+play to granulate, `pitch_scale 0 2 4 5 7 9 11`) | Result |
+| AC | Test (`tests/pattern/P3*.pd`; record+play to granulate, `pitch_scale 0 2 4 5 7 9 11`) | Result |
 |----|------|--------|
 | 1 Wrap+octave | `pattern pitch [ 0 1 2 3 4 5 6 7 ]` | semitones 0,2,4,5,7,9,11,**12** — degree 7 = root+octave (clamp would give 11); ✓ |
 | 2 Tempo-locked | 8 degrees over the 2.0 s cycle | advance with the cycle, repeat each cycle; ✓ |
