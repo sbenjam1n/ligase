@@ -808,6 +808,30 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
             }
             break;
 
+        case PITCH_MODE_PATTERN:
+            // Pattern-driven scale-degree stepper: read the (block-advanced) slot cache as a scale
+            // degree, wrap into the scale + octave-shift (the wrap sample_scale_semitones lacks),
+            // then transpose. A rest holds the previous semitone. Reads the cache only; perform-safe.
+            {
+                int slot = sched->pitch_control.pitch_pattern_slot;
+                int count = sched->pitch_control.scale.count;
+                if (slot >= 0 && slot < PATTERN_SLOTS && count > 0 &&
+                    sched->perlin_state.pattern[slot].step_count > 0) {
+                    pattern_table_t *pt = &sched->perlin_state.pattern[slot];
+                    if (pt->cached_is_rest) {
+                        current_semitone = sched->pitch_control.last_semitone;   // rest: hold prev note
+                    } else {
+                        int degree = (int)pt->cached_value;                      // leaf value = scale degree
+                        int idx = ((degree % count) + count) % count;            // [0, count-1]
+                        int oct = (int)floorf((float)degree / (float)count);     // octave compensation
+                        current_semitone = sched->pitch_control.scale.semitones[idx] + 12.0f * (float)oct;
+                    }
+                }
+                // else: slot / scale not ready -> current_semitone stays 0 (unison), never crashes
+                final_speed = base_speed * semitones_to_speed(current_semitone);
+            }
+            break;
+
         case PITCH_MODE_MIDI:
             // Assumes sample at base speed is middle C (60), transpose by MIDI offset
             if (sched->pitch_control.midi_enabled) {

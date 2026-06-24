@@ -2,11 +2,29 @@
 
 **Owner:** SLB
 **Date:** 2026-06-24
-**Status:** PLANNED (not started)
-**Tracked in:** `QUEUE.md` §4a (PLAN COVERAGE — pattern subsystem build-out); promote into §2 (ON DECK) when scheduled. (NOT §1 — §1 is the COMPLETE-work changelog.)
+**Status:** ✅ DONE (2026-06-24) — implemented and headless-verified (GATE E); all acceptance criteria pass; `make clean && make` warning-free; no regression (SCALE/RANGE/MIDI unchanged). Builds on P1+P2 (landed `79070dd`, `f18b108`). See Progress.
+**Tracked in:** `QUEUE.md` §4a (PLAN COVERAGE — pattern subsystem build-out). (NOT §1 — §1 is the COMPLETE-work changelog.)
 **Related (NOT YET WRITTEN / NOT YET MERGED):** Plan P1 (intended path `Plans/pattern_notation.md`) — the parser + free-running BPM cycle clock + `pattern_table_t`/`pattern_eval_slot` infrastructure this plan reads from. Plan P2 (intended path `Plans/pattern_modulation.md`) — the `RAND_TYPE_PATTERN`/`rand_instance`-as-slot attach model and the dual-parse-site/print-site discipline. **P3 depends on BOTH** (P1 supplies the cache + clock; P2 establishes the attach/commit conventions and the `pattern <target> …` handler that P3 routes `pattern pitch …` through). **As of 2026-06-24 neither plan file exists and none of their symbols (`pattern_table_t`, `PATTERN_SLOTS`, `ligase_pattern`, `pattern_eval_slot`, `RAND_TYPE_PATTERN`, `cached_value`, `cached_is_rest`, `pattern_cycle`) is in the tree — P3 cannot be coded until P1+P2 land (see GATE A.2).**
 
 ---
+
+## Progress (2026-06-24) — IMPLEMENTED + VERIFIED
+
+Built on top of P1+P2; `make clean && make` warning-free.
+- **types.h:** `PITCH_MODE_PATTERN` appended to `pitch_mode_t` (the value P1 deferred). (`pitch_pattern_slot` already added in P1.)
+- **grain.c:** `case PITCH_MODE_PATTERN:` in `scheduler_trigger_grain` between SCALE and MIDI — reads `pattern[pitch_pattern_slot].cached_value` as a scale degree, applies **wrap + octave** (`idx = ((deg%count)+count)%count`, `oct = floorf(deg/count)`, `semitone = scale.semitones[idx] + 12*oct`), holds the previous semitone on a rest, then `base_speed * semitones_to_speed()`; reuses the existing `last_semitone` store + ±4.0 clamp verbatim. Slot/scale-not-ready → unison (0), never crashes.
+- **ligase~.c:** `pattern pitch …` commit now sets `pitch_pattern_slot = slot` + `mode = PITCH_MODE_PATTERN` (P1 had loaded slot 7 with raw degrees; P3 wires the mode); `pattern_clear pitch` restores `mode → OFF` + `pitch_pattern_slot = -1` (GATE A(b)); `ligase_pitch_mode` widened to `0-5` (+ `"pattern"` name); outlet-3 note-change test extended to include `PITCH_MODE_PATTERN`. A `pattern_debug`-gated pitch trace logs the applied semitone on change.
+
+| AC | Test (`/tmp/pat_tests/P3*.pd`; record+play to granulate, `pitch_scale 0 2 4 5 7 9 11`) | Result |
+|----|------|--------|
+| 1 Wrap+octave | `pattern pitch [ 0 1 2 3 4 5 6 7 ]` | semitones 0,2,4,5,7,9,11,**12** — degree 7 = root+octave (clamp would give 11); ✓ |
+| 2 Tempo-locked | 8 degrees over the 2.0 s cycle | advance with the cycle, repeat each cycle; ✓ |
+| 3 Alternation | `pattern pitch < 0 4 7 >` | one degree/cycle → semitone 0 (c0), 7 (c1), 12 (c2); ✓ |
+| 4 Nested | `pattern pitch [ 0 [ 4 7 ] ]` | 0 (first half), then 4, 7 (quarters) → 0,7,12; ✓ |
+| 6 Mode plumbing | `pitch_mode 5`/`6`/`pattern pitch`/`pattern_clear pitch` | 5 ok ("pattern"), 6 rejected (0-5), auto-set on `pattern pitch`, clear→off; ✓ |
+| 7 No regression | `pitch_mode 3` + `test_delay.pd` | scale mode works; delay WAV intact; ✓ |
+
+AC5 (outlet-3 note-change bang) is wired via the **same** `last_semitone != prev_scale_semitone` diff that SCALE/RANGE already use (now including `PITCH_MODE_PATTERN`); the verified per-step semitone changes are exactly that signal, and a held rest re-stores the same semitone so it does not bang.
 
 ## Problem
 

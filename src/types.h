@@ -402,8 +402,8 @@ typedef enum {
     PITCH_MODE_SEMITONES,    // Fixed semitone shift (calculates speed from semitones)
     PITCH_MODE_RANGE,        // Semitone range with random source
     PITCH_MODE_SCALE,        // Scale (list of semitones) with random source
-    PITCH_MODE_MIDI          // MIDI note input (assumes sample tuned to middle C = 60)
-    // PITCH_MODE_PATTERN is appended in P3, together with its scheduler_trigger_grain case
+    PITCH_MODE_MIDI,         // MIDI note input (assumes sample tuned to middle C = 60)
+    PITCH_MODE_PATTERN       // Pattern-driven scale-degree stepper (P3): steps scale degrees on the cycle clock
 } pitch_mode_t;
 
 #define MAX_SCALE_NOTES 128  // Maximum notes in a scale

@@ -278,6 +278,7 @@ struct _ligase {
     int    cycle_seg_count;                 // # pattern_cycle segments (0 => default 1-bar cycle)
     struct { int num; int den; } cycle_segments[PATTERN_MAX_SEGS];
     int    pattern_debug;                   // 1 => log step changes to stderr (verification aid)
+    float  pattern_pitch_last_printed;      // last pitch semitone logged (de-dupe the pitch trace)
 
     // SOS mode: 0=Record Only (legacy), 1=Morphagene (crossfade input/granular at output)
     int sos_mode;
@@ -1623,6 +1624,20 @@ null_ptr_error:
         smear_in, moog_cutoff_in, moog_resonance_in, moog_mix_in,
         midi_in, env_skew_in, amplitude_in, pan_in, n);
     ligase_process_grains(x, in_left, in_right, out_left, out_right, sos_in, n);
+
+    // Pattern pitch trace (verification aid): log the APPLIED semitone whenever it changes, so the
+    // degree->semitone wrap/octave is observable. Reads last_semitone after grains have triggered.
+    if (x->pattern_debug && x->scheduler &&
+        x->scheduler->pitch_control.mode == PITCH_MODE_PATTERN) {
+        float sem = x->scheduler->pitch_control.last_semitone;
+        if (sem != x->pattern_pitch_last_printed) {
+            x->pattern_pitch_last_printed = sem;
+            int psl = PATTERN_SLOTS - 1;
+            fprintf(stderr, "ligase~ pitch: degree %.0f -> semitone %.2f (cycle %ld)\n",
+                    x->scheduler->perlin_state.pattern[psl].cached_value, sem,
+                    x->scheduler->perlin_state.pattern_cycle_index[psl]);
+        }
+    }
     ligase_process_effects(x, out_left, out_right, n);
     // @region:ligase_pd.pd_external.outlets.modulation Modulation Outlet Computation
     // Compute and output modulation values (control rate, once per DSP block)
@@ -1662,8 +1677,9 @@ null_ptr_error:
                 x->prev_midi_note = x->scheduler->pitch_control.midi_note;
             }
         } else if (x->scheduler->pitch_control.mode == PITCH_MODE_SCALE ||
-                   x->scheduler->pitch_control.mode == PITCH_MODE_RANGE) {
-            // Check for semitone change (scale or range mode)
+                   x->scheduler->pitch_control.mode == PITCH_MODE_RANGE ||
+                   x->scheduler->pitch_control.mode == PITCH_MODE_PATTERN) {
+            // Check for semitone change (scale / range / pattern mode)
             if (x->scheduler->pitch_control.last_semitone != x->prev_scale_semitone) {
                 note_changed = 1;
                 x->prev_scale_semitone = x->scheduler->pitch_control.last_semitone;
@@ -2754,11 +2770,14 @@ static void ligase_pattern_clear(ligase_t *x, t_symbol *s, int argc, t_atom *arg
 
     const char *name = argv[0].a_w.w_symbol->s_name;
     if (strcmp(name, "pitch") == 0) {
-        int slot = PATTERN_SLOTS - 1;       // P3 restores the pitch mode; P2 just frees the slot
+        int slot = PATTERN_SLOTS - 1;
         ps->pattern[slot].step_count = 0;
         ps->pattern_phase[slot] = 0.0f;
         ps->pattern_cycle_index[slot] = 0;
-        post("ligase~: pitch pattern cleared (slot %d)", slot);
+        x->scheduler->pitch_control.pitch_pattern_slot = -1;
+        if (x->scheduler->pitch_control.mode == PITCH_MODE_PATTERN)
+            x->scheduler->pitch_control.mode = PITCH_MODE_OFF;   // GATE A(b): clear -> OFF
+        post("ligase~: pitch pattern cleared (slot %d, pitch_mode -> off)", slot);
         return;
     }
 
@@ -2865,8 +2884,10 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
 
     int slot;
     param_range_t *attach_range = NULL;      // non-NULL => attach this range to the slot after commit
+    int attach_pitch = 0;                    // 1 => set PITCH_MODE_PATTERN on this slot after commit
     if (argv[0].a_type == A_SYMBOL && strcmp(argv[0].a_w.w_symbol->s_name, "pitch") == 0) {
-        slot = PATTERN_SLOTS - 1;            // pitch: dedicated last slot (P3 wires the mode)
+        slot = PATTERN_SLOTS - 1;            // pitch: dedicated last slot
+        attach_pitch = 1;
     } else if (argv[0].a_type == A_SYMBOL) {
         const char *name = argv[0].a_w.w_symbol->s_name;
         attach_range = get_param_range_by_name(x, name);
@@ -3037,6 +3058,15 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
                  argv[0].a_w.w_symbol->s_name);
         }
         post("ligase~: pattern attached to %s (slot %d)", argv[0].a_w.w_symbol->s_name, slot);
+    }
+
+    // ---- Pitch attach: set the slot + switch into PITCH_MODE_PATTERN ----
+    if (attach_pitch) {
+        x->scheduler->pitch_control.pitch_pattern_slot = slot;
+        x->scheduler->pitch_control.mode = PITCH_MODE_PATTERN;
+        if (x->scheduler->pitch_control.scale.count == 0)
+            post("ligase~: pattern pitch set, but no pitch_scale loaded yet (unison until you send one)");
+        post("ligase~: pitch pattern set (slot %d), pitch_mode -> pattern", slot);
     }
 
 #undef PAT_FAIL
@@ -4306,15 +4336,15 @@ static void ligase_sphere_mode(ligase_t *x, t_floatarg instance, t_floatarg mode
 // Set pitch mode: 0=off (speed controls speed), 1=semitones, 2=range, 3=scale, 4=midi
 static void ligase_pitch_mode(ligase_t *x, t_floatarg mode) {
     int m = (int)mode;
-    if (m < 0 || m > 4) {
-        pd_error(x, "ligase~: pitch_mode must be 0-4 (0=off, 1=semitones, 2=range, 3=scale, 4=midi)");
+    if (m < 0 || m > 5) {
+        pd_error(x, "ligase~: pitch_mode must be 0-5 (0=off, 1=semitones, 2=range, 3=scale, 4=midi, 5=pattern)");
         return;
     }
 
     pitch_mode_t new_mode = (pitch_mode_t)m;
     x->scheduler->pitch_control.mode = new_mode;
 
-    const char *mode_names[] = {"off (speed controls speed)", "semitones", "range", "scale", "midi"};
+    const char *mode_names[] = {"off (speed controls speed)", "semitones", "range", "scale", "midi", "pattern"};
     post("ligase~: pitch mode set to %s", mode_names[m]);
 
     // Warn about MIDI inlet behavior when switching to MIDI mode
@@ -5009,6 +5039,7 @@ static void *ligase_new(void) {
     x->cycle_total_sec = 0.0;
     x->cycle_seg_count = 0;
     x->pattern_debug = 0;
+    x->pattern_pitch_last_printed = -999.0f;
     for (int ci = 0; ci < PATTERN_MAX_SEGS; ci++) {
         x->cycle_segments[ci].num = 0;
         x->cycle_segments[ci].den = 0;
