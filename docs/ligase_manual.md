@@ -323,11 +323,21 @@ sphere_mode <instance> <0-6> - Output: X/Y/Z/VelX/VelY/VelZ/VelMag
 
 Pitch Control
 
-pitch_mode <0|1|2|3|4> - Off/Semitones/Range/Scale/MIDI
+pitch_mode <0|1|2|3|4|5> - Off/Semitones/Range/Scale/MIDI/Pattern
 pitch_semitones <-24 to 24> - Fixed transposition
 pitch_range <min> <max> - Semitone range
 pitch_rand_type <type> - Random generator for pitch
 pitch_scale <note1> <note2> ... <noteN> - Scale definition (semitones)
+
+Patterns (TidalCycles Mini-Notation)
+
+pattern <param|pitch|slot> <tokens...> - Step-sequence a parameter (or pitch) from a mini-notation pattern
+pattern_cycle <N/D> <N/D> ... - Quantization-cycle length as musical durations at the detected BPM (default = 1 bar)
+pattern_clear <param|pitch|slot> - Detach a pattern; restore the prior source (pitch -> OFF)
+pattern_debug <0|1> - Log step / semitone changes to stderr (off by default)
+
+Tokens are space-separated (NO commas): values 0..1 for params or scale degrees for pitch; < > alternation
+(one per cycle); [ ] subdivision (nestable); @N weight; *N repeat; !N replicate; ~ rest. See PATTERNS.
 
 Defaults
 
@@ -1392,9 +1402,15 @@ Requires: delay_quant_amount > 0, bpm > 1.0, delay_quant_grid_ms > 0
 
 Default: 0.0 (no quantization)
 
+Pattern Cycle
+
+pattern_cycle <N/D> <N/D> ... sets the length of the TidalCycles pattern cycle as musical durations at the
+detected BPM (e.g. pattern_cycle 4/4 3/8 = 2.750 s at 120 BPM). It uses the same grid math as the quantize
+messages but drives a separate, free-running clock for the pattern step-sequencer. See PATTERNS.
+
 # PITCH & SPEED
 
-pitch_mode 0|1|2|3|4 Five pitch modes control relationship between speed parameter and
+pitch_mode 0|1|2|3|4|5 Six pitch modes control relationship between speed parameter and
 playback rate.
 
 Mode 0 - OFF (default)
@@ -1474,6 +1490,30 @@ MIDI input via inlet 19 (1-127, 0 = inactive)
 Final speed clamped: -4.0 to 4.0 (±48 semitones / 4 octaves)
 
 MIDI mode "latches" to the last valid note until pitch_mode changes. Switching back to pitch_mode 4 will resume with this latched note.
+
+Mode 5 - PATTERN
+
+Speed parameter = base pitch.
+
+Scale degrees sequenced by a TidalCycles mini-notation pattern (see PATTERNS), stepped on the
+BPM-locked pattern cycle clock. Each pattern token is a scale DEGREE indexed into pitch_scale, with
+octave wrap: on an N-note scale, degree N is the root one octave up (+12), degree N+1 the second
+degree up an octave, and so on (negative degrees wrap downward).
+
+speed_range bypassed.
+
+Formula: final_speed = speed * 2^(scale_degree_semitone/12)
+
+Load a scale first, then send a pitch pattern (this sets pitch_mode 5 automatically):
+
+pitch_scale 0 2 4 5 7 9 11
+pattern pitch < 0 4 7 >              (one degree per cycle: root, fifth, octave)
+pattern pitch [ 0 1 2 3 4 5 6 7 ]   (a run up the scale into the next octave)
+
+Pitch is applied per grain, reading the current cycle step, so it is tempo-locked (not grain-locked):
+sparse grains can skip steps, dense grains re-trigger the same step. A rest (~) holds the previous
+note. pattern_clear pitch returns to pitch_mode 0 (OFF). With no pitch_scale loaded the result is
+unison until one is sent.
 
 # DELAY
 
@@ -2060,11 +2100,11 @@ When disabled or mix = 0.0, filter bypasses without processing.
 
 # PARAMETER RANGES & MODULATION
 
-Per-grain parameter variation system. Each parameter can vary within a specified range driven by one of nine generator types (rand, Perlin 1D/2D, Lorenz, N-body, sphere, saw, sine, square — four instances each). ~30 parameters across grain synthesis, timing/playback, delay, distortion, and the modulation outlets are modulatable. (The smear parameters are set directly, not via the modulation ranges.)
+Per-grain parameter variation system. Each parameter can vary within a specified range driven by one of nine continuous generator types (rand, Perlin 1D/2D, Lorenz, N-body, sphere, saw, sine, square — four instances each), or by a step-sequencer PATTERN (see PATTERNS). ~30 parameters across grain synthesis, timing/playback, delay, distortion, the smear (smear_frequency / smear_resonance / smear_stages / smear_feedback), and the modulation outlets are modulatable.
 
 Modulation Sources
 
-Five generator types, each with 4 independent instances (1-4):
+Nine continuous generator types, each with 4 independent instances (1-4), plus a step-sequencer pattern source (RAND_TYPE_PATTERN, below):
 
 - RAND_TYPE_RAND
 
@@ -2117,6 +2157,10 @@ Sine wave LFO. Unipolar 0.0 to 1.0 (mapped from bipolar sine). Phase advances by
 - RAND_TYPE_SQUARE
 
 Square wave LFO. Bipolar switching: 0.0 below 50% duty cycle, 1.0 above. Phase advances by iot × noise_frequency_scale per grain trigger. Creates alternating on/off modulation patterns.
+
+- RAND_TYPE_PATTERN
+
+Step sequencer driven by a TidalCycles mini-notation pattern (see PATTERNS) — NOT a continuous generator. Uses one of 8 pattern SLOTS (not the 4 generator instances). The loaded pattern holds a value for each step's slice of the BPM-locked cycle; the sampler reads that value (0..1) and maps it to the parameter's min..max through the usual invert/map/slew tail. Attach with `pattern <param> <tokens...>` (auto-assigns a slot) or `rand_type pattern_N <param>` (point a parameter at an already-loaded slot N, 1-8). Detach + restore the prior source with `pattern_clear <param>`.
 
 Modulatable Parameters Include:
 
@@ -2428,6 +2472,98 @@ Does not reset N-body physics parameters (epsilon, damping, etc.)
 Defaults
 
 All parameter ranges initialized to: min: 0.0, max: 1.0, rand_type: RAND_TYPE_RAND (instance 1), enabled: 0 (disabled). All noise_frequency_scale defaults to 1.0.
+
+# PATTERNS (TIDALCYCLES MINI-NOTATION)
+
+A step-sequencing layer adapted from TidalCycles mini-notation. A pattern distributes a list of values
+(or scale degrees) evenly over a musical CYCLE and can drive any modulatable parameter or pitch — reusing
+the existing BPM detection, the quantization grid math, the modulation ranges, and the scale system rather
+than adding a parallel engine.
+
+Syntax (space-separated tokens; NO commas)
+
+A pattern is a sequence of space-separated tokens:
+
+  0.7           a value (0..1 for parameters; a scale DEGREE for pitch)
+  ~             a rest (holds the previous value / note)
+  [ a b c ]     subdivision group — children evenly split the parent's time slice; nestable to any depth
+  < a b c >     alternation — ONE child per cycle, advancing each cycle (Tidal "slowcat")
+  a@3           weight — this step takes 3x the time of an unweighted step
+  a*3           repeat — three copies of a within this step (subdivides the slot)
+  a!3           replicate — three separate sibling steps
+
+Brackets and angles are standalone tokens: write "[ a b ]", not "[a b]". There are NO commas — in
+TidalCycles a comma means STACK (parallel layers), which does not apply to a single parameter/pitch over
+time and is intentionally unsupported (Pd also treats a comma as a message separator).
+
+Examples:
+
+  pattern moog_cutoff 0.0 0.5 1.0          three even steps across the cycle
+  pattern moog_cutoff [ 0.2 0.4 ] 0.8      0.2 and 0.4 share the first half, 0.8 takes the second half
+  pattern moog_cutoff 0.2@3 0.8            0.2 for 3/4 of the cycle, 0.8 for the last 1/4
+  pattern amplitude < 0.2 1.0 >            alternates 0.2 (one cycle), 1.0 (next), repeating
+
+The cycle clock
+
+Patterns step on a free-running clock locked to the detected BPM (set, as elsewhere, by banging the object
+at the tempo — two bangs establish the BPM). Until a tempo is known the clock holds. The cycle LENGTH is one
+bar of 4/4 by default, or set it explicitly:
+
+  pattern_cycle <N/D> <N/D> ...
+
+Each N/D segment is "N notes of value 1/D" at the current BPM; the cycle length is their sum, using the same
+grid math as the quantize messages. At 120 BPM:
+
+  pattern_cycle 4/4 3/8     = 4 quarter-notes (2.000 s) + 3 eighth-notes (0.750 s) = 2.750 s
+
+pattern_cycle with no arguments resets to the default 1-bar cycle. Valid denominators: 1, 2, 4, 8, 16, 32,
+64, 128. This is a fifth, independent clock — it does not disturb the IOT / grain-size / delay / stut grids.
+
+Patterns on parameters
+
+  pattern <param> <tokens...>
+
+Loads the pattern and attaches it to <param> (any name accepted by param_range / rand_type — e.g. moog_cutoff,
+smear_frequency, amplitude, gdelay_mix, modout1..4). The step value (0..1) maps to the parameter's range, so
+set a range first:
+
+  param_range moog_cutoff 200 4000
+  pattern moog_cutoff 0.0 1.0        steps the cutoff between 200 and 4000 Hz across the cycle
+
+The pattern is a modulation SOURCE (RAND_TYPE_PATTERN), so param_invert and param_slew apply normally (slew
+glides between steps; leave slew at 0 for hard steps). Attaching auto-enables the range; a single-value range
+(min == max) is widened to [0, 1] so the pattern is audible.
+
+Up to 7 parameters can run independent patterns at once (8 slots, one reserved for pitch); each gets its own
+slot automatically, and re-sending pattern <param> reuses that param's slot.
+
+  pattern_clear <param>              detach; restore the parameter's previous generator / source
+
+Advanced (two-step form): pattern <N> with a bare slot number 0-7 loads slot N WITHOUT attaching, and
+rand_type pattern_N <param> then points a parameter at slot N.
+
+Patterns on pitch
+
+  pattern pitch <tokens...>
+
+Tokens are scale DEGREES indexed into the loaded pitch_scale (see PITCH & SPEED, Mode 5); this sets pitch_mode
+5 automatically. Degrees wrap with octave compensation — on a 7-note scale, degree 7 is the root one octave up
+(+12 semitones).
+
+  pitch_scale 0 2 4 5 7 9 11
+  pattern pitch [ 0 1 2 3 4 5 6 7 ]      runs up the major scale into the next octave
+  pattern pitch < 0 4 7 >                root / fifth / octave, one per cycle
+
+Pitch is applied per grain (tempo-locked, not grain-locked): sparse grains can skip steps, dense grains
+re-trigger the same step. A rest (~) holds the previous note. pattern_clear pitch returns to pitch_mode 0 (OFF).
+
+Notes
+
+- Parse errors (unbalanced brackets, unknown parameter, bad token) are reported and leave the previous pattern
+  intact.
+- Single-level alternation only: < > may not be nested directly inside another < > (rejected). [ ] subdivision
+  nests freely.
+- pattern_debug 1 logs step and applied-semitone changes to stderr (a development aid; off by default).
 
 # QUERY STATE
 
