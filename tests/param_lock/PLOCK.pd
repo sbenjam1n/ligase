@@ -1,0 +1,17 @@
+#N canvas 0 0 560 360 12;
+#X obj 30 20 loadbang;
+#X msg 250 20 \; pd dsp 1;
+#X obj 30 300 ligase~;
+#X obj 30 60 delay 50;
+#X msg 30 90 param_lock smear_frequency smear_resonance smear_stages smear_feedback stut_reps bencina_iot bencina_grainsize bencina_pan pitch_fine smear_pitch_fine modout1;
+#X obj 250 60 delay 600;
+#X msg 250 90 \; pd quit;
+#X obj 30 340 dac~;
+#X connect 0 0 1 0;
+#X connect 0 0 3 0;
+#X connect 0 0 5 0;
+#X connect 3 0 4 0;
+#X connect 4 0 2 0;
+#X connect 5 0 6 0;
+#X connect 2 0 7 0;
+#X connect 2 1 7 1;

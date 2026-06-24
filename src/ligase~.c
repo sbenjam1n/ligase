@@ -4801,6 +4801,14 @@ static float get_current_value(ligase_t *x, const char *param_name) {
     if (strcmp(param_name, "bencina_iot") == 0) return x->bencina_iot_current;
     if (strcmp(param_name, "bencina_grainsize") == 0) return x->bencina_grainsize_current;
     if (strcmp(param_name, "bpm") == 0) return x->bpm;
+
+    // Fallback: ANY modulatable param reports its last sampled value (param_range.smoothed_value,
+    // set by sample_param_range to exactly the value it last returned). This covers every range
+    // target without per-param tracking — so param_lock / query report the real current modulated
+    // value for smear_frequency/_resonance/_stages/_feedback, bencina_pan, pitch_fine,
+    // smear_pitch_fine, the dist_* set, and modout1-4 (which had no explicit case above).
+    param_range_t *r = get_param_range_by_name(x, param_name);
+    if (r) return r->smoothed_value;
     return 0.0f;
 }
 
