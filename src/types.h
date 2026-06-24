@@ -331,6 +331,7 @@ typedef struct {
     int split_current;        // 0=allow split (default), 1=preserve current splice length
     int pending_splice;       // Index of pending splice to navigate to (-1 if none)
     int send_splice_msg;      // 0=disabled (default), 1=send messages when navigating to splices
+    int loop_mode;            // 1=loop forever (default), 0=oneshot: stop at splice end
 } splice_behavior_t;
 
 // @endregion:ligase_pd.core.types.splice_behavior

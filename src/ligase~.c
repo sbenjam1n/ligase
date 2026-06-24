@@ -1215,8 +1215,9 @@ static void ligase_process_grains(ligase_t *x,
                     outlet_bang(x->x_splice_end_out);
                 }
 
-                // Check for pending splice navigation after wrapping
-                if (wrapped && x->splice_behavior.pending_splice >= 0) {
+                // Check for pending splice navigation after wrapping (nav wins over the one-shot stop)
+                int had_pending_nav = (wrapped && x->splice_behavior.pending_splice >= 0);
+                if (had_pending_nav) {
                     x->reel->splices.current_splice = x->splice_behavior.pending_splice;
                     x->splice_behavior.pending_splice = -1;  // Clear pending
 
@@ -1228,6 +1229,14 @@ static void ligase_process_grains(ligase_t *x,
 
                     // Send splice message if enabled
                     ligase_send_current_splice_msg(x);
+                }
+
+                // One-shot: stop at the boundary when loop is off and no nav was queued (nav wins).
+                // Active grains are untouched (they finish on their own); the head is left valid.
+                if (wrapped && !had_pending_nav && x->splice_behavior.loop_mode == 0) {
+                    x->is_triggering = 0;
+                    x->is_playing    = 0;
+                    break;   // stop advancing the head for the rest of this DSP vector
                 }
             }
         } else {
@@ -1260,8 +1269,9 @@ static void ligase_process_grains(ligase_t *x,
                     outlet_bang(x->x_splice_end_out);
                 }
 
-                // Check for pending splice navigation after wrapping
-                if (wrapped && x->splice_behavior.pending_splice >= 0) {
+                // Check for pending splice navigation after wrapping (nav wins over the one-shot stop)
+                int had_pending_nav = (wrapped && x->splice_behavior.pending_splice >= 0);
+                if (had_pending_nav) {
                     x->reel->splices.current_splice = x->splice_behavior.pending_splice;
                     x->splice_behavior.pending_splice = -1;  // Clear pending
 
@@ -1273,6 +1283,13 @@ static void ligase_process_grains(ligase_t *x,
 
                     // Send splice message if enabled
                     ligase_send_current_splice_msg(x);
+                }
+
+                // One-shot: stop at the boundary when loop is off and no nav was queued (nav wins).
+                // No break needed (this wrap is inside the clock-bang guard, not the per-sample loop).
+                if (wrapped && !had_pending_nav && x->splice_behavior.loop_mode == 0) {
+                    x->is_triggering = 0;
+                    x->is_playing    = 0;
                 }
 
                 // Clear the clock bang flag
@@ -1908,6 +1925,31 @@ static void ligase_save(ligase_t *x, t_symbol *s) {
     } else {
         pd_error(x, "ligase~: save failed — %s: %s", reel_io_strerror(rc), path);
     }
+}
+
+// loop <0|1> : 1 = loop forever (default), 0 = one-shot (stop at splice end).
+static void ligase_loop(ligase_t *x, t_floatarg mode) {
+    int m = (int)mode;
+    if (m == 0 || m == 1) {
+        x->splice_behavior.loop_mode = m;
+        post("ligase~: loop set to %d (%s)", m, m ? "loop" : "oneshot");
+    } else {
+        pd_error(x, "ligase~: invalid loop %d (use 0 or 1)", m);
+    }
+}
+
+// trigger : (re)start playback from the start of the current splice WITHOUT silencing active grains
+// (the re-arm of play 1 minus the debug dump; for re-triggering one-shot playback).
+static void ligase_trigger(ligase_t *x) {
+    if (x->reel->length == 0) {
+        pd_error(x, "ligase~: cannot trigger - no audio loaded");
+        return;
+    }
+    uint32_t s, e;
+    splice_get_bounds(&x->reel->splices, x->reel->splices.current_splice, x->reel->length, &s, &e);
+    x->playback_position = (float)s;
+    x->is_playing    = 1;
+    x->is_triggering = 1;
 }
 
 static void ligase_play(ligase_t *x, t_floatarg f) {
@@ -2689,8 +2731,10 @@ static void ligase_bang(ligase_t *x) {
 
     x->last_bang_time = current_time;
 
-    // Clock advance mode: signal playhead to advance on next DSP cycle
-    if (x->playhead_mode == PLAYHEAD_MODE_CLOCK_ADVANCE) {
+    // Clock advance mode: signal playhead to advance on next DSP cycle.
+    // (One-shot: gate on is_triggering so a stopped transport is not re-advanced / re-stopped by
+    //  subsequent BPM bangs — BPM detection + the quant-grid recompute above still run.)
+    if (x->playhead_mode == PLAYHEAD_MODE_CLOCK_ADVANCE && x->is_triggering) {
         x->clock_bang_received = 1;
     }
 }
@@ -5295,6 +5339,7 @@ static void *ligase_new(void) {
     x->splice_behavior.split_current = 0;      // Default: allow splitting current splice
     x->splice_behavior.pending_splice = -1;    // No pending navigation
     x->splice_behavior.send_splice_msg = 0;    // Default: disabled
+    x->splice_behavior.loop_mode = 1;          // Default: loop forever (0 = oneshot stop-at-end)
 
     // Initialize timing and quantization
     x->clock_running = 0;
@@ -5405,6 +5450,8 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_load, gensym("load"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_save, gensym("save"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_play, gensym("play"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_loop, gensym("loop"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_trigger, gensym("trigger"), 0);
     class_addmethod(ligase_class, (t_method)ligase_record, gensym("record"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_shift, gensym("shift"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_organize, gensym("organize"), A_DEFFLOAT, 0);
