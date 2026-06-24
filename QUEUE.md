@@ -6,8 +6,8 @@ to §1. Section numbers are stable references — append, never renumber. -->
 
 # QUEUE.md — Work Queue
 
-**Queue Seq:** 45
-**Date:** 2026-06-22
+**Queue Seq:** 46
+**Date:** 2026-06-24
 **What this queue draws from:** active execution plans (`Plans/*.md`) and the project's own indexes (`README.md`, `TODO.md`).
 
 ---
@@ -103,6 +103,11 @@ _Branch `fix/audio-engine-and-manual` PUSHED to origin (2026-06-18, as owner). T
 - _(none)_
 
 ## §2. ON DECK (planner-ordered; promote into §1 when the blocking item clears)
+- **Pattern subsystem (TidalCycles mini-notation + `[4/4 3/8]` quantization cycle)** — NEW (Seq 46). Three execution plans, hard dependency chain **P1 → P2 → P3**. **GATE A is owner-approved (Seq 46)**; now gated only on build order (P1 must land before P2, P2 before P3). Syntax is canonical Tidal mini-notation (space-separated sequences; `,`=stack is not applicable and intentionally unsupported):
+  - **P1** `Plans/pattern_notation.md` — the notation parser, recursive nesting, and the free-running BPM-locked cycle clock (a *fifth* grid built from the existing `(60000/bpm)*4` math; `pattern` / `pattern_cycle` / `pattern_clear` selectors; comma-free wire syntax that survives Pd binbuf). Foundation; attaches to nothing on its own.
+  - **P2** `Plans/pattern_modulation.md` — `RAND_TYPE_PATTERN` as a modulation source on any `get_param_range_by_name` target (reuses the invert/map/slew tail verbatim). Depends on P1.
+  - **P3** `Plans/pattern_pitch.md` — `PITCH_MODE_PATTERN` scale-degree stepper reusing `scale.semitones[] → semitones_to_speed`, adding the wrap+octave the scale code currently lacks. Depends on P1+P2.
+  - GATE-A decisions are **owner-approved (Seq 46, recommended options)**: `PATTERN_SLOTS=8` (~14 KB/instance), the `[..]`-segment vs `<..>`-value contract, strict denominator set, reject-not-truncate caps, `enabled`-on-attach, pitch dedicates the last slot. Per-plan detail in §4a / each plan's GATE A.
 - **Manual content edits** — plan: `Plans/manual_content_edits.md`. M1's GATE 3 is cleared (master + `make manual` exist), so this is ready to promote on the user's go-ahead. **Worklist A is seeded** from the 2026-06-16 modulation-coverage scan (5 missing targets, `param_invert` undocumented, phantom `modout_*` messages, stale "21" count); stream 1 (the user's incoming content changes) is still to be specified.
 
 ## §3. BLOCKED (visible but skipped; ordered by what unblocks them)
@@ -119,6 +124,9 @@ _Branch `fix/audio-engine-and-manual` PUSHED to origin (2026-06-18, as owner). T
 | B2 Reel load/save on macOS | `Plans/completed/reel_io_macos.md` | ✓ (archived 2026-06-22) |
 | M1 PDF manual regeneration | `Plans/completed/pdf_manual_regeneration.md` | ✓ (archived 2026-06-22) |
 | Manual content edits | `Plans/manual_content_edits.md` | ◐ Worklist A + engine/record-mode updates done; deep SOS prose optional (still active) |
+| Pattern P1 — notation parser + cycle clock | `Plans/pattern_notation.md` | ○ PLANNED (Seq 46); GATE A ✓ approved — foundation, no attach; cleared to Step 1 |
+| Pattern P2 — modulation source (`RAND_TYPE_PATTERN`) | `Plans/pattern_modulation.md` | ○ PLANNED (Seq 46); GATE A ✓ approved — blocked on P1 landing |
+| Pattern P3 — pitch via scale (`PITCH_MODE_PATTERN`) | `Plans/pattern_pitch.md` | ○ PLANNED (Seq 46); GATE A ✓ approved — blocked on P1+P2 landing |
 | Build-naming cleanup | _(none; backlog stub)_ | — |
 
 ## §5. HOW THE AGENT USES THIS (read-only protocol)
@@ -134,6 +142,7 @@ _Branch `fix/audio-engine-and-manual` PUSHED to origin (2026-06-18, as owner). T
 
 | Date | Seq | Change | By |
 |------|-----|--------|----|
+| 2026-06-24 | 46 | Pattern subsystem scoped (TidalCycles `<,>` notation + `[4/4,3/8]` quantization cycle, owner request). Authored 3 execution plans via a research+design workflow (TidalCycles/Strudel mini-notation research + file:line grounding of the modulation/BPM-quant/pitch-scale/Pd-parse internals, two competing architectures synthesized, then adversarially verified against the tree — which corrected fabricated `class_addmethod` line refs, a wrong param name `smear`→`smear_frequency`, and missing `bpm==0` guards). Hybrid architecture: a parse-time recursive tree flattened to a flat weighted step table, attached via a new `RAND_TYPE_PATTERN` (reuses `param_range`'s invert/map/slew tail, zero per-param plumbing) and a `PITCH_MODE_PATTERN` sibling; a *fifth* free-running BPM-locked cycle clock built from the existing `(60000/bpm)*4` grid math; comma-free wire syntax (Pd binbuf eats `,`/`;`, so the cycle rides a dedicated `pattern_cycle 4/4 3/8` selector and values are bare space-separated atoms). **P1** `Plans/pattern_notation.md` (parser+clock+nesting), **P2** `Plans/pattern_modulation.md` (`RAND_TYPE_PATTERN` attach), **P3** `Plans/pattern_pitch.md` (`PITCH_MODE_PATTERN` scale-degree stepper w/ wrap+octave). Placed in §2 ON DECK + §4a; dependency chain P1→P2→P3. Syntax clarified to canonical Tidal mini-notation: sequences are space-separated, and `,`=stack (parallel voices) is **not applicable** to a single scalar/pitch-over-time pattern, so it is intentionally unsupported (owner caught the stack semantics). **GATE A owner-approved across all three** (recommended options: `PATTERN_SLOTS=8`, reject-not-truncate 64-leaf cap, strict denominator set, `enabled`-on-attach, pitch dedicates the last slot); now gated only on build order. No code yet. | SLB |
 | 2026-06-16 | 0 | Template instantiated for ligase~. Added M1 (PDF manual regeneration, `Plans/pdf_manual_regeneration.md`); manual-content-edits on deck (§2); build-naming cleanup to backlog (§4). | SLB |
 | 2026-06-16 | 1 | M1 advanced: GATE 0 cleared (pandoc+weasyprint installed), Steps 1 & 3 done (Markdown master `docs/ligase_manual.md` + `make manual` build), PDF regenerated & current. M1 now at GATE 4 (txt-fate decision). §3 unblocked. | SLB |
 | 2026-06-16 | 2 | M1 DONE: GATE 4 cleared — `src/ligase_manual.txt` deleted per user; single-source pipeline live. Manual-content edits (§2) now unblocked, awaiting go-ahead. | SLB |
