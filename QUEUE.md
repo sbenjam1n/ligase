@@ -6,7 +6,7 @@ to §1. Section numbers are stable references — append, never renumber. -->
 
 # QUEUE.md — Work Queue
 
-**Queue Seq:** 54
+**Queue Seq:** 55
 **Date:** 2026-06-24
 **What this queue draws from:** active execution plans (`Plans/*.md`) and the project's own indexes (`README.md`, `TODO.md`).
 
@@ -129,7 +129,7 @@ _Branch `fix/audio-engine-and-manual` PUSHED to origin (2026-06-18, as owner). T
 | Pattern P1 — notation parser + cycle clock | `Plans/pattern_notation.md` | ✅ DONE + headless-verified (Seq 47); 8/8 AC pass, warning-free, no regression |
 | Pattern P2 — modulation source (`RAND_TYPE_PATTERN`) | `Plans/pattern_modulation.md` | ✅ DONE + headless-verified (Seq 48); attach/clear/slot-alloc all pass, warning-free, no regression |
 | Pattern P3 — pitch via scale (`PITCH_MODE_PATTERN`) | `Plans/pattern_pitch.md` | ✅ DONE + headless-verified (Seq 49); wrap+octave/alt/nested/mode all pass, warning-free, no regression |
-| One-shot playback (stop-at-splice-end) | `Plans/oneshot_playback.md` | ○ PLANNED (Seq 50); GATE A ✓ approved — cleared to Step 1; `loop`/`trigger` selectors |
+| One-shot playback (stop-at-splice-end) | `Plans/oneshot_playback.md` | ✅ DONE + headless-verified (Seq 55); `loop`/`trigger`, stop-at-end, nav-wins; warning-free, no regression |
 | Smear pitch destination (P1) | `Plans/smear_pitch.md` | ✅ DONE + headless-verified (Seq 52); note→Hz (440/880/220), pattern slot 6, override, SCALE; warning-free, no regression |
 | Channel-aware MIDI routing (P2) | `Plans/midi_channel_routing.md` | ✅ DONE + headless-verified (Seq 54); unison/separate/drop/reject; warning-free, no regression |
 | Pitch fine-tune ±50¢ modulatable (P3) | `Plans/pitch_fine_tune.md` | ✅ DONE + headless-verified (Seq 53); grain+smear fine, modulatable; warning-free, no regression |

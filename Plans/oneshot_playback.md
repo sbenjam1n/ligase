@@ -2,9 +2,24 @@
 
 **Owner:** SLB
 **Date:** 2026-06-24
-**Status:** PLANNED (not started)
+**Status:** ✅ DONE (2026-06-24) — implemented and headless-verified; `make clean && make` warning-free; no regression. `loop <0|1>` (default 1) flips the SCANNING/CLOCK_ADVANCE wrap into a stop; `trigger` re-arms from splice_start. See Progress.
 **Tracked in:** `QUEUE.md` §4a (PLAN COVERAGE); promote into §2 (ON DECK) when scheduled.
 **Related:** the playhead-mode + playback sections — this plan composes a new orthogonal axis on top of the existing `playhead` modes (STATIC/SCANNING/CLOCK_ADVANCE) and the `play <0|1>` transport.
+
+## Progress (2026-06-24) — IMPLEMENTED + VERIFIED
+
+`make clean && make` warning-free; `test_delay.pd` clean.
+- **Flag:** `int loop_mode` on `splice_behavior_t` (default 1 = loop), init in the splice_behavior block.
+- **Stop:** in the SCANNING + CLOCK_ADVANCE `wrapped` branches, when `loop_mode==0` and no nav was queued, set `is_triggering=0`/`is_playing=0` (SCANNING also `break`s the per-sample loop). NAV WINS: a `had_pending_nav` flag captured BEFORE the nav consumes `pending_splice` keeps queued navigation playing. The render block is untouched, so active grains finish on their own (the existing `is_triggering` decoupling).
+- **Clock coherence:** `ligase_bang` gates `clock_bang_received = 1` on `&& is_triggering`, so a stopped one-shot is not re-advanced by later BPM bangs (BPM detection + quant recompute still run).
+- **Selectors:** `loop <0|1>` (posts loop/oneshot); `trigger` (no-arg re-arm = play's body minus the debug dump). `bang` is the BPM clock, so `trigger` is its own selector.
+
+| AC | Test (`tests/oneshot/OS*.pd`, SCANNING scanrate 5) | Result |
+|----|------|--------|
+| Loop unchanged | `loop 1` | 29 splice-end bangs (loops) ✓ |
+| Auto-stop | `loop 0` | exactly 1 bang then stops ✓ |
+| Re-arm | `loop 0` + `trigger` | 2 bangs (one per pass; restart from splice_start) ✓ |
+| Grains uncut | render block untouched (is_triggering decoupling) | active grains finish on their own ✓ |
 
 ## Problem
 
