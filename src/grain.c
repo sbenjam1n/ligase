@@ -167,6 +167,16 @@ static float sample_scale_semitones(pitch_scale_t *scale, perlin_state_t *perlin
             random_value = (perlin_state->waveform_phase[instance] < 0.5f) ? 0.0f : 1.0f;
             break;
         }
+
+        case RAND_TYPE_PATTERN: {
+            // Pattern-driven scale-degree selection (e.g. pitch_rand_type pattern_N): read the slot
+            // cache as the [0,1] selector. Read rand_instance directly (slots 0..PATTERN_SLOTS-1).
+            int slot = semitone_range->rand_instance;
+            random_value = (slot >= 0 && slot < PATTERN_SLOTS &&
+                            perlin_state->pattern[slot].step_count > 0)
+                         ? perlin_state->pattern[slot].cached_value : 0.5f;
+            break;
+        }
     }
 
     // Apply inversion if enabled in semitone_range
@@ -279,6 +289,18 @@ float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, flo
         case RAND_TYPE_SQUARE: {
             // Square wave LFO: bipolar switching at 50% duty cycle
             random_value = (perlin_state->waveform_phase[instance] < 0.5f) ? 0.0f : 1.0f;
+            break;
+        }
+
+        case RAND_TYPE_PATTERN: {
+            // Pattern source: read the slot cache pattern_eval_slot wrote this block. Pattern slots
+            // run 0..PATTERN_SLOTS-1 (NOT 0..3), so read rand_instance directly, bypassing the 0..3
+            // clamp on the `instance` local used by the stochastic sources above. Unloaded / out-of-
+            // range -> neutral 0.5. cached_value is already in [0,1] (held across rests).
+            int slot = range->rand_instance;
+            random_value = (slot >= 0 && slot < PATTERN_SLOTS &&
+                            perlin_state->pattern[slot].step_count > 0)
+                         ? perlin_state->pattern[slot].cached_value : 0.5f;
             break;
         }
     }
@@ -473,7 +495,7 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
 
     // Initialize parameter ranges (all disabled by default, using rand_1)
     // Fields: min, max, rand_type, rand_instance, enabled, base_value, slew, smoothed_value, invert
-    param_range_t default_range = {0.0f, 1.0f, RAND_TYPE_RAND, 0, 0, 0.5f, 0.0f, 0.0f, 0};
+    param_range_t default_range = {0.0f, 1.0f, RAND_TYPE_RAND, 0, 0, 0.5f, 0.0f, 0.0f, 0, RAND_TYPE_NONE, 0};
     sched->speed_range = default_range;
     sched->scanrate_range = default_range;
     sched->iot_range = default_range;

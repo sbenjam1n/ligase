@@ -2654,6 +2654,25 @@ static void ligase_timesig(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
 
 // @region:ligase_pd.core.pattern Pattern (mini-notation) cycle + slot control
 
+// Forward decls — definitions live later in the file, after this region.
+static param_range_t* get_param_range_by_name(ligase_t *x, const char *name);
+static const char* get_rand_type_name(rand_type_t type);
+
+// Choose a pattern slot for a named param target: reuse the param's current pattern slot if it
+// already has one, else the first slot with no loaded pattern (step_count==0). Slot PATTERN_SLOTS-1
+// is reserved for pitch. Returns -1 if every param slot is occupied.
+static int pattern_alloc_param_slot(ligase_t *x, param_range_t *range) {
+    perlin_state_t *ps = &x->scheduler->perlin_state;
+    if (range->rand_type == RAND_TYPE_PATTERN &&
+        range->rand_instance >= 0 && range->rand_instance < PATTERN_SLOTS - 1) {
+        return range->rand_instance;
+    }
+    for (int i = 0; i < PATTERN_SLOTS - 1; i++) {
+        if (ps->pattern[i].step_count == 0) return i;
+    }
+    return -1;
+}
+
 // pattern_cycle <N/D> <N/D> ... : set the quantization-cycle segment list. Each segment is a
 // musical duration ("num" notes of value 1/den) at the detected BPM; the cycle length is their
 // sum. A bare "pattern_cycle" (no args) resets to the default 1-bar 4/4 cycle. Validate-then-commit
@@ -2709,20 +2728,60 @@ static void ligase_pattern_cycle(ligase_t *x, t_symbol *s, int argc, t_atom *arg
 static void ligase_pattern_clear(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     (void)s;
     if (!x->scheduler) return;
-    if (argc != 1 || argv[0].a_type != A_FLOAT) {
-        pd_error(x, "ligase~: pattern_clear requires a slot index 0..%d", PATTERN_SLOTS - 1);
-        return;
-    }
-    int slot = (int)argv[0].a_w.w_float;
-    if (slot < 0 || slot >= PATTERN_SLOTS) {
-        pd_error(x, "ligase~: pattern_clear slot must be 0..%d", PATTERN_SLOTS - 1);
+    if (argc != 1) {
+        pd_error(x, "ligase~: pattern_clear requires a param name, 'pitch', or a slot 0..%d", PATTERN_SLOTS - 1);
         return;
     }
     perlin_state_t *ps = &x->scheduler->perlin_state;
-    ps->pattern[slot].step_count = 0;
-    ps->pattern_phase[slot] = 0.0f;
-    ps->pattern_cycle_index[slot] = 0;
-    post("ligase~: pattern slot %d cleared", slot);
+
+    // Numeric slot: raw clear of that slot (P1 / two-step path).
+    if (argv[0].a_type == A_FLOAT) {
+        int slot = (int)argv[0].a_w.w_float;
+        if (slot < 0 || slot >= PATTERN_SLOTS) {
+            pd_error(x, "ligase~: pattern_clear slot must be 0..%d", PATTERN_SLOTS - 1);
+            return;
+        }
+        ps->pattern[slot].step_count = 0;
+        ps->pattern_phase[slot] = 0.0f;
+        ps->pattern_cycle_index[slot] = 0;
+        post("ligase~: pattern slot %d cleared", slot);
+        return;
+    }
+    if (argv[0].a_type != A_SYMBOL) {
+        pd_error(x, "ligase~: pattern_clear: bad argument");
+        return;
+    }
+
+    const char *name = argv[0].a_w.w_symbol->s_name;
+    if (strcmp(name, "pitch") == 0) {
+        int slot = PATTERN_SLOTS - 1;       // P3 restores the pitch mode; P2 just frees the slot
+        ps->pattern[slot].step_count = 0;
+        ps->pattern_phase[slot] = 0.0f;
+        ps->pattern_cycle_index[slot] = 0;
+        post("ligase~: pitch pattern cleared (slot %d)", slot);
+        return;
+    }
+
+    // Named param target: restore its prior source, then free the slot.
+    param_range_t *range = get_param_range_by_name(x, name);
+    if (!range) {
+        pd_error(x, "ligase~: pattern_clear: unknown parameter '%s'", name);
+        return;
+    }
+    if (range->rand_type != RAND_TYPE_PATTERN) {
+        post("ligase~: pattern_clear: %s has no pattern attached", name);
+        return;
+    }
+    int slot = range->rand_instance;
+    range->rand_type = range->saved_rand_type;            // restore FIRST (audio stops reading the slot)
+    range->rand_instance = range->saved_rand_instance;
+    if (slot >= 0 && slot < PATTERN_SLOTS) {
+        ps->pattern[slot].step_count = 0;                 // free the slot
+        ps->pattern_phase[slot] = 0.0f;
+        ps->pattern_cycle_index[slot] = 0;
+    }
+    post("ligase~: pattern cleared from %s (restored type %s)",
+         name, get_rand_type_name(range->saved_rand_type));
 }
 
 static void ligase_pattern_debug(ligase_t *x, t_floatarg f) {
@@ -2805,12 +2864,25 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     if (argc < 2) { pd_error(x, "ligase~: pattern requires <slot|pitch> then tokens"); return; }
 
     int slot;
+    param_range_t *attach_range = NULL;      // non-NULL => attach this range to the slot after commit
     if (argv[0].a_type == A_SYMBOL && strcmp(argv[0].a_w.w_symbol->s_name, "pitch") == 0) {
-        slot = PATTERN_SLOTS - 1;            // pitch uses the dedicated last slot (P3 wires the mode)
+        slot = PATTERN_SLOTS - 1;            // pitch: dedicated last slot (P3 wires the mode)
+    } else if (argv[0].a_type == A_SYMBOL) {
+        const char *name = argv[0].a_w.w_symbol->s_name;
+        attach_range = get_param_range_by_name(x, name);
+        if (!attach_range) {
+            pd_error(x, "ligase~: pattern: unknown parameter '%s'", name);
+            return;
+        }
+        slot = pattern_alloc_param_slot(x, attach_range);
+        if (slot < 0) {
+            pd_error(x, "ligase~: pattern: no free pattern slots (max %d param patterns)", PATTERN_SLOTS - 1);
+            return;
+        }
     } else if (argv[0].a_type == A_FLOAT) {
-        slot = (int)argv[0].a_w.w_float;
+        slot = (int)argv[0].a_w.w_float;     // numeric slot = raw load, no attach (testing / two-step)
     } else {
-        pd_error(x, "ligase~: pattern target must be a slot 0..%d or 'pitch' (P1)", PATTERN_SLOTS - 1);
+        pd_error(x, "ligase~: pattern target must be a param name, 'pitch', or a slot 0..%d", PATTERN_SLOTS - 1);
         return;
     }
     if (slot < 0 || slot >= PATTERN_SLOTS) {
@@ -2946,6 +3018,26 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     live->step_count = committed_steps;                  // publish barrier
     post("ligase~: pattern slot %d set (%d steps, %d alt groups)",
          slot, committed_steps, scratch.alt_group_total);
+
+    // ---- Attach (named param target only): point the range at this slot via RAND_TYPE_PATTERN ----
+    if (attach_range) {
+        if (attach_range->rand_type != RAND_TYPE_PATTERN) {
+            // remember the prior source so pattern_clear can restore it (don't clobber on re-load)
+            attach_range->saved_rand_type = attach_range->rand_type;
+            attach_range->saved_rand_instance = attach_range->rand_instance;
+        }
+        attach_range->rand_type = RAND_TYPE_PATTERN;
+        attach_range->rand_instance = slot;
+        attach_range->enabled = 1;                       // a pattern only modulates when enabled
+        if (attach_range->min == attach_range->max) {
+            // a collapsed range short-circuits in sample_param_range BEFORE the pattern read
+            attach_range->min = 0.0f;
+            attach_range->max = 1.0f;
+            post("ligase~: pattern: %s had min==max; reset map span to [0,1]",
+                 argv[0].a_w.w_symbol->s_name);
+        }
+        post("ligase~: pattern attached to %s (slot %d)", argv[0].a_w.w_symbol->s_name, slot);
+    }
 
 #undef PAT_FAIL
 }
@@ -3680,6 +3772,7 @@ static void ligase_param_range(ligase_t *x, t_symbol *s, int argc, t_atom *argv)
             case RAND_TYPE_SAW: type_name = "saw"; break;
             case RAND_TYPE_SINE: type_name = "sine"; break;
             case RAND_TYPE_SQUARE: type_name = "square"; break;
+            case RAND_TYPE_PATTERN: type_name = "pattern"; break;
         }
         post("ligase~: %s range set to %.3f - %.3f (type: %s_%d)",
              param_name, min_val, max_val, type_name, range->rand_instance + 1);
@@ -3829,6 +3922,7 @@ static void ligase_rand_type(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     const char *type_str = argv[0].a_w.w_symbol->s_name;
     rand_type_t rand_type;
     int instance = 0;
+    int is_pattern = 0;
 
     // Parse type and instance from string (e.g., "perlin_2d_3", "rand_1", or "lorenz_2")
     if (strncmp(type_str, "rand_", 5) == 0) {
@@ -3858,13 +3952,22 @@ static void ligase_rand_type(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     } else if (strncmp(type_str, "square_", 7) == 0) {
         rand_type = RAND_TYPE_SQUARE;
         instance = atoi(type_str + 7) - 1;
+    } else if (strncmp(type_str, "pattern_", 8) == 0) {
+        rand_type = RAND_TYPE_PATTERN;
+        instance = atoi(type_str + 8) - 1;   // 1-based wire -> 0-based slot
+        is_pattern = 1;
     } else {
-        pd_error(x, "ligase~: invalid rand_type '%s' (use rand_N, perlin_1d_N, perlin_2d_N, lorenz_N, nbody_N, sphere_N, saw_N, sine_N, or square_N where N=1-4)", type_str);
+        pd_error(x, "ligase~: invalid rand_type '%s' (use rand_N, perlin_1d_N, perlin_2d_N, lorenz_N, nbody_N, sphere_N, saw_N, sine_N, square_N, or pattern_N where N=1-4; pattern_N uses slots 1-8)", type_str);
         return;
     }
 
-    // Validate instance (0-3)
-    if (instance < 0 || instance > 3) {
+    // Validate instance: stochastic sources use 0..3; pattern slots use 0..PATTERN_SLOTS-1.
+    if (is_pattern) {
+        if (instance < 0 || instance >= PATTERN_SLOTS) {
+            pd_error(x, "ligase~: pattern slot must be 1-%d", PATTERN_SLOTS);
+            return;
+        }
+    } else if (instance < 0 || instance > 3) {
         pd_error(x, "ligase~: rand instance must be 1-4");
         return;
     }
@@ -4239,6 +4342,7 @@ static void ligase_pitch_rand_type(ligase_t *x, t_symbol *s) {
     const char *type_str = s->s_name;
     rand_type_t rand_type;
     int instance = 0;
+    int is_pattern = 0;
 
     // Parse type and instance from string
     if (strncmp(type_str, "rand_", 5) == 0) {
@@ -4268,12 +4372,21 @@ static void ligase_pitch_rand_type(ligase_t *x, t_symbol *s) {
     } else if (strncmp(type_str, "square_", 7) == 0) {
         rand_type = RAND_TYPE_SQUARE;
         instance = atoi(type_str + 7) - 1;
+    } else if (strncmp(type_str, "pattern_", 8) == 0) {
+        rand_type = RAND_TYPE_PATTERN;
+        instance = atoi(type_str + 8) - 1;
+        is_pattern = 1;
     } else {
-        pd_error(x, "ligase~: invalid pitch_rand_type '%s' (use rand_N, perlin_1d_N, perlin_2d_N, lorenz_N, nbody_N, sphere_N, saw_N, sine_N, or square_N where N=1-4)", type_str);
+        pd_error(x, "ligase~: invalid pitch_rand_type '%s' (use rand_N, perlin_1d_N, perlin_2d_N, lorenz_N, nbody_N, sphere_N, saw_N, sine_N, square_N, or pattern_N where N=1-4; pattern_N uses slots 1-8)", type_str);
         return;
     }
 
-    if (instance < 0 || instance > 3) {
+    if (is_pattern) {
+        if (instance < 0 || instance >= PATTERN_SLOTS) {
+            pd_error(x, "ligase~: pattern slot must be 1-%d", PATTERN_SLOTS);
+            return;
+        }
+    } else if (instance < 0 || instance > 3) {
         pd_error(x, "ligase~: pitch rand instance must be 1-4");
         return;
     }
@@ -4352,6 +4465,10 @@ static const char* get_rand_type_name(rand_type_t type) {
         case RAND_TYPE_LORENZ: return "lorenz";
         case RAND_TYPE_NBODY: return "nbody";
         case RAND_TYPE_SPHERE: return "sphere";
+        case RAND_TYPE_SAW: return "saw";       // (were missing -> mislabeled "none" in state dumps)
+        case RAND_TYPE_SINE: return "sine";
+        case RAND_TYPE_SQUARE: return "square";
+        case RAND_TYPE_PATTERN: return "pattern";
         case RAND_TYPE_NONE:
         default: return "none";
     }

@@ -375,8 +375,8 @@ typedef enum {
     RAND_TYPE_SPHERE,    // 3D sphere physics simulation (STK-based)
     RAND_TYPE_SAW,       // Sawtooth wave LFO
     RAND_TYPE_SINE,      // Sine wave LFO
-    RAND_TYPE_SQUARE     // Square wave LFO
-    // RAND_TYPE_PATTERN is appended in P2, together with its sample_param_range case (keeps -Wswitch clean)
+    RAND_TYPE_SQUARE,    // Square wave LFO
+    RAND_TYPE_PATTERN    // Step-sequence / mini-notation source (P2): reads a pattern[] slot's cache
 } rand_type_t;
 
 typedef struct {
@@ -389,6 +389,8 @@ typedef struct {
     float slew;             // Exponential smoothing coefficient 0.0-1.0 (0=instant, 1=frozen, default 0.0)
     float smoothed_value;   // Current smoothed value (internal state)
     int invert;             // Invert modulation output (0=normal, 1=inverted)
+    rand_type_t saved_rand_type;  // P2: prior source before a pattern attach (restored by pattern_clear)
+    int saved_rand_instance;      // P2: prior instance before a pattern attach
 } param_range_t;
 
 // @endregion:ligase_pd.core.types.param_range

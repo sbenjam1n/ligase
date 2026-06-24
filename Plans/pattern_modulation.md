@@ -2,11 +2,32 @@
 
 **Owner:** SLB
 **Date:** 2026-06-24
-**Status:** PLANNED (not started)
+**Status:** ✅ DONE (2026-06-24) — implemented and headless-verified (GATE E); all acceptance criteria pass; `make clean && make` warning-free at every gate; no regression in the existing audio path. Builds on P1 (landed `79070dd`). See Progress.
 **Tracked in:** `QUEUE.md` §4a (PLAN COVERAGE — pattern subsystem build-out); promote into §2 (ON DECK) when scheduled. (NOT §1 — §1 is the COMPLETE-work changelog.)
 **Related:** Plan P1 (`pattern_notation.md`) — the parser + clock + nesting + `pattern_eval_slot` foundation this attaches to (HARD DEPENDENCY). Plan P3 (`pattern_pitch.md`) — the `PITCH_MODE_PATTERN` sibling that reuses the same slot cache for scale-degree stepping.
 
 > **ADVERSARIAL-VERIFY NOTE (2026-06-24):** verified line-by-line against `src/ligase~.c` (4778 lines), `src/types.h` (630), `src/grain.c` (1130). Two code-accuracy defects corrected (see ⚠ markers): (1) the `pattern*` selectors are **not** registered at `4732-4737` — those lines are `param_range`..`rand_type`; P1 has not landed, so all "P1-owned surface" refs are TO-BE-CREATED, not existing reads; (2) **`smear` is not a modulatable range name** — only `smear_frequency/resonance/stages/feedback` are; all examples/tests retargeted. A `bpm>0` guard and a `min==max`-short-circuit attach-guard were added. Everything else checked out and is accurate.
+
+## Progress (2026-06-24) — IMPLEMENTED + VERIFIED
+
+Built across GATE C (read path) and GATE D (wire path); `make clean && make` warning-free at each.
+- **GATE C (sampler + print):** `RAND_TYPE_PATTERN` added to `rand_type_t` (the value P1 deferred); `saved_rand_type`/`saved_rand_instance` appended to `param_range_t` (default initializer extended). `case RAND_TYPE_PATTERN:` added to **both** `sample_param_range` and `sample_scale_semitones` (reads `pattern[rand_instance].cached_value`, reading `rand_instance` directly to bypass the 0..3 clamp; neutral 0.5 when the slot is unloaded/out-of-range). Print fixes: `ligase_param_range` dump labels `"pattern"`; **`get_rand_type_name` SAW/SINE/SQUARE gap fixed** (they were mislabeled `"none"`) plus `"pattern"`.
+- **GATE D (wire path):** `pattern_alloc_param_slot()` (reuse-or-first-free via `step_count==0`; slot `PATTERN_SLOTS-1` reserved for pitch). `ligase_pattern` first arg generalized: **param name** → resolve + auto-slot + attach; **`pitch`** → slot 7 (P3 wires mode); **numeric** → raw load (testing / two-step). Attach saves the prior source, sets `rand_type=PATTERN`/`rand_instance=slot`/`enabled=1`, and resets a collapsed `min==max` span to `[0,1]`. `ligase_pattern_clear` generalized (numeric slot | `pitch` | param-name restore-then-free). `pattern_N` branch added to **both** `ligase_rand_type` and `ligase_pitch_rand_type` ladders with an `is_pattern`-guarded relaxation of the 0..3 instance check (slots 0..PATTERN_SLOTS-1).
+
+| AC | Test (`/tmp/pat_tests/P2*.pd`, via `modout` outlet → `[change]` → `[print]`) | Result |
+|----|------|--------|
+| Even map | `param_range modout1 100 900` + `pattern modout1 0.0 0.5 1.0` | outlet emits 100→500→900 at 0.667 s (= 2.0/3); ✓ |
+| Nested + invert | `param_invert modout1 1` + `pattern modout1 [ 0.2 0.4 ] 0.8` (0..100) | 80→60→20 (inverted) at ¼,¼,½; ✓ |
+| Outlets fire | all tests drive a `modout` target | `enabled && rand_type != NONE` gate passes pattern sources; ✓ |
+| Clear/restore | `rand_type sine_1 modout1` → attach → `pattern_clear modout1` | "restored type sine", sine resumes (also proves the `get_rand_type_name` fix); ✓ |
+| Slot ≥4 | `pattern 5 …` + `rand_type pattern_6 modout1` | reads slot 5 → 20/80 (bypasses the 0..3 clamp); ✓ |
+| min==max guard | `param_range modout2 0.5` + `pattern modout2 0.0 1.0` | "reset map span to [0,1]", steps 0/1; ✓ |
+| Slot allocation | modout2→slot 0, then `smear_frequency`→slot 1 | independent auto-allocated slots; ✓ |
+| Wrong name | `pattern smear …` | `unknown parameter 'smear'` (only `smear_frequency`/etc. are valid); ✓ |
+
+Alternation-on-a-param is covered by composition (P1 alternation eval + this attach read the same `cached_value`); the invert/slew tail is reused byte-identically (the pattern case only sets `random_value`). Regression: `test_delay.pd` clean, WAV intact.
+
+**Scope notes:** the numeric-slot path stays load-only (no attach) for testing/two-step; the `ligase_pitch_rand_type` `pattern_N` branch + the `sample_scale_semitones` pattern case were both added (full ladder parity), letting `PITCH_MODE_RANGE/SCALE` optionally draw its selector from a pattern — distinct from P3's dedicated `PITCH_MODE_PATTERN` scale-degree stepper.
 
 ## Problem
 The user wants to drive any modulatable parameter from a TidalCycles-style mini-notation pattern, not just the stochastic generators (rand/perlin/lorenz/nbody/sphere/saw/sine/square). Their stated requirements:
