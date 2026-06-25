@@ -6076,6 +6076,140 @@ static void ligase_morph_state(ligase_t *x) {
          "use morph_save for those).", m->point_count, m->route_len, snaps);
 }
 
+// ── Text export/import — fully portable surfaces (snapshot bodies included) ──
+// A whitespace-delimited .txt: a logical-field schema (not memory layout) so it survives struct
+// padding/reordering across builds; a "ligase_morph <ver>" header guards semantic schema changes.
+// One snap line carries a full snapshot body (ranges + scalars + discretes + both scale lists,
+// each scale fixed at MAX_SCALE_NOTES wide for boundary-free token parsing).
+
+static void morph_write_snap(FILE *f, int id, const morph_snapshot_t *s) {
+    fprintf(f, "snap %d", id);
+    for (int r = 0; r < MORPH_RANGE_COUNT; r++) {
+        const morph_range_slot_t *q = &s->ranges[r];
+        fprintf(f, " %.9g %.9g %d %d %d %.9g %.9g %d",
+                q->min, q->max, q->enabled, q->rand_type, q->rand_instance, q->base_value, q->slew, q->invert);
+    }
+    for (int i = 0; i < MORPH_SCALAR_USED; i++)   fprintf(f, " %.9g", s->scalars[i]);
+    for (int i = 0; i < MORPH_DISCRETE_USED; i++) fprintf(f, " %d", s->discretes[i]);
+    fprintf(f, " %d", s->pitch_scale_count);
+    for (int i = 0; i < MAX_SCALE_NOTES; i++) fprintf(f, " %.9g", s->pitch_scale[i]);
+    fprintf(f, " %d", s->smear_pitch_scale_count);
+    for (int i = 0; i < MAX_SCALE_NOTES; i++) fprintf(f, " %.9g", s->smear_pitch_scale[i]);
+    fprintf(f, "\n");
+}
+
+// Reads the snap body (the caller has consumed 'snap' + id). Returns 1 on success.
+static int morph_read_snap(FILE *f, morph_snapshot_t *s) {
+    memset(s, 0, sizeof(*s));
+    for (int r = 0; r < MORPH_RANGE_COUNT; r++) {
+        morph_range_slot_t *q = &s->ranges[r];
+        float mn, mx, bv, sl; int en, rt, ri, iv;
+        if (fscanf(f, "%g %g %d %d %d %g %g %d", &mn, &mx, &en, &rt, &ri, &bv, &sl, &iv) != 8) return 0;
+        q->min = mn; q->max = mx; q->enabled = en; q->rand_type = rt;
+        q->rand_instance = ri; q->base_value = bv; q->slew = sl; q->invert = iv;
+    }
+    for (int i = 0; i < MORPH_SCALAR_USED; i++)   if (fscanf(f, "%g", &s->scalars[i]) != 1) return 0;
+    for (int i = 0; i < MORPH_DISCRETE_USED; i++) if (fscanf(f, "%d", &s->discretes[i]) != 1) return 0;
+    if (fscanf(f, "%d", &s->pitch_scale_count) != 1) return 0;
+    for (int i = 0; i < MAX_SCALE_NOTES; i++) if (fscanf(f, "%g", &s->pitch_scale[i]) != 1) return 0;
+    if (fscanf(f, "%d", &s->smear_pitch_scale_count) != 1) return 0;
+    for (int i = 0; i < MAX_SCALE_NOTES; i++) if (fscanf(f, "%g", &s->smear_pitch_scale[i]) != 1) return 0;
+    // clamp counts defensively (a corrupt file must not let the blend over-read the scale arrays)
+    if (s->pitch_scale_count < 0) s->pitch_scale_count = 0;
+    if (s->pitch_scale_count > MAX_SCALE_NOTES) s->pitch_scale_count = MAX_SCALE_NOTES;
+    if (s->smear_pitch_scale_count < 0) s->smear_pitch_scale_count = 0;
+    if (s->smear_pitch_scale_count > MAX_SCALE_NOTES) s->smear_pitch_scale_count = MAX_SCALE_NOTES;
+    return 1;
+}
+
+static void ligase_morph_export(ligase_t *x, t_symbol *s) {
+    if (!x->morph) return;
+    if (!s || !s->s_name || !*s->s_name) { pd_error(x, "ligase~: morph_export needs a filename"); return; }
+    char path[MAXPDSTRING];
+    canvas_makefilename(x->x_canvas, s->s_name, path, MAXPDSTRING);
+    size_t len = strlen(path);
+    if (!(len >= 4 && strcmp(path + len - 4, ".txt") == 0) && len + 4 < MAXPDSTRING)
+        strcpy(path + len, ".txt");
+    FILE *f = fopen(path, "w");
+    if (!f) { pd_error(x, "ligase~: morph_export — cannot open %s", path); return; }
+    morph_state_t *m = x->morph;
+    fprintf(f, "ligase_morph %d\n", MORPH_TEXT_VERSION);
+    fprintf(f, "power %.9g\n", m->idw_power);
+    fprintf(f, "cursor %.9g %.9g\n", m->cursor_x, m->cursor_y);
+    int snaps = 0;
+    for (int i = 0; i < MORPH_MAX_SNAPSHOTS; i++)
+        if (m->snaps[i].in_use) { morph_write_snap(f, i, &m->snaps[i]); snaps++; }
+    for (int i = 0; i < m->point_count; i++)
+        fprintf(f, "point %d %.9g %.9g\n", m->points[i].snap_id, m->points[i].x, m->points[i].y);
+    for (int i = 0; i < m->route_len; i++)
+        fprintf(f, "route %.9g %.9g %.9g %d\n", m->route[i].x, m->route[i].y, m->route[i].rate, m->route[i].curve);
+    int werr = ferror(f);
+    fclose(f);
+    if (werr) { pd_error(x, "ligase~: morph_export — write error: %s", path); return; }
+    post("ligase~: morph exported to %s (%d snapshots, %d points, %d waypoints; text v%d)",
+         path, snaps, m->point_count, m->route_len, MORPH_TEXT_VERSION);
+}
+
+static void ligase_morph_import(ligase_t *x, t_symbol *s) {
+    if (!x->morph) return;
+    if (!s || !s->s_name || !*s->s_name) { pd_error(x, "ligase~: morph_import needs a filename"); return; }
+    char dirbuf[MAXPDSTRING], *nameptr = NULL;
+    int fd = canvas_open(x->x_canvas, s->s_name, ".txt", dirbuf, &nameptr, MAXPDSTRING, 1);
+    if (fd < 0) { pd_error(x, "ligase~: morph_import — file not found: %s", s->s_name); return; }
+    sys_close(fd);
+    char path[MAXPDSTRING];
+    int wrote = snprintf(path, MAXPDSTRING, "%s/%s", dirbuf, nameptr ? nameptr : s->s_name);
+    if (wrote < 0 || wrote >= MAXPDSTRING) { pd_error(x, "ligase~: morph_import — path too long"); return; }
+    FILE *f = fopen(path, "r");
+    if (!f) { pd_error(x, "ligase~: morph_import — cannot open %s", path); return; }
+
+    char tok[64];
+    int ver = 0;
+    if (fscanf(f, "%63s", tok) != 1 || strcmp(tok, "ligase_morph") != 0) {
+        fclose(f); pd_error(x, "ligase~: morph_import — not a morph text file: %s", path); return;
+    }
+    if (fscanf(f, "%d", &ver) != 1 || ver != MORPH_TEXT_VERSION) {
+        fclose(f); pd_error(x, "ligase~: morph_import — unsupported text version %d (need %d)", ver, MORPH_TEXT_VERSION); return;
+    }
+
+    // Fresh import: clear snapshots + surface, keep kernel defaults until the file overrides them.
+    morph_state_t *m = x->morph;
+    for (int i = 0; i < MORPH_MAX_SNAPSHOTS; i++) m->snaps[i].in_use = 0;
+    m->point_count = 0; m->route_len = 0; m->route_active = 0;
+
+    int snaps = 0, pts = 0, rts = 0, bad = 0;
+    while (fscanf(f, "%63s", tok) == 1) {
+        if (strcmp(tok, "snap") == 0) {
+            int id;
+            if (fscanf(f, "%d", &id) != 1 || id < 0 || id >= MORPH_MAX_SNAPSHOTS) { bad = 1; break; }
+            if (!morph_read_snap(f, &m->snaps[id])) { bad = 1; break; }
+            m->snaps[id].in_use = 1; snaps++;
+        } else if (strcmp(tok, "point") == 0) {
+            int id; float px, py;
+            if (fscanf(f, "%d %g %g", &id, &px, &py) != 3) { bad = 1; break; }
+            if (m->point_count < MORPH_MAX_SNAPSHOTS) {
+                morph_point_t *p = &m->points[m->point_count++];
+                p->snap_id = id; p->x = px; p->y = py; p->in_use = 1; pts++;
+            }
+        } else if (strcmp(tok, "route") == 0) {
+            float rx, ry, rr; int rc;
+            if (fscanf(f, "%g %g %g %d", &rx, &ry, &rr, &rc) != 4) { bad = 1; break; }
+            if (m->route_len < MORPH_MAX_WAYPOINTS) {
+                morph_waypoint_t *w = &m->route[m->route_len++];
+                w->x = rx; w->y = ry; w->rate = rr; w->curve = rc; rts++;
+            }
+        } else if (strcmp(tok, "power") == 0) {
+            float p; if (fscanf(f, "%g", &p) == 1) m->idw_power = p;
+        } else if (strcmp(tok, "cursor") == 0) {
+            float cx, cy; if (fscanf(f, "%g %g", &cx, &cy) == 2) { m->cursor_x = cx; m->cursor_y = cy; }
+        } else { bad = 1; break; }   // unknown directive
+    }
+    fclose(f);
+    if (bad) { pd_error(x, "ligase~: morph_import — parse error in %s (loaded %d snapshots so far)", path, snaps); return; }
+    post("ligase~: morph imported from %s (%d snapshots, %d points, %d waypoints)", path, snaps, pts, rts);
+    if (m->point_count > 0) morph_apply_at(x, m->cursor_x, m->cursor_y);
+}
+
 // @region:ligase_pd.pd_external.setup Setup Function
 
 LIGASE_PUBLIC void ligase_tilde_setup(void) {
@@ -6289,6 +6423,8 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_morph_save, gensym("morph_save"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_load, gensym("morph_load"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_state, gensym("morph_state"), 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_export, gensym("morph_export"), A_DEFSYMBOL, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_import, gensym("morph_import"), A_DEFSYMBOL, 0);
 }
 
 // @endregion:ligase_pd.pd_external.setup

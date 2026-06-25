@@ -21,6 +21,15 @@
 
 #define MORPH_INCLUDE_COUNT (MORPH_RANGE_COUNT + MORPH_SCALAR_COUNT + MORPH_DISCRETE_COUNT)
 
+// Logical field counts actually populated by capture — the schema for the TEXT export
+// (morph_export/morph_import). MUST match the capture in ligase~.c:
+//   MORPH_SCALAR_USED   = morph_collect_scalars() (21) + MORPH_FX_SCALARS (11)
+//   MORPH_DISCRETE_USED = morph_collect_discretes() (28) + 2 enums (playhead_mode, pitch mode)
+// Bump MORPH_TEXT_VERSION whenever this schema changes (older text files are then refused).
+#define MORPH_SCALAR_USED   32
+#define MORPH_DISCRETE_USED 30
+#define MORPH_TEXT_VERSION  1
+
 // Route-leg easing curves
 enum {
     MORPH_CURVE_LINEAR = 0,

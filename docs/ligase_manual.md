@@ -373,6 +373,7 @@ morph_route <x> <y> <rate> <curve> - Append a route waypoint (rate sec, curve 0-
 morph_run [loop] / morph_stop / morph_pause - Play / halt the route. morph_route_clear empties it.
 morph_save <file> / morph_load <file> - Save / load the whole surface (every snapshot + points + cursor + route) to a .morph file
 morph_state - Dump the surface LAYOUT (points/route/cursor/power) as re-sendable messages to the state outlet
+morph_export <file> / morph_import <file> - Text (.txt) export/import of the WHOLE surface incl. snapshot bodies (human-readable, build-portable)
 
 See MORPH / METASURFACE for the full model.
 
