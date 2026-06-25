@@ -6,6 +6,7 @@
 #include "grain_distortion.h"
 #include "grain_moogladder.h"
 #include "grain_smear.h"
+#include "morph.h"
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -202,6 +203,8 @@ struct _ligase {
     grain_delay_bencina_t *delay_bencina;  // Bencina mode processor
     grain_moogladder_t *moogladder;
     grain_smear_t *smear;   // allpass smear effect
+
+    morph_state_t *morph;   // morph / Metasurface layer (snapshot interpolation)
 
     // Parameters
     float grain_size;
@@ -5235,6 +5238,7 @@ static void ligase_free(ligase_t *x) {
     if (x->scheduler) scheduler_destroy(x->scheduler);
     if (x->envelope) envelope_destroy(x->envelope);
     if (x->reel) reel_destroy(x->reel);
+    if (x->morph) freebytes(x->morph, sizeof(morph_state_t));
 }
 
 static void *ligase_new(void) {
@@ -5302,6 +5306,10 @@ static void *ligase_new(void) {
         ligase_free(x);
         return NULL;
     }
+
+    // Morph / Metasurface layer (optional; every use is guarded by `if (x->morph)`)
+    x->morph = (morph_state_t *)getbytes(sizeof(morph_state_t));
+    if (x->morph) morph_state_init(x->morph);
 
     // Initialize parameters
     x->grain_size = 0.1f;

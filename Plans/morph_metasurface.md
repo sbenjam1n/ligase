@@ -2,7 +2,7 @@
 
 **Owner:** SLB
 **Date:** 2026-06-24
-**Status:** PLANNED (not started)
+**Status:** IN PROGRESS — Step 1/GATE B done (module `src/morph.{c,h}` + types + alloc/free, warning-free, no behavior). Next: Step 2/GATE C (capture + recall). GATE-A decisions taken = the `[R]` recommendations (IDW v1 kernel behind a kernel-agnostic API; float `morph_x`/`morph_y` now, signal inlets v1.x; argmax discretes; shadow FX capture; stepper before `update_inlets`; full-param capture; caps 64).
 **Tracked in:** `QUEUE.md` §4a (PLAN COVERAGE — new directions). (NOT §1 — §1 is the COMPLETE-work changelog.)
 **Related:** the **modulation** subsystem (`param_range_t` + `sample_param_range`, `src/grain.c:201`; the `get_param_range_by_name` dispatch, `src/ligase~.c:3962`); the **state read/write** API (`ligase_get_state`/`get_params`/`get_ranges`/`get_generators`, `src/ligase~.c:5216-5219`; the ~160 `class_addmethod` setters registered in `ligase_tilde_setup`, `src/ligase~.c:5448`); the **pattern** subsystem (the per-block cycle clock at `src/ligase~.c:1679-1697`, which this plan's morph clock is modelled on); the **pitch** destinations (`pitch_control_t` / `smear_pitch_control_t`, `src/types.h:417-462`) and **effects** (smear/Bencina/distortion/Moog) as snapshot targets. This is the first **control-rate automation/morph layer** plan; it sits ON TOP OF the existing param set rather than inside any one subsystem.
 
