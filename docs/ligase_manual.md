@@ -372,6 +372,7 @@ morph_power <p> - IDW sharpness (default 2; higher = more local)
 morph_route <x> <y> <rate> <curve> - Append a route waypoint (rate sec, curve 0-4)
 morph_run [loop] / morph_stop / morph_pause - Play / halt the route. morph_route_clear empties it.
 morph_save <file> / morph_load <file> - Save / load the whole surface (every snapshot + points + cursor + route) to a .morph file
+morph_state - Dump the surface LAYOUT (points/route/cursor/power) as re-sendable messages to the state outlet
 
 See MORPH / METASURFACE for the full model.
 
@@ -2776,6 +2777,13 @@ load/save for the reel; a .morph extension is added if you leave it off). morph_
 back — into the same patch or a fresh instance — and re-applies the cursor so the live sound jumps to
 the loaded blend. The file carries a version/layout header, so a .morph written by an incompatible
 build is refused rather than mis-read.
+
+morph_state is the human-readable counterpart: it dumps the surface LAYOUT — morph_power, a
+morph_point per placed snapshot, a morph_route per waypoint, and the morph cursor — to the state
+outlet as RE-SENDABLE messages. Route that outlet to a [text] or message boxes to inspect, edit,
+version-control, or embed a layout in a patch; replaying it restores the geometry over snapshots
+that already exist (so pair it with morph_save/morph_load, or a re-capture, for the snapshot
+bodies — those hold hundreds of values each and are not dumped as messages).
 
 ## Notes
 

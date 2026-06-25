@@ -6040,6 +6040,42 @@ static void ligase_morph_load(ligase_t *x, t_symbol *s) {
     if (x->morph->point_count > 0) morph_apply_at(x, x->morph->cursor_x, x->morph->cursor_y);
 }
 
+// morph_state: dump the surface LAYOUT to the state outlet as RE-SENDABLE messages (human-readable;
+// route outlet 9 -> a [text]/message boxes to embed/version a surface, or just print to inspect).
+// This is the layout half — the snapshot BODIES (the captured patch values) are not re-sendable as
+// messages (each is hundreds of values); use morph_save/morph_load for those. Replaying the dump
+// therefore restores geometry over snapshots that already exist (after a morph_load or re-capture).
+static void ligase_morph_state(ligase_t *x) {
+    if (!x->morph) return;
+    morph_state_t *m = x->morph;
+    t_atom a[4];
+
+    SETFLOAT(&a[0], m->idw_power);
+    outlet_anything(x->x_state_out, gensym("morph_power"), 1, a);
+
+    for (int i = 0; i < m->point_count; i++) {
+        SETFLOAT(&a[0], m->points[i].snap_id);
+        SETFLOAT(&a[1], m->points[i].x);
+        SETFLOAT(&a[2], m->points[i].y);
+        outlet_anything(x->x_state_out, gensym("morph_point"), 3, a);
+    }
+    for (int i = 0; i < m->route_len; i++) {
+        SETFLOAT(&a[0], m->route[i].x);
+        SETFLOAT(&a[1], m->route[i].y);
+        SETFLOAT(&a[2], m->route[i].rate);
+        SETFLOAT(&a[3], m->route[i].curve);
+        outlet_anything(x->x_state_out, gensym("morph_route"), 4, a);
+    }
+    SETFLOAT(&a[0], m->cursor_x);
+    SETFLOAT(&a[1], m->cursor_y);
+    outlet_anything(x->x_state_out, gensym("morph"), 2, a);
+
+    int snaps = 0;
+    for (int i = 0; i < MORPH_MAX_SNAPSHOTS; i++) if (m->snaps[i].in_use) snaps++;
+    post("ligase~: morph_state dumped layout (%d points, %d waypoints; %d snapshot bodies in RAM — "
+         "use morph_save for those).", m->point_count, m->route_len, snaps);
+}
+
 // @region:ligase_pd.pd_external.setup Setup Function
 
 LIGASE_PUBLIC void ligase_tilde_setup(void) {
@@ -6252,6 +6288,7 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     // Morph / Metasurface — persistence (whole surface + all snapshots to one file)
     class_addmethod(ligase_class, (t_method)ligase_morph_save, gensym("morph_save"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_load, gensym("morph_load"), A_DEFSYMBOL, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_state, gensym("morph_state"), 0);
 }
 
 // @endregion:ligase_pd.pd_external.setup
