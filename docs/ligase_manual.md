@@ -369,6 +369,7 @@ morph_unplace <id> - Remove a snapshot's surface point
 morph <x> <y> - Move the cursor -> blend all placed snapshots by distance (the live morph)
 morph_x <v> / morph_y <v> - Move one cursor axis
 morph_power <p> - IDW sharpness (default 2; higher = more local)
+morph_include <name...> / morph_exclude <name...> - Limit which params the morph applies (all / a param / a group: pitch, smear_pitch, fx)
 morph_route <x> <y> <rate> <curve> - Append a route waypoint (rate sec, curve 0-4)
 morph_run [loop] / morph_stop / morph_pause - Play / halt the route. morph_route_clear empties it.
 morph_save <file> / morph_load <file> - Save / load the whole surface (every snapshot + points + cursor + route) to a .morph file
@@ -2747,6 +2748,24 @@ morph_power <p> sets the IDW sharpness (default 2.0; higher pulls the blend tigh
 morph_interp selects the weighting kernel — only IDW/Shepard ships in v1; natural-neighbour (Bencina's exact
 method) is reserved (morph_interp 1 warns and stays on IDW).
 
+## Limiting which parameters morph
+
+By default the morph applies to the whole patch. morph_exclude <name...> drops parameters from the
+blend — an excluded parameter keeps whatever manual / modulation / inlet control owns it and the
+cursor leaves it untouched; morph_include <name...> adds them back, and morph_include all resets to
+the full patch. Snapshots still CAPTURE everything either way — this only changes what the cursor
+APPLIES (Bencina's Parameter Selection Tree).
+
+Targets: all; a single parameter — amplitude, pan, speed, grainsize, grainstart, moog_cutoff,
+moog_resonance, moog_mix, smear_frequency, smear_resonance, smear_stages, smear_feedback, gdelay,
+gdelay_feedback, gdelay_tone, gdelay_mix; or a group — pitch (the grain pitch -> playback speed),
+smear_pitch (the resonator note), fx (moog + smear-resonator + delay + distortion). Each name covers
+that parameter's modulation band, its scalar base, and any mode it owns.
+
+  morph_exclude pitch        # morph the timbre but hold the notes fixed
+  morph_exclude fx           # morph grain + pitch but leave the effects alone
+  morph_include all          # back to morphing everything
+
 ## Routes (automated cursor paths)
 
 A route is a list of waypoints the cursor walks through over time — an automation envelope on the morph
@@ -2803,8 +2822,9 @@ layout only — for inspection or embedding a layout in a patch).
   live-CV-wins precedence). The modulation BAND of those params always morphs.
 - Distortion-enhancement and stut/bencina scalar bases are not captured yet (their modulation bands are);
   they hold their current value across a recall.
-- Per-parameter morph include/exclude and a signal-rate (CV) cursor are planned (v1.1). Today the cursor is
-  message/float-driven and the morph covers the full patch.
+- morph_include/morph_exclude limit which parameters the morph applies (see "Limiting which parameters
+morph"). A signal-rate (CV) cursor and a natural-neighbour kernel remain planned (v1.1); today the
+cursor is message/float-driven and the kernel is IDW.
 
 # QUERY STATE
 

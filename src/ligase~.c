@@ -5755,6 +5755,15 @@ static void ligase_snapshot_clear(ligase_t *x, t_symbol *s, int argc, t_atom *ar
     post("ligase~: snapshot %d cleared", id);
 }
 
+// included[] index layout: ranges [0..44], scalars [45..45+63], discretes [45+64..].
+#define MORPH_INC_SCALAR(i)   (MORPH_RANGE_COUNT + (i))
+#define MORPH_INC_DISCRETE(i) (MORPH_RANGE_COUNT + MORPH_SCALAR_COUNT + (i))
+
+static int morph_any_excluded(const morph_state_t *m) {
+    for (int i = 0; i < MORPH_INCLUDE_COUNT; i++) if (!m->included[i]) return 1;
+    return 0;
+}
+
 // ── The blend: apply the interpolated patch at cursor (cx,cy) ────────────────
 // Continuous fields (range min/max/base_value/slew + all scalars) = IDW weighted sum;
 // discrete fields (range enabled/rand_type/rand_instance/invert, the discretes, the scale
@@ -5807,6 +5816,29 @@ static void morph_apply_at(ligase_t *x, float cx, float cy) {
         memcpy(b.pitch_scale, as->pitch_scale, sizeof(b.pitch_scale));
         b.smear_pitch_scale_count = as->smear_pitch_scale_count;
         memcpy(b.smear_pitch_scale, as->smear_pitch_scale, sizeof(b.smear_pitch_scale));
+    }
+
+    // Selection tree: for any EXCLUDED field, overwrite the blended value with the CURRENT live
+    // value, so applying b is a no-op for it — the morph leaves it to manual/modulation/inlet
+    // control. (Scales follow their pitch / smear-pitch group's discrete-mode flag.)
+    if (morph_any_excluded(m)) {
+        morph_snapshot_t cur;
+        morph_capture(x, &cur);
+        int *inc = m->included;
+        for (int r = 0; r < MORPH_RANGE_COUNT; r++)
+            if (!inc[r]) b.ranges[r] = cur.ranges[r];
+        for (int s = 0; s < MORPH_SCALAR_COUNT; s++)
+            if (!inc[MORPH_INC_SCALAR(s)]) b.scalars[s] = cur.scalars[s];
+        for (int d = 0; d < MORPH_DISCRETE_COUNT; d++)
+            if (!inc[MORPH_INC_DISCRETE(d)]) b.discretes[d] = cur.discretes[d];
+        if (!inc[MORPH_INC_DISCRETE(29)]) {   // pitch mode -> keep the grain pitch scale
+            b.pitch_scale_count = cur.pitch_scale_count;
+            memcpy(b.pitch_scale, cur.pitch_scale, sizeof(b.pitch_scale));
+        }
+        if (!inc[MORPH_INC_DISCRETE(23)]) {   // smear source -> keep the smear pitch scale
+            b.smear_pitch_scale_count = cur.smear_pitch_scale_count;
+            memcpy(b.smear_pitch_scale, cur.smear_pitch_scale, sizeof(b.smear_pitch_scale));
+        }
     }
 
     morph_restore(x, &b);
@@ -5897,6 +5929,65 @@ static void ligase_morph_power(ligase_t *x, t_floatarg p) {
     x->morph->idw_power = p;
     post("ligase~: morph IDW power = %.2f", p);
 }
+
+// ── Selection tree — which parameters the morph applies (morph_include/exclude) ──
+// Snapshots always CAPTURE the whole patch; this only gates what the BLEND writes. A target
+// name resolves to a set of included[] flags. Names: "all", per-parameter (amplitude, pan,
+// speed, grainsize, grainstart, moog_*, smear_*, gdelay*), and groups (pitch, smear_pitch, fx).
+// Returns 0 if the name was not recognised.
+static int morph_set_included(ligase_t *x, const char *name, int on) {
+    int *inc = x->morph->included;
+    #define R(i)  inc[(i)] = on
+    #define S(i)  inc[MORPH_INC_SCALAR(i)] = on
+    #define D(i)  inc[MORPH_INC_DISCRETE(i)] = on
+    if (!strcmp(name, "all"))            { for (int i = 0; i < MORPH_INCLUDE_COUNT; i++) inc[i] = on; return 1; }
+    if (!strcmp(name, "amplitude"))      { R(16); S(4);  return 1; }
+    if (!strcmp(name, "pan"))            { R(17); S(5);  return 1; }
+    if (!strcmp(name, "speed"))          { R(0);  S(2);  return 1; }
+    if (!strcmp(name, "grainsize"))      { R(6);  S(0);  return 1; }
+    if (!strcmp(name, "grainstart"))     { R(7);  S(1);  return 1; }
+    if (!strcmp(name, "moog_cutoff"))    { R(18); S(21); return 1; }
+    if (!strcmp(name, "moog_resonance")) { R(19); S(22); return 1; }
+    if (!strcmp(name, "moog_mix"))       { R(20); S(23); return 1; }
+    if (!strcmp(name, "smear_frequency")){ R(33); S(24); return 1; }
+    if (!strcmp(name, "smear_resonance")){ R(34); S(25); return 1; }
+    if (!strcmp(name, "smear_stages"))   { R(35); S(26); return 1; }
+    if (!strcmp(name, "smear_feedback")) { R(36); S(27); return 1; }
+    if (!strcmp(name, "gdelay"))         { R(11); S(28); return 1; }
+    if (!strcmp(name, "gdelay_feedback")){ R(12); S(29); return 1; }
+    if (!strcmp(name, "gdelay_tone"))    { R(13); S(30); return 1; }
+    if (!strcmp(name, "gdelay_mix"))     { R(14); S(31); return 1; }
+    if (!strcmp(name, "pitch")) {         // grain pitch (-> playback speed)
+        R(38); R(39); S(16); S(17); D(20); D(21); D(29); return 1; }
+    if (!strcmp(name, "smear_pitch")) {   // resonator note->Hz pitch
+        R(37); R(40); S(18); S(19); S(20); D(22); D(23); D(24); D(25); D(26); D(27); return 1; }
+    if (!strcmp(name, "fx")) {            // moog + smear-resonator + delay + distortion
+        int rs[] = {11,12,13,14,15,18,19,20,21,22,23,24,25,26,27,28,33,34,35,36};
+        for (unsigned i = 0; i < sizeof(rs)/sizeof(rs[0]); i++) R(rs[i]);
+        for (int i = 21; i <= 31; i++) S(i);   // the FX scalar bases
+        return 1; }
+    #undef R
+    #undef S
+    #undef D
+    return 0;
+}
+
+static void morph_select(ligase_t *x, t_symbol *s, int argc, t_atom *argv, int on) {
+    (void)s;
+    if (!x->morph) return;
+    if (argc < 1) { pd_error(x, "ligase~: morph_%s needs a target name (or 'all')", on ? "include" : "exclude"); return; }
+    for (int i = 0; i < argc; i++) {
+        if (argv[i].a_type != A_SYMBOL) { pd_error(x, "ligase~: morph target %d must be a name", i + 1); continue; }
+        const char *nm = argv[i].a_w.w_symbol->s_name;
+        if (!morph_set_included(x, nm, on))
+            pd_error(x, "ligase~: morph_%s — unknown target '%s'", on ? "include" : "exclude", nm);
+    }
+    int excl = morph_any_excluded(x->morph);
+    post("ligase~: morph now %s the full patch%s", excl ? "EXCLUDES some of" : "applies",
+         excl ? " (morph_include all to reset)" : "");
+}
+static void ligase_morph_include(ligase_t *x, t_symbol *s, int argc, t_atom *argv) { morph_select(x, s, argc, argv, 1); }
+static void ligase_morph_exclude(ligase_t *x, t_symbol *s, int argc, t_atom *argv) { morph_select(x, s, argc, argv, 0); }
 
 // ── Routes — automated cursor trajectories (the value-add over AudioMulch) ───
 
@@ -6413,6 +6504,8 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_morph_y,       gensym("morph_y"),       A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_interp,  gensym("morph_interp"),  A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_power,   gensym("morph_power"),   A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_include, gensym("morph_include"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_exclude, gensym("morph_exclude"), A_GIMME, 0);
     // Morph / Metasurface — routes (automated cursor trajectories)
     class_addmethod(ligase_class, (t_method)ligase_morph_route,       gensym("morph_route"),       A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_route_clear, gensym("morph_route_clear"), 0);
