@@ -5548,6 +5548,119 @@ static void morph_restore_ranges(ligase_t *x, const morph_snapshot_t *snap) {
     }
 }
 
+// Continuous scalar BASES that live in plain x->/scheduler-> fields (lerp on blend).
+// FX scalars (smear/moog/dist/gdelay/bencina) live in the opaque FX objects with no
+// readback — they get shadow mirrors in step 2b-2, NOT here.
+static int morph_collect_scalars(ligase_t *x, float **p) {
+    scheduler_t *s = x->scheduler;
+    int n = 0;
+    p[n++] = &x->grain_size;
+    p[n++] = &x->grain_start;
+    p[n++] = &x->speed;
+    p[n++] = &x->organize_cv;
+    p[n++] = &x->amplitude;
+    p[n++] = &x->pan;
+    p[n++] = &x->saw_cycles;
+    p[n++] = &x->saw_depth;
+    p[n++] = &x->scan_rate;
+    p[n++] = &x->sos_value;
+    p[n++] = &s->iot;
+    p[n++] = &x->quant_amount;
+    p[n++] = &x->gs_quant_amount;
+    p[n++] = &x->delay_quant_amount;
+    p[n++] = &x->stut_length_ms;
+    p[n++] = &x->stut_len_quant_amount;
+    p[n++] = &s->pitch_control.semitones;
+    p[n++] = &s->pitch_control.pitch_fine;
+    p[n++] = &s->smear_pitch_control.semitone;
+    p[n++] = &s->smear_pitch_control.ref_hz;
+    p[n++] = &s->smear_pitch_control.semitone_fine;
+    return n;   // 21 (<= MORPH_SCALAR_COUNT)
+}
+
+// Discrete INT fields (argmax-step on blend). The two genuine enums (playhead_mode,
+// pitch_control.mode) are handled by value in capture/restore to avoid aliasing an
+// enum lvalue through int* — they occupy the two slots after this table's count.
+static int morph_collect_discretes(ligase_t *x, int **p) {
+    scheduler_t *s = x->scheduler;
+    int n = 0;
+    p[n++] = &x->clock_advance_use_quantized;
+    p[n++] = &x->sos_mode;
+    p[n++] = &x->headless_mode;
+    p[n++] = &x->outlet3_mode;
+    p[n++] = &x->grain_bang_rate;
+    p[n++] = &x->quant_note;
+    p[n++] = &x->time_sig_numerator;
+    p[n++] = &x->time_sig_denominator;
+    p[n++] = &x->gs_quant_note;
+    p[n++] = &x->gs_time_sig_numerator;
+    p[n++] = &x->gs_time_sig_denominator;
+    p[n++] = &x->delay_quant_note;
+    p[n++] = &x->delay_time_sig_numerator;
+    p[n++] = &x->delay_time_sig_denominator;
+    p[n++] = &x->stut_length_mode;
+    p[n++] = &x->stut_len_quant_note;
+    p[n++] = &s->max_grains;
+    p[n++] = &s->pan_mode;
+    p[n++] = &s->grain_midi_channel;
+    p[n++] = &s->smear_midi_channel;
+    p[n++] = &s->pitch_control.midi_note;
+    p[n++] = &s->pitch_control.pitch_pattern_slot;
+    p[n++] = &s->smear_pitch_control.enabled;
+    p[n++] = &s->smear_pitch_control.source;
+    p[n++] = &s->smear_pitch_control.note;
+    p[n++] = &s->smear_pitch_control.ref_note;
+    p[n++] = &s->smear_pitch_control.pattern_slot;
+    p[n++] = &s->smear_pitch_control.midi_channel;
+    return n;   // 28 (+ 2 enums by value => 30 <= MORPH_DISCRETE_COUNT)
+}
+
+static void morph_capture_scales(ligase_t *x, morph_snapshot_t *snap) {
+    pitch_scale_t *ps = &x->scheduler->pitch_control.scale;
+    snap->pitch_scale_count = ps->count;
+    memcpy(snap->pitch_scale, ps->semitones, sizeof(snap->pitch_scale));
+    pitch_scale_t *ss = &x->scheduler->smear_pitch_control.scale;
+    snap->smear_pitch_scale_count = ss->count;
+    memcpy(snap->smear_pitch_scale, ss->semitones, sizeof(snap->smear_pitch_scale));
+}
+
+static void morph_restore_scales(ligase_t *x, const morph_snapshot_t *snap) {
+    pitch_scale_t *ps = &x->scheduler->pitch_control.scale;
+    ps->count = snap->pitch_scale_count;
+    memcpy(ps->semitones, snap->pitch_scale, sizeof(ps->semitones));
+    pitch_scale_t *ss = &x->scheduler->smear_pitch_control.scale;
+    ss->count = snap->smear_pitch_scale_count;
+    memcpy(ss->semitones, snap->smear_pitch_scale, sizeof(ss->semitones));
+}
+
+// Full snapshot capture: bands + scalar bases + discretes + scale lists.
+// (FX-shadow scalars are added in step 2b-2.)
+static void morph_capture(ligase_t *x, morph_snapshot_t *snap) {
+    morph_capture_ranges(x, snap);
+    float *fp[MORPH_SCALAR_COUNT];
+    int fn = morph_collect_scalars(x, fp);
+    for (int i = 0; i < fn; i++) snap->scalars[i] = *fp[i];
+    int *ip[MORPH_DISCRETE_COUNT];
+    int in = morph_collect_discretes(x, ip);
+    for (int i = 0; i < in; i++) snap->discretes[i] = *ip[i];
+    snap->discretes[in]     = (int)x->playhead_mode;
+    snap->discretes[in + 1] = (int)x->scheduler->pitch_control.mode;
+    morph_capture_scales(x, snap);
+}
+
+static void morph_restore(ligase_t *x, const morph_snapshot_t *snap) {
+    morph_restore_ranges(x, snap);
+    float *fp[MORPH_SCALAR_COUNT];
+    int fn = morph_collect_scalars(x, fp);
+    for (int i = 0; i < fn; i++) *fp[i] = snap->scalars[i];
+    int *ip[MORPH_DISCRETE_COUNT];
+    int in = morph_collect_discretes(x, ip);
+    for (int i = 0; i < in; i++) *ip[i] = snap->discretes[i];
+    x->playhead_mode                 = (playhead_mode_t)snap->discretes[in];
+    x->scheduler->pitch_control.mode = (pitch_mode_t)snap->discretes[in + 1];
+    morph_restore_scales(x, snap);
+}
+
 static int morph_snap_id(ligase_t *x, const char *who, int argc, t_atom *argv) {
     int id = (argc >= 1 && argv[0].a_type == A_FLOAT) ? (int)atom_getfloat(&argv[0]) : -1;
     if (id < 0 || id >= MORPH_MAX_SNAPSHOTS) {
@@ -5563,9 +5676,9 @@ static void ligase_snapshot(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     int id = morph_snap_id(x, "snapshot", argc, argv);
     if (id < 0) return;
     morph_snapshot_t *snap = &x->morph->snaps[id];
-    morph_capture_ranges(x, snap);     // Step 2a: bands. (scalars/discretes/scales: 2b)
+    morph_capture(x, snap);     // bands + scalar bases + discretes + scale lists (FX shadows: 2b-2)
     snap->in_use = 1;
-    post("ligase~: snapshot %d captured (modulation bands)", id);
+    post("ligase~: snapshot %d captured", id);
 }
 
 static void ligase_snapshot_recall(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
@@ -5577,8 +5690,8 @@ static void ligase_snapshot_recall(ligase_t *x, t_symbol *s, int argc, t_atom *a
         pd_error(x, "ligase~: snapshot %d is empty", id);
         return;
     }
-    morph_restore_ranges(x, &x->morph->snaps[id]);
-    post("ligase~: snapshot %d recalled (modulation bands)", id);
+    morph_restore(x, &x->morph->snaps[id]);
+    post("ligase~: snapshot %d recalled", id);
 }
 
 static void ligase_snapshot_clear(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
