@@ -28,7 +28,7 @@
 // Bump MORPH_TEXT_VERSION whenever this schema changes (older text files are then refused).
 #define MORPH_SCALAR_USED   32
 #define MORPH_DISCRETE_USED 30
-#define MORPH_TEXT_VERSION  1
+#define MORPH_TEXT_VERSION  2   /* v2 adds the optional "exclude <idx...>" selection-tree line; v1 still imports */
 
 // Route-leg easing curves
 enum {

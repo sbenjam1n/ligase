@@ -5977,10 +5977,15 @@ static void morph_select(ligase_t *x, t_symbol *s, int argc, t_atom *argv, int o
     if (!x->morph) return;
     if (argc < 1) { pd_error(x, "ligase~: morph_%s needs a target name (or 'all')", on ? "include" : "exclude"); return; }
     for (int i = 0; i < argc; i++) {
-        if (argv[i].a_type != A_SYMBOL) { pd_error(x, "ligase~: morph target %d must be a name", i + 1); continue; }
-        const char *nm = argv[i].a_w.w_symbol->s_name;
-        if (!morph_set_included(x, nm, on))
-            pd_error(x, "ligase~: morph_%s — unknown target '%s'", on ? "include" : "exclude", nm);
+        if (argv[i].a_type == A_FLOAT) {                 // raw included[] index (used by state/import replay)
+            int idx = (int)atom_getfloat(&argv[i]);
+            if (idx >= 0 && idx < MORPH_INCLUDE_COUNT) x->morph->included[idx] = on;
+            else pd_error(x, "ligase~: morph index %d out of range (0..%d)", idx, MORPH_INCLUDE_COUNT - 1);
+        } else if (argv[i].a_type == A_SYMBOL) {
+            const char *nm = argv[i].a_w.w_symbol->s_name;
+            if (!morph_set_included(x, nm, on))
+                pd_error(x, "ligase~: morph_%s — unknown target '%s'", on ? "include" : "exclude", nm);
+        }
     }
     int excl = morph_any_excluded(x->morph);
     post("ligase~: morph now %s the full patch%s", excl ? "EXCLUDES some of" : "applies",
@@ -6161,6 +6166,17 @@ static void ligase_morph_state(ligase_t *x) {
     SETFLOAT(&a[1], m->cursor_y);
     outlet_anything(x->x_state_out, gensym("morph"), 2, a);
 
+    // selection tree (re-sendable: reset to all, then the excluded indices)
+    if (morph_any_excluded(m)) {
+        SETSYMBOL(&a[0], gensym("all"));
+        outlet_anything(x->x_state_out, gensym("morph_include"), 1, a);
+        t_atom ex[MORPH_INCLUDE_COUNT];
+        int ne = 0;
+        for (int i = 0; i < MORPH_INCLUDE_COUNT; i++)
+            if (!m->included[i]) { SETFLOAT(&ex[ne], (t_float)i); ne++; }   // ne++ separate: SETFLOAT is a macro
+        outlet_anything(x->x_state_out, gensym("morph_exclude"), ne, ex);
+    }
+
     int snaps = 0;
     for (int i = 0; i < MORPH_MAX_SNAPSHOTS; i++) if (m->snaps[i].in_use) snaps++;
     post("ligase~: morph_state dumped layout (%d points, %d waypoints; %d snapshot bodies in RAM — "
@@ -6227,6 +6243,11 @@ static void ligase_morph_export(ligase_t *x, t_symbol *s) {
     fprintf(f, "ligase_morph %d\n", MORPH_TEXT_VERSION);
     fprintf(f, "power %.9g\n", m->idw_power);
     fprintf(f, "cursor %.9g %.9g\n", m->cursor_x, m->cursor_y);
+    if (morph_any_excluded(m)) {        // selection tree: the excluded included[] indices
+        fprintf(f, "exclude");
+        for (int i = 0; i < MORPH_INCLUDE_COUNT; i++) if (!m->included[i]) fprintf(f, " %d", i);
+        fprintf(f, "\n");
+    }
     int snaps = 0;
     for (int i = 0; i < MORPH_MAX_SNAPSHOTS; i++)
         if (m->snaps[i].in_use) { morph_write_snap(f, i, &m->snaps[i]); snaps++; }
@@ -6259,14 +6280,15 @@ static void ligase_morph_import(ligase_t *x, t_symbol *s) {
     if (fscanf(f, "%63s", tok) != 1 || strcmp(tok, "ligase_morph") != 0) {
         fclose(f); pd_error(x, "ligase~: morph_import — not a morph text file: %s", path); return;
     }
-    if (fscanf(f, "%d", &ver) != 1 || ver != MORPH_TEXT_VERSION) {
-        fclose(f); pd_error(x, "ligase~: morph_import — unsupported text version %d (need %d)", ver, MORPH_TEXT_VERSION); return;
+    if (fscanf(f, "%d", &ver) != 1 || ver < 1 || ver > MORPH_TEXT_VERSION) {
+        fclose(f); pd_error(x, "ligase~: morph_import — unsupported text version %d (need 1..%d)", ver, MORPH_TEXT_VERSION); return;
     }
 
-    // Fresh import: clear snapshots + surface, keep kernel defaults until the file overrides them.
+    // Fresh import: clear snapshots + surface + selection tree, keep kernel defaults until overridden.
     morph_state_t *m = x->morph;
     for (int i = 0; i < MORPH_MAX_SNAPSHOTS; i++) m->snaps[i].in_use = 0;
     m->point_count = 0; m->route_len = 0; m->route_active = 0;
+    for (int i = 0; i < MORPH_INCLUDE_COUNT; i++) m->included[i] = 1;
 
     int snaps = 0, pts = 0, rts = 0, bad = 0;
     while (fscanf(f, "%63s", tok) == 1) {
@@ -6293,6 +6315,9 @@ static void ligase_morph_import(ligase_t *x, t_symbol *s) {
             float p; if (fscanf(f, "%g", &p) == 1) m->idw_power = p;
         } else if (strcmp(tok, "cursor") == 0) {
             float cx, cy; if (fscanf(f, "%g %g", &cx, &cy) == 2) { m->cursor_x = cx; m->cursor_y = cy; }
+        } else if (strcmp(tok, "exclude") == 0) {        // selection tree (v2): excluded included[] indices
+            int idx;
+            while (fscanf(f, "%d", &idx) == 1) if (idx >= 0 && idx < MORPH_INCLUDE_COUNT) m->included[idx] = 0;
         } else { bad = 1; break; }   // unknown directive
     }
     fclose(f);
