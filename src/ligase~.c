@@ -176,6 +176,8 @@ struct _ligase {
     t_inlet *x_env_skew;  // Envelope skew inlet
     t_inlet *x_amplitude;  // Grain amplitude inlet
     t_inlet *x_pan;  // Grain pan inlet
+    t_inlet *x_morph_x;  // Morph cursor X (CV, v1.1) — appended so existing inlet numbers are stable
+    t_inlet *x_morph_y;  // Morph cursor Y (CV, v1.1)
 
     t_outlet *x_out_left;
     t_outlet *x_out_right;
@@ -1581,9 +1583,10 @@ static void ligase_process_effects(ligase_t *x,
     }
 }
 
-// Morph route stepper — defined after morph_apply_at (which needs morph_restore); forward-declared
-// here so ligase_perform can drive the route at control rate.
+// Morph stepper + blend — defined after morph_restore; forward-declared here so ligase_perform can
+// drive the route and the CV cursor at control rate.
 static void morph_step(ligase_t *x, int n);
+static void morph_apply_at(ligase_t *x, float cx, float cy);
 
 static t_int *ligase_perform(t_int *w) {
     // Flush denormals to zero for this audio callback (FPU mode is per-thread). Prevents the
@@ -1601,7 +1604,7 @@ static t_int *ligase_perform(t_int *w) {
 
     if (!x) {
         if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: ERROR - NULL x pointer!\n");
-        return (w + 27);
+        return (w + 29);
     }
 
     if (first_call && LIGASE_DEBUG) {
@@ -1632,9 +1635,11 @@ static t_int *ligase_perform(t_int *w) {
     t_sample *env_skew_in = (t_sample *)(w[21]);
     t_sample *amplitude_in = (t_sample *)(w[22]);
     t_sample *pan_in = (t_sample *)(w[23]);
-    t_sample *out_left = (t_sample *)(w[24]);
-    t_sample *out_right = (t_sample *)(w[25]);
-    int n = (int)(w[26]);
+    t_sample *morph_x_in = (t_sample *)(w[24]);   // v1.1 CV cursor
+    t_sample *morph_y_in = (t_sample *)(w[25]);
+    t_sample *out_left = (t_sample *)(w[26]);
+    t_sample *out_right = (t_sample *)(w[27]);
+    int n = (int)(w[28]);
 
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Signal pointers extracted, blocksize=%d\n", n);
 
@@ -1645,7 +1650,7 @@ static t_int *ligase_perform(t_int *w) {
         // stale/garbage downstream as a dropout burst).
         if (out_left)  memset(out_left, 0, sizeof(t_sample) * n);
         if (out_right) memset(out_right, 0, sizeof(t_sample) * n);
-        return (w + 27);
+        return (w + 29);
     }
 
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Blocksize check passed, validating pointers...\n");
@@ -1674,7 +1679,7 @@ null_ptr_error:
             if (out_left) out_left[i] = 0.0f;
             if (out_right) out_right[i] = 0.0f;
         }
-        return (w + 27);
+        return (w + 29);
     }
 
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: All signal pointers validated\n");
@@ -1703,10 +1708,18 @@ null_ptr_error:
         }
     }
 
-    // Morph route stepper (control-rate): advance the cursor along the active route and re-apply
-    // the blend BEFORE update_inlets, so morphed modulation bands always win and morphed scalar
-    // bases follow the standard live-CV-wins precedence (GATE A.6).
-    if (x->morph && x->morph->route_active) morph_step(x, n);
+    // Morph stepper (control-rate), BEFORE update_inlets so morphed bands win and morphed scalar
+    // bases follow the standard live-CV-wins precedence (GATE A.6). A running route drives the
+    // cursor; otherwise (v1.1) the CV cursor signal inlets do, when engaged via morph_cursor 1.
+    if (x->morph && x->morph->route_active) {
+        morph_step(x, n);
+    } else if (x->morph && x->morph->cursor_is_signal && x->morph->point_count > 0) {
+        float cx = morph_x_in[0], cy = morph_y_in[0];
+        if (cx < 0.0f) cx = 0.0f; else if (cx > 1.0f) cx = 1.0f;
+        if (cy < 0.0f) cy = 0.0f; else if (cy > 1.0f) cy = 1.0f;
+        x->morph->cursor_x = cx; x->morph->cursor_y = cy;
+        morph_apply_at(x, cx, cy);
+    }
 
     ligase_update_inlets(x, grain_size_in, grain_start_in, speed_in, organize_in,
         scanrate_in, sos_in, iot_in, maxgrains_in,
@@ -1782,8 +1795,8 @@ null_ptr_error:
     }
     // @endregion:ligase_pd.pd_external.outlets.outlet3_note_change
 
-    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: About to return (w + 27)\n");
-    return (w + 27);
+    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: About to return (w + 29)\n");
+    return (w + 29);
 }
 
 // Propagate a host sample-rate change to every subsystem, reallocating buffers and
@@ -1826,13 +1839,13 @@ static void ligase_dsp(ligase_t *x, t_signal **sp) {
     }
 
     // Verify signal pointers are valid (check first and last)
-    if (!sp || !sp[0] || !sp[23]) {
+    if (!sp || !sp[0] || !sp[25]) {
         pd_error(x, "ligase~: invalid signal pointer array");
         return;
     }
 
     // Verify signal vectors are valid
-    for (int i = 0; i < 24; i++) {
+    for (int i = 0; i < 26; i++) {
         if (!sp[i] || !sp[i]->s_vec) {
             pd_error(x, "ligase~: invalid signal vector at index %d", i);
             return;
@@ -1850,7 +1863,7 @@ static void ligase_dsp(ligase_t *x, t_signal **sp) {
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_dsp: Adding perform callback (sr=%d, blocksize=%d)\n",
             x->sample_rate, sp[0]->s_n);
 
-    dsp_add(ligase_perform, 26, x,
+    dsp_add(ligase_perform, 28, x,
             sp[0]->s_vec,   // in_left
             sp[1]->s_vec,   // in_right
             sp[2]->s_vec,   // grain_size
@@ -1865,7 +1878,7 @@ static void ligase_dsp(ligase_t *x, t_signal **sp) {
             sp[11]->s_vec,  // gdelay_feedback
             sp[12]->s_vec,  // gdelay_tone
             sp[13]->s_vec,  // gdelay_mix
-            sp[14]->s_vec,  // distortion
+            sp[14]->s_vec,  // smear mix
             sp[15]->s_vec,  // moog_cutoff
             sp[16]->s_vec,  // moog_resonance
             sp[17]->s_vec,  // moog_mix
@@ -1873,8 +1886,10 @@ static void ligase_dsp(ligase_t *x, t_signal **sp) {
             sp[19]->s_vec,  // env_skew
             sp[20]->s_vec,  // amplitude
             sp[21]->s_vec,  // pan
-            sp[22]->s_vec,  // out_left
-            sp[23]->s_vec,  // out_right
+            sp[22]->s_vec,  // morph cursor X (v1.1)
+            sp[23]->s_vec,  // morph cursor Y (v1.1)
+            sp[24]->s_vec,  // out_left
+            sp[25]->s_vec,  // out_right
             sp[0]->s_n);
 
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_dsp: COMPLETE\n");
@@ -5289,6 +5304,8 @@ static void *ligase_new(void) {
     x->x_env_skew = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);
     x->x_amplitude = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);
     x->x_pan = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);
+    x->x_morph_x = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);  // inlet 22 (morph cursor X)
+    x->x_morph_y = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_signal, &s_signal);  // inlet 23 (morph cursor Y)
 
     // Create signal outlets
     x->x_out_left = outlet_new(&x->x_obj, &s_signal);
@@ -5930,6 +5947,14 @@ static void ligase_morph_power(ligase_t *x, t_floatarg p) {
     post("ligase~: morph IDW power = %.2f", p);
 }
 
+// morph_cursor <0|1>: 0 = message-driven cursor (default); 1 = CV cursor (signal inlets 22/23 drive
+// cursor_x/cursor_y per block). A running route overrides it. (v1.1; honours the CV-driven invariant.)
+static void ligase_morph_cursor(ligase_t *x, t_floatarg on) {
+    if (!x->morph) return;
+    x->morph->cursor_is_signal = (on != 0.0f) ? 1 : 0;
+    post("ligase~: morph cursor = %s", x->morph->cursor_is_signal ? "CV (signal inlets 22/23)" : "message");
+}
+
 // ── Selection tree — which parameters the morph applies (morph_include/exclude) ──
 // Snapshots always CAPTURE the whole patch; this only gates what the BLEND writes. A target
 // name resolves to a set of included[] flags. Names: "all", per-parameter (amplitude, pan,
@@ -6529,6 +6554,7 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_morph_y,       gensym("morph_y"),       A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_interp,  gensym("morph_interp"),  A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_power,   gensym("morph_power"),   A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_cursor,  gensym("morph_cursor"),  A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_include, gensym("morph_include"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_exclude, gensym("morph_exclude"), A_GIMME, 0);
     // Morph / Metasurface — routes (automated cursor trajectories)

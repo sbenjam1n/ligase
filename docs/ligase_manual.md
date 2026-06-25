@@ -94,6 +94,8 @@ No automatic gain compensation
 21. Amplitude - Grain amplitude (0-2)
 
 22. Pan - Stereo position (0-1)
+23. Morph cursor X - CV drive for the morph surface (engage with morph_cursor 1; see MORPH)
+24. Morph cursor Y - CV drive for the morph surface
 
 Unconnected inlets default to stored values (set via messages).
 
@@ -369,6 +371,7 @@ morph_unplace <id> - Remove a snapshot's surface point
 morph <x> <y> - Move the cursor -> blend all placed snapshots by distance (the live morph)
 morph_x <v> / morph_y <v> - Move one cursor axis
 morph_power <p> - IDW sharpness (default 2; higher = more local)
+morph_cursor <0|1> - 0=message cursor (default); 1=CV cursor (signal inlets 22/23 drive x/y per block)
 morph_include <name...> / morph_exclude <name...> - Limit which params the morph applies (all / a param / a group: pitch, smear_pitch, fx)
 morph_route <x> <y> <rate> <curve> - Append a route waypoint (rate sec, curve 0-4)
 morph_run [loop] / morph_stop / morph_pause - Play / halt the route. morph_route_clear empties it.
@@ -2745,6 +2748,10 @@ and morph_y move one axis each, e.g. from two CV/knob sources). Blend rules:
 - Cursor exactly on a point — that snapshot is reproduced exactly (no overshoot).
 
 morph_power <p> sets the IDW sharpness (default 2.0; higher pulls the blend tighter to the nearest point).
+
+CV cursor: morph_cursor 1 hands the cursor to the two rightmost signal inlets (morph X / morph Y),
+so a physical XY joystick or any CV can drive the surface at signal rate (clamped to [0,1]); morph_cursor 0
+returns to the message cursor. A running route overrides both.
 morph_interp selects the weighting kernel — only IDW/Shepard ships in v1; natural-neighbour (Bencina's exact
 method) is reserved (morph_interp 1 warns and stays on IDW).
 
@@ -2828,8 +2835,8 @@ just the snapshots and layout but also which parameters the morph is allowed to 
 - Distortion-enhancement and stut/bencina scalar bases are not captured yet (their modulation bands are);
   they hold their current value across a recall.
 - morph_include/morph_exclude limit which parameters the morph applies (see "Limiting which parameters
-morph"). A signal-rate (CV) cursor and a natural-neighbour kernel remain planned (v1.1); today the
-cursor is message/float-driven and the kernel is IDW.
+morph"). A natural-neighbour kernel remains planned (v1.1); the kernel is IDW today. (The CV signal-inlet cursor
+is implemented — morph_cursor 1, inlets 22/23.)
 
 # QUERY STATE
 
