@@ -2815,6 +2815,11 @@ Three persistence routes, then: morph_save/morph_load (binary, complete, fastest
 morph_export/morph_import (text, complete, human-readable + build-portable); morph_state (messages,
 layout only — for inspection or embedding a layout in a patch).
 
+All three also carry the SELECTION TREE (your morph_include/morph_exclude choices): the binary file
+stores it in the struct, the text file adds an "exclude <indices>" line, and morph_state emits it as
+re-sendable "morph_include all" + "morph_exclude <indices>" messages. So a saved surface restores not
+just the snapshots and layout but also which parameters the morph is allowed to touch.
+
 ## Notes
 
 - A morphed scalar base of an inlet-tracked parameter (grain size, speed, amplitude, …) only takes effect
