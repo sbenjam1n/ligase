@@ -205,6 +205,7 @@ struct _ligase {
     grain_smear_t *smear;   // allpass smear effect
 
     morph_state_t *morph;   // morph / Metasurface layer (snapshot interpolation)
+    morph_fx_shadow_t fx_shadow;  // last-set opaque-FX scalar bases (for morph capture)
 
     // Parameters
     float grain_size;
@@ -3399,6 +3400,7 @@ static void ligase_stut_length_quant(ligase_t *x, t_floatarg amount) {
 // @region:ligase_pd.core.grain.delay Grain Output Delay Methods
 
 static void ligase_gdelay_time(ligase_t *x, t_floatarg time) {
+    x->fx_shadow.gdelay_time = time;   // morph shadow
     grain_delay_set_time(x->grain_delay, time);
     post("ligase~: grain delay time set to %.3f seconds", time);
 }
@@ -3411,16 +3413,19 @@ static void ligase_delay_glide(ligase_t *x, t_floatarg ms) {
 }
 
 static void ligase_gdelay_feedback(ligase_t *x, t_floatarg feedback) {
+    x->fx_shadow.gdelay_feedback = feedback;   // morph shadow
     grain_delay_set_feedback(x->grain_delay, feedback);
     post("ligase~: grain delay feedback set to %.2f", feedback);
 }
 
 static void ligase_gdelay_tone(ligase_t *x, t_floatarg tone) {
+    x->fx_shadow.gdelay_tone = tone;   // morph shadow
     grain_delay_set_tone(x->grain_delay, tone);
     post("ligase~: grain delay tone set to %.2f", tone);
 }
 
 static void ligase_gdelay_mix(ligase_t *x, t_floatarg mix) {
+    x->fx_shadow.gdelay_mix = mix;   // morph shadow
     grain_delay_set_mix(x->grain_delay, mix);
     post("ligase~: grain delay mix set to %.2f", mix);
 }
@@ -3571,15 +3576,19 @@ static void ligase_bencina_clear(ligase_t *x) {
 // @region:ligase_pd.core.grain.smear.messages Allpass Smear Message Handlers
 // These stay silent (no post()) — they fire on every value of a slider drag.
 static void ligase_smear_frequency(ligase_t *x, t_floatarg hz) {
+    x->fx_shadow.smear_frequency = hz;   // morph shadow (FX object has no readback)
     if (x->smear) grain_smear_set_frequency(x->smear, hz);
 }
 static void ligase_smear_resonance(ligase_t *x, t_floatarg r) {
+    x->fx_shadow.smear_resonance = r;
     if (x->smear) grain_smear_set_resonance(x->smear, r);
 }
 static void ligase_smear_stages(ligase_t *x, t_floatarg stages) {
+    x->fx_shadow.smear_stages = stages;
     if (x->smear) grain_smear_set_stages(x->smear, (int)stages);
 }
 static void ligase_smear_feedback(ligase_t *x, t_floatarg fb) {
+    x->fx_shadow.smear_feedback = fb;
     if (x->smear) grain_smear_set_feedback(x->smear, fb);
 }
 
@@ -3912,6 +3921,7 @@ static void ligase_distortion_oversample_factor(ligase_t *x, t_floatarg factor) 
 // Set moogladder cutoff frequency (Hz)
 static void ligase_moog_cutoff(ligase_t *x, t_floatarg cutoff) {
     if (x->moogladder) {
+        x->fx_shadow.moog_cutoff = cutoff;   // morph shadow
         grain_moogladder_set_cutoff(x->moogladder, cutoff);
         post("ligase~: moogladder cutoff set to %.1f Hz", cutoff);
     }
@@ -3920,6 +3930,7 @@ static void ligase_moog_cutoff(ligase_t *x, t_floatarg cutoff) {
 // Set moogladder resonance (0.0-4.0)
 static void ligase_moog_resonance(ligase_t *x, t_floatarg resonance) {
     if (x->moogladder) {
+        x->fx_shadow.moog_resonance = resonance;   // morph shadow
         grain_moogladder_set_resonance(x->moogladder, resonance);
         post("ligase~: moogladder resonance set to %.2f", resonance);
     }
@@ -3928,6 +3939,7 @@ static void ligase_moog_resonance(ligase_t *x, t_floatarg resonance) {
 // Set moogladder dry/wet mix (0.0-1.0)
 static void ligase_moog_mix(ligase_t *x, t_floatarg mix) {
     if (x->moogladder) {
+        x->fx_shadow.moog_mix = mix;   // morph shadow
         grain_moogladder_set_mix(x->moogladder, mix);
         post("ligase~: moogladder mix set to %.2f", mix);
     }
@@ -5311,6 +5323,13 @@ static void *ligase_new(void) {
     x->morph = (morph_state_t *)getbytes(sizeof(morph_state_t));
     if (x->morph) morph_state_init(x->morph);
 
+    // FX shadow seeded to the FX-object defaults (so a capture before any FX setter is accurate)
+    x->fx_shadow.moog_cutoff = 1000.0f; x->fx_shadow.moog_resonance = 0.0f; x->fx_shadow.moog_mix = 0.0f;
+    x->fx_shadow.smear_frequency = 800.0f; x->fx_shadow.smear_resonance = 0.7f;
+    x->fx_shadow.smear_stages = 12.0f; x->fx_shadow.smear_feedback = 0.0f;
+    x->fx_shadow.gdelay_time = 0.0f; x->fx_shadow.gdelay_feedback = 0.0f;
+    x->fx_shadow.gdelay_tone = 0.5f; x->fx_shadow.gdelay_mix = 0.0f;
+
     // Initialize parameters
     x->grain_size = 0.1f;
     x->grain_start = 0.5f;
@@ -5640,6 +5659,13 @@ static void morph_capture(ligase_t *x, morph_snapshot_t *snap) {
     float *fp[MORPH_SCALAR_COUNT];
     int fn = morph_collect_scalars(x, fp);
     for (int i = 0; i < fn; i++) snap->scalars[i] = *fp[i];
+    // FX-shadow scalar bases at scalars[fn .. fn+MORPH_FX_SCALARS-1]
+    const morph_fx_shadow_t *fx = &x->fx_shadow;
+    snap->scalars[fn+0]=fx->moog_cutoff;    snap->scalars[fn+1]=fx->moog_resonance; snap->scalars[fn+2]=fx->moog_mix;
+    snap->scalars[fn+3]=fx->smear_frequency;snap->scalars[fn+4]=fx->smear_resonance;
+    snap->scalars[fn+5]=fx->smear_stages;   snap->scalars[fn+6]=fx->smear_feedback;
+    snap->scalars[fn+7]=fx->gdelay_time;    snap->scalars[fn+8]=fx->gdelay_feedback;
+    snap->scalars[fn+9]=fx->gdelay_tone;    snap->scalars[fn+10]=fx->gdelay_mix;
     int *ip[MORPH_DISCRETE_COUNT];
     int in = morph_collect_discretes(x, ip);
     for (int i = 0; i < in; i++) snap->discretes[i] = *ip[i];
@@ -5653,6 +5679,24 @@ static void morph_restore(ligase_t *x, const morph_snapshot_t *snap) {
     float *fp[MORPH_SCALAR_COUNT];
     int fn = morph_collect_scalars(x, fp);
     for (int i = 0; i < fn; i++) *fp[i] = snap->scalars[i];
+    // FX-shadow scalar bases: write the shadow + re-apply via the FX setters
+    morph_fx_shadow_t *fx = &x->fx_shadow;
+    fx->moog_cutoff=snap->scalars[fn+0];    fx->moog_resonance=snap->scalars[fn+1]; fx->moog_mix=snap->scalars[fn+2];
+    fx->smear_frequency=snap->scalars[fn+3];fx->smear_resonance=snap->scalars[fn+4];
+    fx->smear_stages=snap->scalars[fn+5];   fx->smear_feedback=snap->scalars[fn+6];
+    fx->gdelay_time=snap->scalars[fn+7];    fx->gdelay_feedback=snap->scalars[fn+8];
+    fx->gdelay_tone=snap->scalars[fn+9];    fx->gdelay_mix=snap->scalars[fn+10];
+    if (x->moogladder) { grain_moogladder_set_cutoff(x->moogladder, fx->moog_cutoff);
+                         grain_moogladder_set_resonance(x->moogladder, fx->moog_resonance);
+                         grain_moogladder_set_mix(x->moogladder, fx->moog_mix); }
+    if (x->smear) { grain_smear_set_frequency(x->smear, fx->smear_frequency);
+                    grain_smear_set_resonance(x->smear, fx->smear_resonance);
+                    grain_smear_set_stages(x->smear, (int)fx->smear_stages);
+                    grain_smear_set_feedback(x->smear, fx->smear_feedback); }
+    if (x->grain_delay) { grain_delay_set_time(x->grain_delay, fx->gdelay_time);
+                          grain_delay_set_feedback(x->grain_delay, fx->gdelay_feedback);
+                          grain_delay_set_tone(x->grain_delay, fx->gdelay_tone);
+                          grain_delay_set_mix(x->grain_delay, fx->gdelay_mix); }
     int *ip[MORPH_DISCRETE_COUNT];
     int in = morph_collect_discretes(x, ip);
     for (int i = 0; i < in; i++) *ip[i] = snap->discretes[i];

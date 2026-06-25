@@ -49,6 +49,17 @@ typedef struct {
     int   invert;        // categorical -> step
 } morph_range_slot_t;
 
+// Shadow mirror of the opaque-FX scalar bases (the FX objects expose no readback). Each FX
+// setter mirror-writes its value here; capture reads it, restore re-applies via the FX setter.
+// v1 covers the playable FX (moog / smear / gdelay); distortion-enhancement + stut/bencina
+// scalar bases are a documented later-completeness item (their modulation bands already morph).
+#define MORPH_FX_SCALARS 11
+typedef struct {
+    float moog_cutoff, moog_resonance, moog_mix;
+    float smear_frequency, smear_resonance, smear_stages, smear_feedback;
+    float gdelay_time, gdelay_feedback, gdelay_tone, gdelay_mix;
+} morph_fx_shadow_t;
+
 // A full snapshot — three field classes (continuous lerp vs discrete step) + the scale lists.
 typedef struct {
     int   in_use;
