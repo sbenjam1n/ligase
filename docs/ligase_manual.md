@@ -2786,6 +2786,16 @@ version-control, or embed a layout in a patch; replaying it restores the geometr
 that already exist (so pair it with morph_save/morph_load, or a re-capture, for the snapshot
 bodies — those hold hundreds of values each and are not dumped as messages).
 
+morph_export <file> / morph_import <file> are the fully portable option: a human-readable .txt that
+holds EVERYTHING (every snapshot body + the surface), written as a logical-field schema rather than a
+memory image — so unlike the binary .morph it survives across builds whose struct layout differs (a
+"ligase_morph <version>" header refuses files whose schema changed). The snapshot lines are long (one
+per snapshot, hundreds of numbers) but it is plain text you can read, diff, and edit.
+
+Three persistence routes, then: morph_save/morph_load (binary, complete, fastest, build-specific);
+morph_export/morph_import (text, complete, human-readable + build-portable); morph_state (messages,
+layout only — for inspection or embedding a layout in a patch).
+
 ## Notes
 
 - A morphed scalar base of an inlet-tracked parameter (grain size, speed, amplitude, …) only takes effect
