@@ -5747,6 +5747,149 @@ static void ligase_snapshot_clear(ligase_t *x, t_symbol *s, int argc, t_atom *ar
     post("ligase~: snapshot %d cleared", id);
 }
 
+// ── The blend: apply the interpolated patch at cursor (cx,cy) ────────────────
+// Continuous fields (range min/max/base_value/slew + all scalars) = IDW weighted sum;
+// discrete fields (range enabled/rand_type/rand_instance/invert, the discretes, the scale
+// lists) = the argmax-weight snapshot's value. An exact hit reproduces that snapshot
+// verbatim (no overshoot). The blended snapshot is applied through morph_restore.
+// (Selection tree / per-field morph_include is a v1.1 refinement — included[] defaults all-on.)
+static void morph_apply_at(ligase_t *x, float cx, float cy) {
+    morph_state_t *m = x->morph;
+    if (!m || m->point_count <= 0) return;
+
+    float w[MORPH_MAX_SNAPSHOTS];
+    int exact = -1;
+    int n = morph_compute_weights(m, cx, cy, w, &exact);
+    if (n == 0) return;
+
+    morph_snapshot_t b;
+    memset(&b, 0, sizeof(b));
+    b.in_use = 1;
+
+    if (n < 0) {
+        // Exact hit: reproduce the snapshot under the cursor verbatim.
+        b = m->snaps[m->points[exact].snap_id];
+    } else {
+        int am = 0; float best = -1.0f;          // argmax point for discrete fields
+        for (int i = 0; i < n; i++) if (w[i] > best) { best = w[i]; am = i; }
+        morph_snapshot_t *as = &m->snaps[m->points[am].snap_id];
+
+        for (int r = 0; r < MORPH_RANGE_COUNT; r++) {
+            float mn = 0, mx = 0, bv = 0, sl = 0;
+            for (int i = 0; i < n; i++) {
+                morph_range_slot_t *sr = &m->snaps[m->points[i].snap_id].ranges[r];
+                mn += w[i] * sr->min;        mx += w[i] * sr->max;
+                bv += w[i] * sr->base_value; sl += w[i] * sr->slew;
+            }
+            b.ranges[r].min = mn; b.ranges[r].max = mx;
+            b.ranges[r].base_value = bv; b.ranges[r].slew = sl;
+            b.ranges[r].enabled       = as->ranges[r].enabled;
+            b.ranges[r].rand_type     = as->ranges[r].rand_type;
+            b.ranges[r].rand_instance = as->ranges[r].rand_instance;
+            b.ranges[r].invert        = as->ranges[r].invert;
+        }
+        for (int s = 0; s < MORPH_SCALAR_COUNT; s++) {
+            float v = 0;
+            for (int i = 0; i < n; i++)
+                v += w[i] * m->snaps[m->points[i].snap_id].scalars[s];
+            b.scalars[s] = v;
+        }
+        for (int d = 0; d < MORPH_DISCRETE_COUNT; d++) b.discretes[d] = as->discretes[d];
+        b.pitch_scale_count = as->pitch_scale_count;
+        memcpy(b.pitch_scale, as->pitch_scale, sizeof(b.pitch_scale));
+        b.smear_pitch_scale_count = as->smear_pitch_scale_count;
+        memcpy(b.smear_pitch_scale, as->smear_pitch_scale, sizeof(b.smear_pitch_scale));
+    }
+
+    morph_restore(x, &b);
+}
+
+// ── Surface placement + live cursor ─────────────────────────────────────────
+
+// morph_point <id> <x> <y>  (alias morph_place): place/replace a captured snapshot on the surface.
+static void ligase_morph_point(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    if (argc < 3 || argv[0].a_type != A_FLOAT) {
+        pd_error(x, "ligase~: morph_point needs <id> <x> <y>");
+        return;
+    }
+    int id = (int)atom_getfloat(&argv[0]);
+    if (id < 0 || id >= MORPH_MAX_SNAPSHOTS) {
+        pd_error(x, "ligase~: morph_point id must be 0..%d", MORPH_MAX_SNAPSHOTS - 1);
+        return;
+    }
+    if (!x->morph->snaps[id].in_use) {
+        pd_error(x, "ligase~: snapshot %d is empty — capture it first", id);
+        return;
+    }
+    float px = atom_getfloat(&argv[1]), py = atom_getfloat(&argv[2]);
+    if (px < 0.0f) px = 0.0f; else if (px > 1.0f) px = 1.0f;
+    if (py < 0.0f) py = 0.0f; else if (py > 1.0f) py = 1.0f;
+    morph_state_t *m = x->morph;
+    int found = -1;
+    for (int i = 0; i < m->point_count; i++) if (m->points[i].snap_id == id) { found = i; break; }
+    if (found < 0) {
+        if (m->point_count >= MORPH_MAX_SNAPSHOTS) { pd_error(x, "ligase~: surface full"); return; }
+        found = m->point_count++;
+        m->points[found].snap_id = id;
+        m->points[found].in_use  = 1;
+    }
+    m->points[found].x = px; m->points[found].y = py;
+    post("ligase~: snapshot %d placed at (%.3f, %.3f)", id, px, py);
+}
+
+// morph_unplace <id>: remove a snapshot's surface point (swap-remove, keeps points[] compact).
+static void ligase_morph_unplace(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    if (argc < 1 || argv[0].a_type != A_FLOAT) { pd_error(x, "ligase~: morph_unplace needs <id>"); return; }
+    int id = (int)atom_getfloat(&argv[0]);
+    morph_state_t *m = x->morph;
+    for (int i = 0; i < m->point_count; i++) {
+        if (m->points[i].snap_id == id) {
+            m->points[i] = m->points[--m->point_count];   // swap-remove
+            post("ligase~: snapshot %d unplaced", id);
+            return;
+        }
+    }
+}
+
+// morph <x> <y>: live cursor jump + immediate blend (Bencina's Interpolate_X/Y).
+static void ligase_morph(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    if (argc < 2) { pd_error(x, "ligase~: morph needs <x> <y>"); return; }
+    float cx = atom_getfloat(&argv[0]), cy = atom_getfloat(&argv[1]);
+    x->morph->cursor_x = cx; x->morph->cursor_y = cy;
+    morph_apply_at(x, cx, cy);
+}
+static void ligase_morph_x(ligase_t *x, t_floatarg v) {
+    if (!x->morph) return;
+    x->morph->cursor_x = v; morph_apply_at(x, v, x->morph->cursor_y);
+}
+static void ligase_morph_y(ligase_t *x, t_floatarg v) {
+    if (!x->morph) return;
+    x->morph->cursor_y = v; morph_apply_at(x, x->morph->cursor_x, v);
+}
+// morph_interp <0|1>: kernel select. 0 = IDW (v1). 1 = natural-neighbour (reserved, v1.x).
+static void ligase_morph_interp(ligase_t *x, t_floatarg k) {
+    if (!x->morph) return;
+    if ((int)k == MORPH_INTERP_NN) {
+        x->morph->interp_kind = MORPH_INTERP_IDW;
+        pd_error(x, "ligase~: natural-neighbour kernel not yet implemented — using IDW");
+    } else {
+        x->morph->interp_kind = MORPH_INTERP_IDW;
+    }
+}
+// morph_power <p>: IDW Shepard exponent (sharper localisation as p grows).
+static void ligase_morph_power(ligase_t *x, t_floatarg p) {
+    if (!x->morph) return;
+    if (p < 0.1f) p = 0.1f;
+    x->morph->idw_power = p;
+    post("ligase~: morph IDW power = %.2f", p);
+}
+
 // @region:ligase_pd.pd_external.setup Setup Function
 
 LIGASE_PUBLIC void ligase_tilde_setup(void) {
@@ -5937,10 +6080,19 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_get_state, gensym("get_state"), 0);
     // @endregion:ligase_pd.pd_external.methods.query.registration
 
-    // Morph / Metasurface — snapshot capture + recall (Step 2a)
+    // Morph / Metasurface — snapshot capture + recall
     class_addmethod(ligase_class, (t_method)ligase_snapshot,        gensym("snapshot"),        A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_snapshot_recall, gensym("snapshot_recall"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_snapshot_clear,  gensym("snapshot_clear"),  A_GIMME, 0);
+    // Morph / Metasurface — surface placement + live cursor (the blend)
+    class_addmethod(ligase_class, (t_method)ligase_morph_point,   gensym("morph_point"),   A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_point,   gensym("morph_place"),   A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_unplace, gensym("morph_unplace"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph,         gensym("morph"),         A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_x,       gensym("morph_x"),       A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_y,       gensym("morph_y"),       A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_interp,  gensym("morph_interp"),  A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_power,   gensym("morph_power"),   A_DEFFLOAT, 0);
 }
 
 // @endregion:ligase_pd.pd_external.setup
