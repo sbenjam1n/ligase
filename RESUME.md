@@ -7,15 +7,26 @@ _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md`;
 - **All work merged into `main`.** `main` == `fix/audio-engine-and-manual` == `origin/main` ==
   `origin/fix/...`; 0 commits unmerged; working tree clean.
 - Every reported bug/feature (B1–B35, M1) is **implemented and verified headless**.
-- **NEW — Morph / Metasurface v1 is feature-complete + headless-verified** (QUEUE Seq 59; plan
-  `Plans/morph_metasurface.md`; first of the six "new directions" built). A 2D snapshot-interpolation
-  surface (Bencina Metasurface): `snapshot`/`snapshot_recall` capture the whole patch (modulation
-  bands + scalar bases + discretes + scale lists + playable-FX shadows), `morph_point` places them,
-  `morph <x> <y>` blends by IDW distance, `morph_route`/`morph_run` automate the cursor. New module
-  `src/morph.{c,h}` (pure kernel/curve/types) + the x-coupled capture/blend/handlers in `ligase~.c`
-  (a per-block route stepper in `ligase_perform` before `update_inlets`). Tests `tests/morph/MC1–5`.
-  v1.1 (documented, deferred): natural-neighbour kernel, per-field include/exclude, CV signal-inlet
-  cursor, FX scalar bases for distortion-enhancement/stut/bencina.
+- **NEW — Morph / Metasurface is COMPLETE (v1 + v1.1 + persistence), headless-verified** (QUEUE Seq
+  59–60; plan `Plans/morph_metasurface.md`; first of the six "new directions" built). A 2D
+  snapshot-interpolation surface (Bencina Metasurface): `snapshot`/`snapshot_recall` capture the whole
+  patch (modulation bands + scalar bases + discretes + scale lists + playable-FX shadows),
+  `morph_point` places them, `morph <x> <y>` blends, `morph_route`/`morph_run` automate the cursor.
+  New module `src/morph.{c,h}` (pure kernel/curve/types) + x-coupled capture/blend/handlers in
+  `ligase~.c` (per-block stepper in `ligase_perform` before `update_inlets`). **Now also:**
+  - **Two kernels** — `morph_interp 0` IDW/Shepard (default), `1` natural-neighbour (mesh-free sampled
+    Sibson on a 48×48 grid; verified more *local* than IDW).
+  - **CV cursor** — `morph_cursor 1` hands the cursor to two signal inlets (Pd index 22/23), so a
+    joystick/CV drives the surface (added 2 signal inlets; bumped `dsp_add` 26→28 + the 4 perform
+    `return (w+29)` paths — a missed return was a crash, fixed).
+  - **Selection tree** — `morph_include`/`morph_exclude` (by param / group `pitch|smear_pitch|fx` /
+    raw index) gate what the blend APPLIES (capture stays full).
+  - **Three persistence routes, all carrying the selection tree:** `morph_save`/`morph_load` (binary
+    `.morph`, whole struct + version/size header), `morph_export`/`morph_import` (human-readable,
+    build-portable `.txt`, schema v2), `morph_state` (re-sendable message dump of the layout).
+  - Tests `tests/morph/MC1–10` + `MS*/MT*/EX*` (incl. a hand-authored "imagined" surface that imports).
+  - Remaining (minor completeness): FX scalar bases for distortion-enhancement/stut/bencina (their
+    modulation *bands* already morph).
 - **NEW — TidalCycles pattern subsystem (P1+P2+P3) is feature-complete + headless-verified**
   (QUEUE Seq 47–49; plans `Plans/pattern_*.md`). Mini-notation step-sequencing of any param, a BPM
   quantization cycle, and scale-degree pitch — all built on the existing modulation/BPM/scale engine.
