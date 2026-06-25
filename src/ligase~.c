@@ -5929,15 +5929,13 @@ static void ligase_morph_y(ligase_t *x, t_floatarg v) {
     if (!x->morph) return;
     x->morph->cursor_y = v; morph_apply_at(x, x->morph->cursor_x, v);
 }
-// morph_interp <0|1>: kernel select. 0 = IDW (v1). 1 = natural-neighbour (reserved, v1.x).
+// morph_interp <0|1>: kernel select. 0 = IDW/Shepard (cheap, global). 1 = natural-neighbour
+// (sampled Sibson — local, no overshoot, the faithful Metasurface kernel; a touch more CPU).
 static void ligase_morph_interp(ligase_t *x, t_floatarg k) {
     if (!x->morph) return;
-    if ((int)k == MORPH_INTERP_NN) {
-        x->morph->interp_kind = MORPH_INTERP_IDW;
-        pd_error(x, "ligase~: natural-neighbour kernel not yet implemented — using IDW");
-    } else {
-        x->morph->interp_kind = MORPH_INTERP_IDW;
-    }
+    x->morph->interp_kind = ((int)k == MORPH_INTERP_NN) ? MORPH_INTERP_NN : MORPH_INTERP_IDW;
+    post("ligase~: morph kernel = %s", x->morph->interp_kind == MORPH_INTERP_NN
+         ? "natural-neighbour (sampled)" : "IDW/Shepard");
 }
 // morph_power <p>: IDW Shepard exponent (sharper localisation as p grows).
 static void ligase_morph_power(ligase_t *x, t_floatarg p) {

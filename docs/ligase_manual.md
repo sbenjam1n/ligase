@@ -2752,8 +2752,9 @@ morph_power <p> sets the IDW sharpness (default 2.0; higher pulls the blend tigh
 CV cursor: morph_cursor 1 hands the cursor to the two rightmost signal inlets (morph X / morph Y),
 so a physical XY joystick or any CV can drive the surface at signal rate (clamped to [0,1]); morph_cursor 0
 returns to the message cursor. A running route overrides both.
-morph_interp selects the weighting kernel — only IDW/Shepard ships in v1; natural-neighbour (Bencina's exact
-method) is reserved (morph_interp 1 warns and stays on IDW).
+morph_interp selects the weighting kernel — 0 = IDW/Shepard (cheap, global), 1 = natural-neighbour (a
+sampled/grid Sibson approximation: local, no overshoot, the faithful Metasurface character; a touch more
+CPU, best for a static cursor than a fast route).
 
 ## Limiting which parameters morph
 
@@ -2835,8 +2836,8 @@ just the snapshots and layout but also which parameters the morph is allowed to 
 - Distortion-enhancement and stut/bencina scalar bases are not captured yet (their modulation bands are);
   they hold their current value across a recall.
 - morph_include/morph_exclude limit which parameters the morph applies (see "Limiting which parameters
-morph"). A natural-neighbour kernel remains planned (v1.1); the kernel is IDW today. (The CV signal-inlet cursor
-is implemented — morph_cursor 1, inlets 22/23.)
+morph"). Both kernels ship: morph_interp 0 = IDW/Shepard (default), 1 = natural-neighbour (a mesh-free sampled
+Sibson approximation). The CV signal-inlet cursor is implemented (morph_cursor 1, inlets 22/23).
 
 # QUERY STATE
 
