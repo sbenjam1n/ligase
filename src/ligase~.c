@@ -1581,6 +1581,9 @@ static void ligase_process_effects(ligase_t *x,
     }
 }
 
+// Morph route stepper — defined after morph_apply_at (which needs morph_restore); forward-declared
+// here so ligase_perform can drive the route at control rate.
+static void morph_step(ligase_t *x, int n);
 
 static t_int *ligase_perform(t_int *w) {
     // Flush denormals to zero for this audio callback (FPU mode is per-thread). Prevents the
@@ -1699,6 +1702,11 @@ null_ptr_error:
             }
         }
     }
+
+    // Morph route stepper (control-rate): advance the cursor along the active route and re-apply
+    // the blend BEFORE update_inlets, so morphed modulation bands always win and morphed scalar
+    // bases follow the standard live-CV-wins precedence (GATE A.6).
+    if (x->morph && x->morph->route_active) morph_step(x, n);
 
     ligase_update_inlets(x, grain_size_in, grain_start_in, speed_in, organize_in,
         scanrate_in, sos_in, iot_in, maxgrains_in,
@@ -5890,6 +5898,91 @@ static void ligase_morph_power(ligase_t *x, t_floatarg p) {
     post("ligase~: morph IDW power = %.2f", p);
 }
 
+// ── Routes — automated cursor trajectories (the value-add over AudioMulch) ───
+
+// morph_route <x> <y> [rate] [curve]: append a waypoint (rate = seconds to traverse this leg).
+static void ligase_morph_route(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    if (argc < 2) { pd_error(x, "ligase~: morph_route needs <x> <y> [rate] [curve]"); return; }
+    morph_state_t *m = x->morph;
+    if (m->route_len >= MORPH_MAX_WAYPOINTS) { pd_error(x, "ligase~: route full (%d)", MORPH_MAX_WAYPOINTS); return; }
+    float wx = atom_getfloat(&argv[0]), wy = atom_getfloat(&argv[1]);
+    float rate = (argc >= 3) ? atom_getfloat(&argv[2]) : 1.0f;
+    int   curve = (argc >= 4) ? (int)atom_getfloat(&argv[3]) : MORPH_CURVE_LINEAR;
+    if (wx < 0.0f) wx = 0.0f; else if (wx > 1.0f) wx = 1.0f;
+    if (wy < 0.0f) wy = 0.0f; else if (wy > 1.0f) wy = 1.0f;
+    if (rate < 0.001f) rate = 0.001f;
+    if (curve < 0) curve = 0; else if (curve > MORPH_CURVE_HOLD) curve = MORPH_CURVE_HOLD;
+    morph_waypoint_t *wp = &m->route[m->route_len++];
+    wp->x = wx; wp->y = wy; wp->rate = rate; wp->curve = curve;
+    post("ligase~: route waypoint %d = (%.3f, %.3f) rate %.2fs curve %d", m->route_len - 1, wx, wy, rate, curve);
+}
+
+static void ligase_morph_route_clear(ligase_t *x) {
+    if (!x->morph) return;
+    x->morph->route_len = 0;
+    x->morph->route_active = 0;
+    post("ligase~: route cleared");
+}
+
+// morph_run [loop]: start traversing the route from the current cursor.
+static void ligase_morph_run(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    morph_state_t *m = x->morph;
+    if (m->route_len <= 0) { pd_error(x, "ligase~: route is empty"); return; }
+    m->route_loop   = (argc >= 1 && atom_getfloat(&argv[0]) != 0.0f) ? 1 : 0;
+    m->route_active = 1;
+    m->route_leg    = 0;
+    m->route_leg_t  = 0.0f;
+    m->route_from_x = m->cursor_x;
+    m->route_from_y = m->cursor_y;
+    post("ligase~: route running (%d legs%s)", m->route_len, m->route_loop ? ", looping" : "");
+}
+
+static void ligase_morph_stop(ligase_t *x) {
+    if (!x->morph) return;
+    x->morph->route_active = 0;
+    x->morph->route_leg = 0;
+    x->morph->route_leg_t = 0.0f;
+    post("ligase~: route stopped");
+}
+
+static void ligase_morph_pause(ligase_t *x) {
+    if (!x->morph) return;
+    x->morph->route_active = 0;   // freeze at the current cursor (leg state kept)
+    post("ligase~: route paused");
+}
+
+// Per-block route advance (control rate). Defined here: morph_apply_at is now in scope.
+static void morph_step(ligase_t *x, int n) {
+    morph_state_t *m = x->morph;
+    if (!m || !m->route_active || m->route_len <= 0) return;
+    if (m->route_leg < 0 || m->route_leg >= m->route_len) { m->route_active = 0; return; }
+    float sr = (x->sample_rate > 0) ? (float)x->sample_rate : 48000.0f;
+    morph_waypoint_t *wp = &m->route[m->route_leg];
+    float rate = (wp->rate > 0.0001f) ? wp->rate : 0.0001f;
+
+    m->route_leg_t += ((float)n / sr) / rate;
+    float t = (m->route_leg_t > 1.0f) ? 1.0f : m->route_leg_t;
+    float et = morph_curve(t, wp->curve);
+    float cx = m->route_from_x + (wp->x - m->route_from_x) * et;
+    float cy = m->route_from_y + (wp->y - m->route_from_y) * et;
+    m->cursor_x = cx; m->cursor_y = cy;
+    morph_apply_at(x, cx, cy);
+
+    if (m->route_leg_t >= 1.0f) {                 // leg complete -> advance
+        m->route_from_x = wp->x; m->route_from_y = wp->y;
+        m->route_leg++;
+        m->route_leg_t = 0.0f;
+        if (m->route_leg >= m->route_len) {
+            if (m->route_loop) m->route_leg = 0;  // next leg starts from the last waypoint
+            else m->route_active = 0;             // one-shot: halt at the final waypoint
+        }
+    }
+}
+
 // @region:ligase_pd.pd_external.setup Setup Function
 
 LIGASE_PUBLIC void ligase_tilde_setup(void) {
@@ -6093,6 +6186,12 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_morph_y,       gensym("morph_y"),       A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_interp,  gensym("morph_interp"),  A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_power,   gensym("morph_power"),   A_DEFFLOAT, 0);
+    // Morph / Metasurface — routes (automated cursor trajectories)
+    class_addmethod(ligase_class, (t_method)ligase_morph_route,       gensym("morph_route"),       A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_route_clear, gensym("morph_route_clear"), 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_run,         gensym("morph_run"),         A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_stop,        gensym("morph_stop"),        0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_pause,       gensym("morph_pause"),       0);
 }
 
 // @endregion:ligase_pd.pd_external.setup
