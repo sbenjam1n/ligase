@@ -371,6 +371,7 @@ morph_unplace <id> - Remove a snapshot's surface point
 morph <x> <y> - Move the cursor -> blend all placed snapshots by distance (the live morph)
 morph_x <v> / morph_y <v> - Move one cursor axis
 morph_power <p> - IDW sharpness (default 2; higher = more local)
+morph_interp <0|1> - Kernel: 0=IDW/Shepard (default), 1=natural-neighbour (local, sampled Sibson)
 morph_cursor <0|1> - 0=message cursor (default); 1=CV cursor (signal inlets 22/23 drive x/y per block)
 morph_include <name...> / morph_exclude <name...> - Limit which params the morph applies (all / a param / a group: pitch, smear_pitch, fx)
 morph_route <x> <y> <rate> <curve> - Append a route waypoint (rate sec, curve 0-4)
