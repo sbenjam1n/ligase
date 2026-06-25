@@ -5983,6 +5983,63 @@ static void morph_step(ligase_t *x, int n) {
     }
 }
 
+// ── Persistence — save/load the ENTIRE morph state to a file ─────────────────
+// morph_state_t is pointer-free POD, so one fwrite/fread captures every snapshot AND the whole
+// surface (points + cursor + route). A magic+version+size header rejects incompatible files
+// (a struct-layout change bumps sizeof, so old files are refused rather than read as garbage).
+#define MORPH_FILE_MAGIC   0x4D4F5250u   /* 'MORP' */
+#define MORPH_FILE_VERSION 1u
+
+static void ligase_morph_save(ligase_t *x, t_symbol *s) {
+    if (!x->morph) return;
+    if (!s || !s->s_name || !*s->s_name) { pd_error(x, "ligase~: morph_save needs a filename"); return; }
+    char path[MAXPDSTRING];
+    canvas_makefilename(x->x_canvas, s->s_name, path, MAXPDSTRING);
+    size_t len = strlen(path);
+    if (!(len >= 6 && strcmp(path + len - 6, ".morph") == 0) && len + 6 < MAXPDSTRING)
+        strcpy(path + len, ".morph");   // default extension
+    FILE *f = fopen(path, "wb");
+    if (!f) { pd_error(x, "ligase~: morph_save — cannot open %s", path); return; }
+    uint32_t hdr[3] = { MORPH_FILE_MAGIC, MORPH_FILE_VERSION, (uint32_t)sizeof(morph_state_t) };
+    int ok = (fwrite(hdr, sizeof(hdr), 1, f) == 1) && (fwrite(x->morph, sizeof(morph_state_t), 1, f) == 1);
+    fclose(f);
+    if (!ok) { pd_error(x, "ligase~: morph_save — write failed: %s", path); return; }
+    int snaps = 0;
+    for (int i = 0; i < MORPH_MAX_SNAPSHOTS; i++) if (x->morph->snaps[i].in_use) snaps++;
+    post("ligase~: morph saved to %s (%d snapshots, %d placed, %d route waypoints)",
+         path, snaps, x->morph->point_count, x->morph->route_len);
+}
+
+static void ligase_morph_load(ligase_t *x, t_symbol *s) {
+    if (!x->morph) return;
+    if (!s || !s->s_name || !*s->s_name) { pd_error(x, "ligase~: morph_load needs a filename"); return; }
+    char dirbuf[MAXPDSTRING], *nameptr = NULL;
+    int fd = canvas_open(x->x_canvas, s->s_name, ".morph", dirbuf, &nameptr, MAXPDSTRING, 1);
+    if (fd < 0) { pd_error(x, "ligase~: morph_load — file not found on patch/search path: %s", s->s_name); return; }
+    sys_close(fd);
+    char path[MAXPDSTRING];
+    int wrote = snprintf(path, MAXPDSTRING, "%s/%s", dirbuf, nameptr ? nameptr : s->s_name);
+    if (wrote < 0 || wrote >= MAXPDSTRING) { pd_error(x, "ligase~: morph_load — resolved path too long"); return; }
+    FILE *f = fopen(path, "rb");
+    if (!f) { pd_error(x, "ligase~: morph_load — cannot open %s", path); return; }
+    uint32_t hdr[3];
+    if (fread(hdr, sizeof(hdr), 1, f) != 1) { fclose(f); pd_error(x, "ligase~: morph_load — short read: %s", path); return; }
+    if (hdr[0] != MORPH_FILE_MAGIC) { fclose(f); pd_error(x, "ligase~: morph_load — not a morph file: %s", path); return; }
+    if (hdr[1] != MORPH_FILE_VERSION || hdr[2] != (uint32_t)sizeof(morph_state_t)) {
+        fclose(f); pd_error(x, "ligase~: morph_load — incompatible morph file (version/layout): %s", path); return;
+    }
+    morph_state_t tmp;
+    if (fread(&tmp, sizeof(morph_state_t), 1, f) != 1) { fclose(f); pd_error(x, "ligase~: morph_load — short read: %s", path); return; }
+    fclose(f);
+    *x->morph = tmp;
+    int snaps = 0;
+    for (int i = 0; i < MORPH_MAX_SNAPSHOTS; i++) if (x->morph->snaps[i].in_use) snaps++;
+    post("ligase~: morph loaded from %s (%d snapshots, %d placed, %d route waypoints)",
+         path, snaps, x->morph->point_count, x->morph->route_len);
+    // Re-apply the loaded cursor so the live sound reflects the restored surface.
+    if (x->morph->point_count > 0) morph_apply_at(x, x->morph->cursor_x, x->morph->cursor_y);
+}
+
 // @region:ligase_pd.pd_external.setup Setup Function
 
 LIGASE_PUBLIC void ligase_tilde_setup(void) {
@@ -6192,6 +6249,9 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_morph_run,         gensym("morph_run"),         A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_stop,        gensym("morph_stop"),        0);
     class_addmethod(ligase_class, (t_method)ligase_morph_pause,       gensym("morph_pause"),       0);
+    // Morph / Metasurface — persistence (whole surface + all snapshots to one file)
+    class_addmethod(ligase_class, (t_method)ligase_morph_save, gensym("morph_save"), A_DEFSYMBOL, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_load, gensym("morph_load"), A_DEFSYMBOL, 0);
 }
 
 // @endregion:ligase_pd.pd_external.setup

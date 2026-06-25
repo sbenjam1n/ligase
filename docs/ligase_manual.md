@@ -371,6 +371,7 @@ morph_x <v> / morph_y <v> - Move one cursor axis
 morph_power <p> - IDW sharpness (default 2; higher = more local)
 morph_route <x> <y> <rate> <curve> - Append a route waypoint (rate sec, curve 0-4)
 morph_run [loop] / morph_stop / morph_pause - Play / halt the route. morph_route_clear empties it.
+morph_save <file> / morph_load <file> - Save / load the whole surface (every snapshot + points + cursor + route) to a .morph file
 
 See MORPH / METASURFACE for the full model.
 
@@ -2766,6 +2767,15 @@ the final waypoint). morph_stop ends it; morph_pause freezes at the current curs
   morph 0.5 0                 # halfway: smear pitch +6 semis, resonance 0.6, cutoff ~3200
   # or sweep automatically over 4 seconds, eased
   morph_route 1 0 4 3 \; morph_run
+
+## Persistence
+
+morph_save <file> writes the ENTIRE morph state — every captured snapshot PLUS the whole surface
+(points, cursor, route) — to a single .morph file (path resolved relative to the patch, exactly like
+load/save for the reel; a .morph extension is added if you leave it off). morph_load <file> reads it
+back — into the same patch or a fresh instance — and re-applies the cursor so the live sound jumps to
+the loaded blend. The file carries a version/layout header, so a .morph written by an incompatible
+build is refused rather than mis-read.
 
 ## Notes
 
