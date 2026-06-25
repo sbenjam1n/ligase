@@ -5451,6 +5451,145 @@ static void *ligase_new(void) {
     return (void *)x;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Morph / Metasurface — snapshot capture + recall  (Step 2a: modulation bands)
+//
+// Step 2a captures the 45 modulation BANDS (param_range_t band fields). The
+// scalar bases, discrete modes, scale lists, and the opaque-FX shadows are added
+// in Step 2b — until then a recall restores the modulation band but leaves the
+// scalar base / mode fields untouched.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Fill r[] with pointers to all 45 morphable param_range_t in a FIXED order (the
+// get_param_range_by_name 41 + the 4 non-dispatched ranges). Capture and restore
+// share this single source of truth, so their iteration order always agrees.
+static int morph_collect_ranges(ligase_t *x, param_range_t **r) {
+    scheduler_t *s = x->scheduler;
+    int n = 0;
+    r[n++] = &s->speed_range;
+    r[n++] = &s->scanrate_range;
+    r[n++] = &s->organize_range;
+    r[n++] = &s->sos_range;
+    r[n++] = &s->iot_range;
+    r[n++] = &s->maxgrains_range;
+    r[n++] = &s->grainsize_range;
+    r[n++] = &s->grainstart_range;
+    r[n++] = &s->env_skew_range;
+    r[n++] = &s->saw_cycles_range;     // non-dispatched (not in get_param_range_by_name)
+    r[n++] = &s->saw_depth_range;      // non-dispatched
+    r[n++] = &s->gdelay_range;
+    r[n++] = &s->gdelay_feedback_range;
+    r[n++] = &s->gdelay_tone_range;
+    r[n++] = &s->gdelay_mix_range;
+    r[n++] = &s->distortion_range;
+    r[n++] = &s->amplitude_range;
+    r[n++] = &s->pan_range;
+    r[n++] = &s->moog_cutoff_range;
+    r[n++] = &s->moog_resonance_range;
+    r[n++] = &s->moog_mix_range;
+    r[n++] = &s->dist_emphasis_freq_range;
+    r[n++] = &s->dist_pregain_range;
+    r[n++] = &s->dist_curve_blend_range;
+    r[n++] = &s->dist_drive_pos_range;
+    r[n++] = &s->dist_drive_neg_range;
+    r[n++] = &s->dist_poly_c1_range;
+    r[n++] = &s->dist_poly_c2_range;
+    r[n++] = &s->dist_poly_c3_range;
+    r[n++] = &s->stut_reps_range;
+    r[n++] = &s->bencina_iot_range;
+    r[n++] = &s->bencina_grainsize_range;
+    r[n++] = &s->bencina_pan_range;
+    r[n++] = &s->smear_frequency_range;
+    r[n++] = &s->smear_resonance_range;
+    r[n++] = &s->smear_stages_range;
+    r[n++] = &s->smear_feedback_range;
+    r[n++] = &s->smear_pitch_fine_range;             // 38 scheduler ranges
+    r[n++] = &s->pitch_control.semitone_range;       // non-dispatched
+    r[n++] = &s->pitch_control.pitch_fine_range;
+    r[n++] = &s->smear_pitch_control.semitone_range; // non-dispatched
+    r[n++] = &x->modout1_range;
+    r[n++] = &x->modout2_range;
+    r[n++] = &x->modout3_range;
+    r[n++] = &x->modout4_range;
+    return n;   // == MORPH_RANGE_COUNT (45)
+}
+
+static void morph_capture_ranges(ligase_t *x, morph_snapshot_t *snap) {
+    param_range_t *r[MORPH_RANGE_COUNT];
+    int n = morph_collect_ranges(x, r);
+    for (int i = 0; i < n; i++) {
+        morph_range_slot_t *d = &snap->ranges[i];
+        d->min           = r[i]->min;
+        d->max           = r[i]->max;
+        d->enabled       = r[i]->enabled;
+        d->rand_type     = r[i]->rand_type;
+        d->rand_instance = r[i]->rand_instance;
+        d->base_value    = r[i]->base_value;
+        d->slew          = r[i]->slew;
+        d->invert        = r[i]->invert;
+    }
+}
+
+static void morph_restore_ranges(ligase_t *x, const morph_snapshot_t *snap) {
+    param_range_t *r[MORPH_RANGE_COUNT];
+    int n = morph_collect_ranges(x, r);
+    for (int i = 0; i < n; i++) {
+        const morph_range_slot_t *src = &snap->ranges[i];
+        r[i]->min           = src->min;
+        r[i]->max           = src->max;
+        r[i]->enabled       = src->enabled;
+        r[i]->rand_type     = src->rand_type;
+        r[i]->rand_instance = src->rand_instance;
+        r[i]->base_value    = src->base_value;
+        r[i]->slew          = src->slew;
+        r[i]->invert        = src->invert;
+        // smoothed_value / saved_rand_* are transient state — left untouched so a
+        // recall doesn't reset the running smoother or the pattern-restore stash.
+    }
+}
+
+static int morph_snap_id(ligase_t *x, const char *who, int argc, t_atom *argv) {
+    int id = (argc >= 1 && argv[0].a_type == A_FLOAT) ? (int)atom_getfloat(&argv[0]) : -1;
+    if (id < 0 || id >= MORPH_MAX_SNAPSHOTS) {
+        pd_error(x, "ligase~: %s id must be 0..%d", who, MORPH_MAX_SNAPSHOTS - 1);
+        return -1;
+    }
+    return id;
+}
+
+static void ligase_snapshot(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    int id = morph_snap_id(x, "snapshot", argc, argv);
+    if (id < 0) return;
+    morph_snapshot_t *snap = &x->morph->snaps[id];
+    morph_capture_ranges(x, snap);     // Step 2a: bands. (scalars/discretes/scales: 2b)
+    snap->in_use = 1;
+    post("ligase~: snapshot %d captured (modulation bands)", id);
+}
+
+static void ligase_snapshot_recall(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    int id = morph_snap_id(x, "snapshot_recall", argc, argv);
+    if (id < 0) return;
+    if (!x->morph->snaps[id].in_use) {
+        pd_error(x, "ligase~: snapshot %d is empty", id);
+        return;
+    }
+    morph_restore_ranges(x, &x->morph->snaps[id]);
+    post("ligase~: snapshot %d recalled (modulation bands)", id);
+}
+
+static void ligase_snapshot_clear(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    int id = morph_snap_id(x, "snapshot_clear", argc, argv);
+    if (id < 0) return;
+    x->morph->snaps[id].in_use = 0;
+    post("ligase~: snapshot %d cleared", id);
+}
+
 // @region:ligase_pd.pd_external.setup Setup Function
 
 LIGASE_PUBLIC void ligase_tilde_setup(void) {
@@ -5640,6 +5779,11 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_get_generators, gensym("get_generators"), 0);
     class_addmethod(ligase_class, (t_method)ligase_get_state, gensym("get_state"), 0);
     // @endregion:ligase_pd.pd_external.methods.query.registration
+
+    // Morph / Metasurface — snapshot capture + recall (Step 2a)
+    class_addmethod(ligase_class, (t_method)ligase_snapshot,        gensym("snapshot"),        A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapshot_recall, gensym("snapshot_recall"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapshot_clear,  gensym("snapshot_clear"),  A_GIMME, 0);
 }
 
 // @endregion:ligase_pd.pd_external.setup

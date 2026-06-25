@@ -36,14 +36,15 @@ enum {
     MORPH_INTERP_NN  = 1     // natural-neighbour / Sibson (v1.x, reserved)
 };
 
-// One captured modulatable-param slot (the snapshot-worthy subset of param_range_t).
+// One captured modulation BAND (the snapshot-worthy subset of param_range_t).
+// The scalar BASE that pairs with each range is captured separately in scalars[]
+// (band and base are independent fields — see the capture notes in morph_metasurface.md).
 typedef struct {
-    float base;          // scalar target value (NOT smoothed_value)
-    float min, max;      // modulation band
-    int   enabled;       // band active?
+    float min, max;      // modulation band (continuous -> lerp)
+    int   enabled;       // band active? (discrete -> step)
     int   rand_type;     // generator (categorical -> step, not lerp)
     int   rand_instance; // generator instance (categorical -> step)
-    float base_value;    // PERLIN_2D Y base
+    float base_value;    // PERLIN_2D Y base (continuous -> lerp)
     float slew;          // smoothing coeff (continuous -> lerp)
     int   invert;        // categorical -> step
 } morph_range_slot_t;
