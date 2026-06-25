@@ -5,8 +5,17 @@ _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md`;
 
 ## Where we are (2026-06-24)
 - **All work merged into `main`.** `main` == `fix/audio-engine-and-manual` == `origin/main` ==
-  `origin/fix/...` == **`9495b5e`**; 0 commits unmerged; working tree clean.
+  `origin/fix/...`; 0 commits unmerged; working tree clean.
 - Every reported bug/feature (B1–B35, M1) is **implemented and verified headless**.
+- **NEW — Morph / Metasurface v1 is feature-complete + headless-verified** (QUEUE Seq 59; plan
+  `Plans/morph_metasurface.md`; first of the six "new directions" built). A 2D snapshot-interpolation
+  surface (Bencina Metasurface): `snapshot`/`snapshot_recall` capture the whole patch (modulation
+  bands + scalar bases + discretes + scale lists + playable-FX shadows), `morph_point` places them,
+  `morph <x> <y>` blends by IDW distance, `morph_route`/`morph_run` automate the cursor. New module
+  `src/morph.{c,h}` (pure kernel/curve/types) + the x-coupled capture/blend/handlers in `ligase~.c`
+  (a per-block route stepper in `ligase_perform` before `update_inlets`). Tests `tests/morph/MC1–5`.
+  v1.1 (documented, deferred): natural-neighbour kernel, per-field include/exclude, CV signal-inlet
+  cursor, FX scalar bases for distortion-enhancement/stut/bencina.
 - **NEW — TidalCycles pattern subsystem (P1+P2+P3) is feature-complete + headless-verified**
   (QUEUE Seq 47–49; plans `Plans/pattern_*.md`). Mini-notation step-sequencing of any param, a BPM
   quantization cycle, and scale-degree pitch — all built on the existing modulation/BPM/scale engine.

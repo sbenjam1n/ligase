@@ -359,6 +359,21 @@ pattern_debug <0|1> - Log step / semitone changes to stderr (off by default)
 Tokens are space-separated (NO commas): values 0..1 for params or scale degrees for pitch; < > alternation
 (one per cycle); [ ] subdivision (nestable); @N weight; *N repeat; !N replicate; ~ rest. See PATTERNS.
 
+Morph / Metasurface (snapshot interpolation surface)
+
+snapshot <id> - Capture the whole patch into snapshot id (0-63)
+snapshot_recall <id> - Jump straight to a captured snapshot
+snapshot_clear <id> - Forget a snapshot
+morph_point <id> <x> <y> - Place a snapshot at (x,y) on the [0,1]^2 surface (alias morph_place)
+morph_unplace <id> - Remove a snapshot's surface point
+morph <x> <y> - Move the cursor -> blend all placed snapshots by distance (the live morph)
+morph_x <v> / morph_y <v> - Move one cursor axis
+morph_power <p> - IDW sharpness (default 2; higher = more local)
+morph_route <x> <y> <rate> <curve> - Append a route waypoint (rate sec, curve 0-4)
+morph_run [loop] / morph_stop / morph_pause - Play / halt the route. morph_route_clear empties it.
+
+See MORPH / METASURFACE for the full model.
+
 Defaults
 
 Core Parameters
@@ -2686,6 +2701,81 @@ Notes
 - Single-level alternation only: < > may not be nested directly inside another < > (rejected). [ ] subdivision
   nests freely.
 - pattern_debug 1 logs step and applied-semitone changes to stderr (a development aid; off by default).
+
+# MORPH / METASURFACE
+
+A 2D interpolation surface for the WHOLE patch, modelled on Ross Bencina's Metasurface (AudioMulch). You
+capture snapshots of the entire sound, drop each as a point on a square, then move a cursor around the
+square — at any cursor position every parameter is set to a distance-weighted blend of the surrounding
+snapshots. Sit the cursor exactly on a point and you get that snapshot back unchanged; move between points
+and the sound morphs smoothly. Routes then let the cursor drive ITSELF along a timed path.
+
+The whole thing is control-rate and sits ON TOP of the existing engine — it only writes the same fields the
+normal messages write, and **modulation keeps running through a morph** (it interpolates the modulation
+band, it doesn't freeze it).
+
+## Snapshots
+
+snapshot <id> captures the current patch into slot id (0-63); snapshot_recall <id> jumps straight back to it
+(no blend); snapshot_clear <id> forgets it.
+
+A snapshot stores: every modulation range (the min/max band, generator, slew, invert of all 45 modulatable
+params), the scalar base of each continuous parameter (grain size/start, speed, amplitude, pan, saw, sos,
+iot, the pitch + smear-pitch values, the quant amounts), every discrete mode/enum/channel (playhead mode,
+pitch mode, smear-pitch source, pan mode, sos mode, MIDI channels, …), both pitch scale lists, and the
+playable-FX scalar bases (moog cutoff/resonance/mix, smear frequency/resonance/stages/feedback, delay
+time/feedback/tone/mix).
+
+## The surface and the cursor
+
+morph_point <id> <x> <y> (alias morph_place) drops snapshot id at (x,y) on the normalised [0,1] x [0,1]
+surface; morph_unplace <id> removes it. Place as many as you like, anywhere.
+
+morph <x> <y> moves the cursor and blends immediately (this is the live "play the surface" control; morph_x
+and morph_y move one axis each, e.g. from two CV/knob sources). Blend rules:
+
+- Continuous fields (range min/max, scalar bases) — distance-weighted average, each in its own units (Hz
+  blends in Hz, semitones in semitones).
+- Discrete fields (modes, generators, scale lists) — snap to the NEAREST (highest-weighted) snapshot; they
+  cannot be averaged.
+- Cursor exactly on a point — that snapshot is reproduced exactly (no overshoot).
+
+morph_power <p> sets the IDW sharpness (default 2.0; higher pulls the blend tighter to the nearest point).
+morph_interp selects the weighting kernel — only IDW/Shepard ships in v1; natural-neighbour (Bencina's exact
+method) is reserved (morph_interp 1 warns and stays on IDW).
+
+## Routes (automated cursor paths)
+
+A route is a list of waypoints the cursor walks through over time — an automation envelope on the morph
+itself (this is the part AudioMulch left as future work).
+
+morph_route <x> <y> <rate> <curve> appends a waypoint: rate = seconds to traverse that leg, curve = the
+easing (0 linear, 1 ease-in, 2 ease-out, 3 ease-in-out, 4 hold). morph_route_clear empties the path.
+
+morph_run [loop] starts walking from the current cursor (loop wraps end→start; without it the route halts at
+the final waypoint). morph_stop ends it; morph_pause freezes at the current cursor.
+
+## Example
+
+  # build two sounds and capture them
+  smear_pitch_semitones 0 \; smear_resonance 0.9 \; moog_cutoff 400
+  snapshot 0 \; morph_point 0 0 0
+  smear_pitch_semitones 12 \; smear_resonance 0.3 \; moog_cutoff 6000
+  snapshot 1 \; morph_point 1 1 0
+  # play the surface live
+  morph 0.5 0                 # halfway: smear pitch +6 semis, resonance 0.6, cutoff ~3200
+  # or sweep automatically over 4 seconds, eased
+  morph_route 1 0 4 3 \; morph_run
+
+## Notes
+
+- A morphed scalar base of an inlet-tracked parameter (grain size, speed, amplitude, …) only takes effect
+  while that signal inlet is unpatched — a live CV inlet overrides it the same block (the engine's standard
+  live-CV-wins precedence). The modulation BAND of those params always morphs.
+- Distortion-enhancement and stut/bencina scalar bases are not captured yet (their modulation bands are);
+  they hold their current value across a recall.
+- Per-parameter morph include/exclude and a signal-rate (CV) cursor are planned (v1.1). Today the cursor is
+  message/float-driven and the morph covers the full patch.
 
 # QUERY STATE
 
