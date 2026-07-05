@@ -2,7 +2,8 @@
 # Generate the ligase~ Synthi-style control-surface mockup (SVG).
 import math
 
-W, H = 1520, 1096
+W, H = 1914, 1096
+MAINW = 1520   # right edge of the main panel case
 parts = []
 
 # ---------- palette (EMS-ish: charcoal panel, warm legends, colored caps) ----------
@@ -104,11 +105,12 @@ def strip(x, y, w, h, title, color):
     parts.append(f'<circle cx="{x+19}" cy="{y}" r="3" fill="{CAP[color]}"/>')
     text(x + 27, y + 3.5, title, size=9, anchor="start", weight="bold", ls="1.5")
 
-def led_display(x, y, digits, label=None, w=64, h=32):
+def led_display(x, y, digits, label=None, w=64, h=32, ghost="88", fs=26):
     """Amber LED numeric display (segment-ghost style), centered at x,y."""
     parts.append(f'<rect x="{x-w/2}" y="{y-h/2}" width="{w}" height="{h}" rx="4" fill="#0a0705" stroke="#4a4038" stroke-width="1.4"/>')
-    parts.append(f'<text x="{x}" y="{y+9}" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">88</text>')
-    parts.append(f'<text x="{x}" y="{y+9}" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">{esc(digits)}</text>')
+    dy = fs * 0.35
+    parts.append(f'<text x="{x}" y="{y+dy:.0f}" font-family="Courier New, monospace" font-size="{fs}" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">{esc(ghost)}</text>')
+    parts.append(f'<text x="{x}" y="{y+dy:.0f}" font-family="Courier New, monospace" font-size="{fs}" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">{esc(digits)}</text>')
     if label:
         text(x, y + h/2 + 11, label, size=7, fill=MUTED)
 
@@ -124,8 +126,8 @@ def screw(x, y):
 
 # ---------- case + panel ----------
 parts.append(f'<rect width="{W}" height="{H}" fill="{CASE}"/>')
-parts.append(f'<rect x="14" y="14" width="{W-28}" height="{H-28}" rx="14" fill="{PANEL}" stroke="#3a3e44" stroke-width="2"/>')
-for sx in (34, W-34):
+parts.append(f'<rect x="14" y="14" width="{MAINW-28}" height="{H-28}" rx="14" fill="{PANEL}" stroke="#3a3e44" stroke-width="2"/>')
+for sx in (34, MAINW-34):
     for sy in (34, H-34):
         screw(sx, sy)
 
@@ -268,11 +270,12 @@ text(LX+LW/2, sy+58, "a preset = a message bundle (distortion char, delay/bencin
 # ---------- RIGHT: PIN MATRIX ----------
 MX, MY = 806, 130
 CELL = 23
-NSRC, NDST = 16, 16
+NSRC, NDST = 16, 22
 srcs = ["SIN 1","SAW 1","SQR 1","PERL 1","PERL 2","LRNZ 1","NBDY 1","SPHR 1",
         "RAND 1","PAT 0","PAT 1","PAT 2","PAT 3","ENV L","ENV R","ENV M"]
 dsts = ["DLY TIME","DLY FEED","DLY TONE","DLY MIX","CUTOFF","RESON","FLT MIX",
-        "SMR FRQ","SMR RES","SMR STG","SMR FB","SCAN","ORGANIZE","S.O.S.","IOT","SKEW"]
+        "SMR FRQ","SMR RES","SMR STG","SMR FB","SCAN","ORGANIZE","S.O.S.","IOT","SKEW",
+        "SPEED","SIZE","START","AMP","PAN","FINE"]
 MW = NDST * CELL
 MHh = NSRC * CELL
 
@@ -285,7 +288,7 @@ for j, d in enumerate(dsts):
     text(gx + j*CELL + CELL/2 + 2, MY + 46, d, size=7, fill=LEGEND, anchor="start", rotate=-62)
 gy = MY + 54
 parts.append(f'<rect x="{gx-4}" y="{gy-4}" width="{MW+8}" height="{MHh+8}" rx="4" fill="#1b1d21" stroke="{LINE}" stroke-width="1.2"/>')
-pins = {(3,0):"white", (15,4):"white", (8,7):"white", (9,13):"green", (5,15):"white", (13,3):"green", (0,11):"white"}
+pins = {(3,0):"white", (15,4):"white", (8,7):"white", (9,13):"green", (5,15):"white", (13,3):"green", (0,11):"white", (8,17):"white", (0,21):"green"}
 for i, s in enumerate(srcs):
     text(gx - 10, gy + i*CELL + CELL/2 + 2.5, s, size=7, fill=LEGEND, anchor="end")
     for j in range(NDST):
@@ -296,8 +299,10 @@ for i, s in enumerate(srcs):
             parts.append(f'<circle cx="{cx}" cy="{cy}" r="2" fill="#0d0e10"/>')
         else:
             parts.append(f'<circle cx="{cx}" cy="{cy}" r="3.4" fill="{HOLE}" stroke="#3c4046" stroke-width="0.8"/>')
-text(gx + MW/2, gy + MHh + 20, "16 × 16 panel subset — full 44 sources × 20 destinations (incl. modout 1-4) reachable by message", size=7, fill=MUTED)
-text(gx + MW/2, gy + MHh + 31, "sources: LFO ×4 · perlin ×4 · lorenz ×4 · nbody ×4 · sphere ×4 · rand ×4 · pattern 0-7 · input env follower (env_follow_ms)", size=7, fill=MUTED)
+text(gx + MW/2, gy + MHh + 20, "16 × 22 panel subset — full 44 sources × 26 destinations (incl. modout 1-4) reachable by message", size=7, fill=MUTED)
+parts.append(f'<line x1="{gx + 16*CELL}" y1="{gy-4}" x2="{gx + 16*CELL}" y2="{gy+MHh+4}" stroke="#4a4f55" stroke-width="1" stroke-dasharray="3,3"/>')
+text(gx + 16*CELL + 3*CELL, gy - 66, "PER-GRAIN (v1.5)", size=7, fill="#d9c48a", weight="bold")
+text(gx + MW/2, gy + MHh + 31, "sources: LFO ×4 · perlin ×4 · lorenz ×4 · nbody ×4 · sphere ×4 · rand ×4 · pattern 0-7 · input env follower · per-grain cols apply at trigger, never write the knobs", size=7, fill=MUTED)
 
 # ---------- RIGHT-BOTTOM: JOYSTICK (morph) ----------
 JX, JY, JS = 812, 760, 216
@@ -349,12 +354,79 @@ text(VX+130, VY+158, "9 state / param reports", 7, MUTED)
 text(VX+130, VY+186, "pattern events: message-driven", 7, MUTED)
 text(VX+130, VY+198, "pattern event grain [ 1(3,8) ]", 7, "#d9c48a")
 
+# ---------- XPNDR sidecar module (snapshot expander — edit buffer) ----------
+XL = MAINW + 14          # sidecar case left
+XW = W - XL - 14         # sidecar case width
+parts.append(f'<rect x="{XL}" y="14" width="{XW}" height="{H-28}" rx="14" fill="{PANEL}" stroke="#3a3e44" stroke-width="2"/>')
+for sxx in (XL+20, XL+XW-20):
+    for syy in (34, H-34):
+        screw(sxx, syy)
+XC = XL + XW/2           # sidecar center x
+text(XL+38, 52, "XPNDR", size=22, anchor="start", weight="bold", ls="2")
+text(XL+38, 68, "SNAPSHOT EXPANDER — EDIT BUFFER", size=8, anchor="start", fill=MUTED, ls="1.5")
+
+xy = 92; xh = 104
+strip(XL+24, xy, XW-48, xh, "SNAPSHOT", "yellow")
+kxy = xy + 42
+led_display(XL+80, kxy-4, "02", "buffer holds snap")
+knob(XL+150, kxy, "DATA", "slot 0 – 63", "MSG", "grey", 0.25, small=True)
+button(XL+248, kxy-12, "LOAD", 64)
+button(XL+248, kxy+14, "FROM LIVE", 78)
+text(XL+248, kxy+40, "snapbuf_load · snapbuf_from_live", 6.5, MUTED)
+
+xy += xh + 12
+strip(XL+24, xy, XW-48, 118, "ADDRESS — PAGE × PARAM", "white")
+switch(XC, xy+38, 312, ["GRAIN","TAPE","DELAY","FILTR","SMEAR","ENV","PITCH","SPACE"], 3, "PAGE")
+switch(XC, xy+86, 312, ["1","2","3","4","5","6","7","8"], 1, "PARAM")
+
+xy += 118 + 12
+strip(XL+24, xy, XW-48, 92, "VALUE", "white")
+led_display(XL+96, xy+42, "0.42", "stored value", w=96, h=30, ghost="8.88", fs=22)
+knob(XL+196, xy+42, "VALUE", "scalar · detent = discrete", "MSG", "white", 0.42)
+text(XL+290, xy+38, "snapbuf_get", 6.5, MUTED, "start")
+text(XL+290, xy+48, "snapbuf_set", 6.5, MUTED, "start")
+
+xy += 92 + 12
+strip(XL+24, xy, XW-48, 168, "MODULATION BAND (of the addressed param)", "blue")
+bky = xy + 42
+knob(XL+78,  bky, "MIN",  "band low",  None, "blue", 0.3, small=True)
+knob(XL+142, bky, "MAX",  "band high", None, "blue", 0.7, small=True)
+knob(XL+206, bky, "SLEW", "smooth",    None, "blue", 0.2, small=True)
+toggle(XL+262, bky-6, "ENABLED", on=True)
+toggle(XL+318, bky-6, "INVERT", on=False)
+switch(XL+136, xy+120, 210, ["OFF","PERL","LRNZ","NBDY","SPHR","RAND","PAT"], 1, "SOURCE")
+switch(XL+296, xy+120, 64, ["1","2","3","4"], 0, "INST")
+
+xy += 168 + 12
+strip(XL+24, xy, XW-48, 100, "COMMIT", "red")
+cky = xy + 38
+button(XL+108, cky, "STORE", 76)
+button(XL+228, cky, "ASSIGN", 76, lit=True)
+text(XL+108, cky+22, "snapbuf_store <id>", 6.5, MUTED)
+text(XL+228, cky+22, "snapbuf_apply", 6.5, MUTED)
+text(XC, cky+42, "edits are COLD — the live engine is untouched until ASSIGN", 7.5, "#d9c48a", weight="bold")
+
+xy += 100 + 18
+text(XL+38, xy, "MESSAGES", 8, MUTED, "start", "bold", ls="1.5")
+for i, ln in enumerate([
+    "snapbuf_load <id> · snapbuf_from_live · snapbuf_clear",
+    "snapbuf_set <field> [sub] <v> · snapbuf_get <field> [sub]",
+    "snapbuf_dump  (re-sendable lines → outlet 9)",
+    "snapbuf_store <id>   (reshapes the surface if slot is placed)",
+    "snapbuf_apply        (the ONLY realtime touchpoint)",
+]):
+    text(XL+38, xy+14+i*11, ln, 7, MUTED, "start")
+text(XL+38, xy+14+5*11+8, "STORE to a placed slot reshapes the morph field next block —", 6.8, MUTED, "start")
+text(XL+38, xy+14+5*11+18, "deliberate act, never a knob side-effect. AUDITION / COMPARE = v1.1 (GATE A).", 6.8, MUTED, "start")
+text(XL+38, xy+14+5*11+38, "Pd prototype: own canvas · speaks only snapbuf_* · parses outlet 9.", 6.8, "#d9c48a", "start")
+text(XL+XW-24, H-58, "Plans/snapshot_expander.md", 7, MUTED, "end")
+
 # ---------- footer ----------
 fy = H - 44
 parts.append(f'<line x1="40" y1="{fy-14}" x2="{W-40}" y2="{fy-14}" stroke="{LINE}" stroke-width="0.8"/>')
 text(46, fy, "Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save", size=8, fill=MUTED, anchor="start")
 text(46, fy+14, "BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix & param_range)", size=8, fill=MUTED, anchor="start")
-text(W-46, fy+14, "ligase~ — QUEUE Seq 61 feature set", size=8, fill=MUTED, anchor="end")
+text(MAINW-46, fy+14, "ligase~ — QUEUE Seq 63 feature set", size=8, fill=MUTED, anchor="end")
 
 svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">\n' + "\n".join(p for p in parts if p) + "\n</svg>\n"
 import os
