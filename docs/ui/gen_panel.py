@@ -304,6 +304,21 @@ parts.append(f'<line x1="{gx + 16*CELL}" y1="{gy-4}" x2="{gx + 16*CELL}" y2="{gy
 text(gx + 16*CELL + 3*CELL, gy - 66, "PER-GRAIN (v1.5)", size=7, fill="#d9c48a", weight="bold")
 text(gx + MW/2, gy + MHh + 31, "sources: LFO ×4 · perlin ×4 · lorenz ×4 · nbody ×4 · sphere ×4 · rand ×4 · pattern 0-7 · input env follower · per-grain cols apply at trigger, never write the knobs", size=7, fill=MUTED)
 
+# ---------- RIGHT-MIDDLE: MOD SOURCES (shared generators = the matrix rows) ----------
+MSX, MSY = 798, 612
+strip(MSX, MSY, 662, 104, "MOD SOURCES — SHARED GENERATORS (THE MATRIX ROWS)", "yellow")
+mky = MSY + 42
+for i in range(4):
+    knob(MSX+56 + i*66, mky, f"RATE {i+1}", "0.01 – 100 ×", "MSG", "yellow", 0.35 + i*0.1, small=True)
+knob(MSX+330, mky, "FOLLOW", "1 – 5000 ms", "MSG", "yellow", 0.25, small=True)
+parts.append(f'<line x1="{MSX+382}" y1="{MSY+16}" x2="{MSX+382}" y2="{MSY+78}" stroke="#3c4046" stroke-width="0.8"/>')
+knob(MSX+426, mky, "DAMP",  "sphere", "MSG", "grey", 0.6, small=True)
+knob(MSX+484, mky, "ELAST", "sphere", "MSG", "grey", 0.8, small=True)
+knob(MSX+548, mky, "G",     "nbody",  "MSG", "grey", 0.5, small=True)
+knob(MSX+606, mky, "DAMP",  "nbody",  "MSG", "grey", 0.3, small=True)
+text(MSX+331, MSY+88, "noise_freq_1..4 (instance n drives SIN/SAW/SQR/PERL n together) · env_follow_ms · sphere_damping/_elasticity · nbody_G/_damping", 6.8, MUTED)
+text(MSX+331, MSY+98, "rate = IOT × scale — sources breathe with grain density; rates are GLOBAL, shared by every pin and band on that instance", 6.8, "#d9c48a")
+
 # ---------- RIGHT-BOTTOM: JOYSTICK (morph) ----------
 JX, JY, JS = 812, 760, 216
 strip(JX-14, JY-36, JS+220, 268, "MORPH METASURFACE — JOYSTICK", "green")
@@ -426,7 +441,7 @@ fy = H - 44
 parts.append(f'<line x1="40" y1="{fy-14}" x2="{W-40}" y2="{fy-14}" stroke="{LINE}" stroke-width="0.8"/>')
 text(46, fy, "Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save", size=8, fill=MUTED, anchor="start")
 text(46, fy+14, "BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix & param_range)", size=8, fill=MUTED, anchor="start")
-text(MAINW-46, fy+14, "ligase~ — QUEUE Seq 63 feature set", size=8, fill=MUTED, anchor="end")
+text(MAINW-46, fy+14, "ligase~ — QUEUE Seq 64 feature set", size=8, fill=MUTED, anchor="end")
 
 svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">\n' + "\n".join(p for p in parts if p) + "\n</svg>\n"
 import os

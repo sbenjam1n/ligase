@@ -953,6 +953,103 @@
 <line x1="1232" y1="180" x2="1232" y2="556" stroke="#4a4f55" stroke-width="1" stroke-dasharray="3,3"/>
 <text x="1301" y="118" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#d9c48a" text-anchor="middle" font-weight="bold">PER-GRAIN (v1.5)</text>
 <text x="1117.0" y="583" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#9aa0a6" text-anchor="middle">sources: LFO ×4 · perlin ×4 · lorenz ×4 · nbody ×4 · sphere ×4 · rand ×4 · pattern 0-7 · input env follower · per-grain cols apply at trigger, never write the knobs</text>
+<rect x="798" y="612" width="662" height="104" rx="6" fill="none" stroke="#5c6167" stroke-width="1"/>
+<rect x="810" y="605" width="324" height="14" fill="#26292e"/>
+<circle cx="817" cy="612" r="3" fill="#d9a83c"/>
+<text x="825" y="615.5" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#e9e5d9" text-anchor="start" font-weight="bold" letter-spacing="1.5">MOD SOURCES — SHARED GENERATORS (THE MATRIX ROWS)</text>
+<line x1="843.4" y1="664.6" x2="841.3" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="854.0" y1="639.0" x2="854.0" y2="636.0" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="864.6" y1="664.6" x2="866.7" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<circle cx="854" cy="654" r="12" fill="#17191c" stroke="#5c6167" stroke-width="1.4"/>
+<circle cx="854" cy="654" r="6" fill="#d9a83c"/>
+<line x1="852.4" y1="652.2" x2="847.5" y2="646.4" stroke="#111214" stroke-width="2.2" stroke-linecap="round"/>
+<text x="854" y="679" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#e9e5d9" text-anchor="middle" font-weight="bold">RATE 1</text>
+<text x="854" y="688" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">0.01 – 100 ×</text>
+<rect x="841.9" y="625" width="24.2" height="12" rx="3" fill="#3a3126" stroke="#8a7648" stroke-width="0.7"/>
+<text x="854" y="634.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#d9c48a" text-anchor="middle" font-weight="bold">MSG</text>
+<line x1="909.4" y1="664.6" x2="907.3" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="920.0" y1="639.0" x2="920.0" y2="636.0" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="930.6" y1="664.6" x2="932.7" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<circle cx="920" cy="654" r="12" fill="#17191c" stroke="#5c6167" stroke-width="1.4"/>
+<circle cx="920" cy="654" r="6" fill="#d9a83c"/>
+<line x1="919.4" y1="651.7" x2="917.7" y2="644.3" stroke="#111214" stroke-width="2.2" stroke-linecap="round"/>
+<text x="920" y="679" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#e9e5d9" text-anchor="middle" font-weight="bold">RATE 2</text>
+<text x="920" y="688" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">0.01 – 100 ×</text>
+<rect x="907.9" y="625" width="24.2" height="12" rx="3" fill="#3a3126" stroke="#8a7648" stroke-width="0.7"/>
+<text x="920" y="634.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#d9c48a" text-anchor="middle" font-weight="bold">MSG</text>
+<line x1="975.4" y1="664.6" x2="973.3" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="986.0" y1="639.0" x2="986.0" y2="636.0" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="996.6" y1="664.6" x2="998.7" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<circle cx="986" cy="654" r="12" fill="#17191c" stroke="#5c6167" stroke-width="1.4"/>
+<circle cx="986" cy="654" r="6" fill="#d9a83c"/>
+<line x1="986.6" y1="651.7" x2="988.3" y2="644.3" stroke="#111214" stroke-width="2.2" stroke-linecap="round"/>
+<text x="986" y="679" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#e9e5d9" text-anchor="middle" font-weight="bold">RATE 3</text>
+<text x="986" y="688" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">0.01 – 100 ×</text>
+<rect x="973.9" y="625" width="24.2" height="12" rx="3" fill="#3a3126" stroke="#8a7648" stroke-width="0.7"/>
+<text x="986" y="634.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#d9c48a" text-anchor="middle" font-weight="bold">MSG</text>
+<line x1="1041.4" y1="664.6" x2="1039.3" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1052.0" y1="639.0" x2="1052.0" y2="636.0" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1062.6" y1="664.6" x2="1064.7" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<circle cx="1052" cy="654" r="12" fill="#17191c" stroke="#5c6167" stroke-width="1.4"/>
+<circle cx="1052" cy="654" r="6" fill="#d9a83c"/>
+<line x1="1053.6" y1="652.2" x2="1058.5" y2="646.4" stroke="#111214" stroke-width="2.2" stroke-linecap="round"/>
+<text x="1052" y="679" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#e9e5d9" text-anchor="middle" font-weight="bold">RATE 4</text>
+<text x="1052" y="688" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">0.01 – 100 ×</text>
+<rect x="1039.9" y="625" width="24.2" height="12" rx="3" fill="#3a3126" stroke="#8a7648" stroke-width="0.7"/>
+<text x="1052" y="634.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#d9c48a" text-anchor="middle" font-weight="bold">MSG</text>
+<line x1="1117.4" y1="664.6" x2="1115.3" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1128.0" y1="639.0" x2="1128.0" y2="636.0" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1138.6" y1="664.6" x2="1140.7" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<circle cx="1128" cy="654" r="12" fill="#17191c" stroke="#5c6167" stroke-width="1.4"/>
+<circle cx="1128" cy="654" r="6" fill="#d9a83c"/>
+<line x1="1125.8" y1="653.1" x2="1118.8" y2="650.2" stroke="#111214" stroke-width="2.2" stroke-linecap="round"/>
+<text x="1128" y="679" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#e9e5d9" text-anchor="middle" font-weight="bold">FOLLOW</text>
+<text x="1128" y="688" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">1 – 5000 ms</text>
+<rect x="1115.9" y="625" width="24.2" height="12" rx="3" fill="#3a3126" stroke="#8a7648" stroke-width="0.7"/>
+<text x="1128" y="634.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#d9c48a" text-anchor="middle" font-weight="bold">MSG</text>
+<line x1="1180" y1="628" x2="1180" y2="690" stroke="#3c4046" stroke-width="0.8"/>
+<line x1="1213.4" y1="664.6" x2="1211.3" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1224.0" y1="639.0" x2="1224.0" y2="636.0" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1234.6" y1="664.6" x2="1236.7" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<circle cx="1224" cy="654" r="12" fill="#17191c" stroke="#5c6167" stroke-width="1.4"/>
+<circle cx="1224" cy="654" r="6" fill="#7c828a"/>
+<line x1="1225.1" y1="651.9" x2="1228.5" y2="645.1" stroke="#111214" stroke-width="2.2" stroke-linecap="round"/>
+<text x="1224" y="679" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#e9e5d9" text-anchor="middle" font-weight="bold">DAMP</text>
+<text x="1224" y="688" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">sphere</text>
+<rect x="1211.9" y="625" width="24.2" height="12" rx="3" fill="#3a3126" stroke="#8a7648" stroke-width="0.7"/>
+<text x="1224" y="634.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#d9c48a" text-anchor="middle" font-weight="bold">MSG</text>
+<line x1="1271.4" y1="664.6" x2="1269.3" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1282.0" y1="639.0" x2="1282.0" y2="636.0" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1292.6" y1="664.6" x2="1294.7" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<circle cx="1282" cy="654" r="12" fill="#17191c" stroke="#5c6167" stroke-width="1.4"/>
+<circle cx="1282" cy="654" r="6" fill="#7c828a"/>
+<line x1="1284.4" y1="653.6" x2="1291.9" y2="652.4" stroke="#111214" stroke-width="2.2" stroke-linecap="round"/>
+<text x="1282" y="679" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#e9e5d9" text-anchor="middle" font-weight="bold">ELAST</text>
+<text x="1282" y="688" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">sphere</text>
+<rect x="1269.9" y="625" width="24.2" height="12" rx="3" fill="#3a3126" stroke="#8a7648" stroke-width="0.7"/>
+<text x="1282" y="634.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#d9c48a" text-anchor="middle" font-weight="bold">MSG</text>
+<line x1="1335.4" y1="664.6" x2="1333.3" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1346.0" y1="639.0" x2="1346.0" y2="636.0" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1356.6" y1="664.6" x2="1358.7" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<circle cx="1346" cy="654" r="12" fill="#17191c" stroke="#5c6167" stroke-width="1.4"/>
+<circle cx="1346" cy="654" r="6" fill="#7c828a"/>
+<line x1="1346.0" y1="651.6" x2="1346.0" y2="644.0" stroke="#111214" stroke-width="2.2" stroke-linecap="round"/>
+<text x="1346" y="679" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#e9e5d9" text-anchor="middle" font-weight="bold">G</text>
+<text x="1346" y="688" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">nbody</text>
+<rect x="1333.9" y="625" width="24.2" height="12" rx="3" fill="#3a3126" stroke="#8a7648" stroke-width="0.7"/>
+<text x="1346" y="634.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#d9c48a" text-anchor="middle" font-weight="bold">MSG</text>
+<line x1="1393.4" y1="664.6" x2="1391.3" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1404.0" y1="639.0" x2="1404.0" y2="636.0" stroke="#9aa0a6" stroke-width="1"/>
+<line x1="1414.6" y1="664.6" x2="1416.7" y2="666.7" stroke="#9aa0a6" stroke-width="1"/>
+<circle cx="1404" cy="654" r="12" fill="#17191c" stroke="#5c6167" stroke-width="1.4"/>
+<circle cx="1404" cy="654" r="6" fill="#7c828a"/>
+<line x1="1402.1" y1="652.6" x2="1395.9" y2="648.1" stroke="#111214" stroke-width="2.2" stroke-linecap="round"/>
+<text x="1404" y="679" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#e9e5d9" text-anchor="middle" font-weight="bold">DAMP</text>
+<text x="1404" y="688" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">nbody</text>
+<rect x="1391.9" y="625" width="24.2" height="12" rx="3" fill="#3a3126" stroke="#8a7648" stroke-width="0.7"/>
+<text x="1404" y="634.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#d9c48a" text-anchor="middle" font-weight="bold">MSG</text>
+<text x="1129" y="700" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">noise_freq_1..4 (instance n drives SIN/SAW/SQR/PERL n together) · env_follow_ms · sphere_damping/_elasticity · nbody_G/_damping</text>
+<text x="1129" y="710" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#d9c48a" text-anchor="middle">rate = IOT × scale — sources breathe with grain density; rates are GLOBAL, shared by every pin and band on that instance</text>
 <rect x="798" y="724" width="436" height="268" rx="6" fill="none" stroke="#5c6167" stroke-width="1"/>
 <rect x="810" y="717" width="189" height="14" fill="#26292e"/>
 <circle cx="817" cy="724" r="3" fill="#5a9e6a"/>
@@ -1215,5 +1312,5 @@
 <line x1="40" y1="1038" x2="1874" y2="1038" stroke="#5c6167" stroke-width="0.8"/>
 <text x="46" y="1052" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="start">Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save</text>
 <text x="46" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="start">BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix &amp; param_range)</text>
-<text x="1474" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="end">ligase~ — QUEUE Seq 63 feature set</text>
+<text x="1474" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="end">ligase~ — QUEUE Seq 64 feature set</text>
 </svg>

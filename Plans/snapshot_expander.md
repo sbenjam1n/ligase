@@ -144,6 +144,21 @@ parsing outlet 9 — it validates the API with zero engine coupling beyond the m
    an explicit re-place (safer, but breaks the "reshape the field mid-set" workflow).
 6. **Buffer count.** **[R] one buffer.** N buffers add addressing for marginal value
    (the slots themselves are the storage; the buffer is a workbench). Confirm.
+7. **Generator params in snapshots (schema v3)?** The modulation *sources* have their own
+   message-only params — `noise_freq_1..4` (the per-instance rate scales; note the rate is
+   `IOT × scale`, so sources breathe with grain density, and instance *n* drives
+   SIN/SAW/SQR/PERL *n* together), `env_follow_ms`, and the physics params
+   (`sphere_damping`/`_elasticity`, `nbody_G`/`_damping`/`_epsilon`/`_pump`). **None of
+   these are captured by snapshots today** (verified: zero generator fields in
+   `morph_snapshot_t`), so a snapshot's motion *character* — how fast perlin_1 wanders —
+   is global "weather," not part of the voice: retune a rate for scene B and scene A
+   changes retroactively. **[R] YES, capture them** — motion character travels with the
+   voice, the expander gains a SOURCES page (the 8-pos PAGE selector grows to 9 or SPACE
+   shares), and it rides the export schema as a **version-3 bump**, which is cheapest
+   folded into Step 1's walker unification (deciding *after* Step 1 means touching the
+   walker twice). The counter-argument (global weather as a feature — one rate knob
+   sweeping every scene at once) stays available either way via the morph exclusion tree:
+   capture them but `morph_exclude` the sources group to get global behavior back. Confirm.
 
 ## Steps (after GATE A)
 
@@ -203,4 +218,8 @@ parsing outlet 9 — it validates the API with zero engine coupling beyond the m
 - Multiple edit buffers (GATE A.6).
 - Editing matrix pins from the expander (pins are global, not snapshot state — layer
   contract R4; a "morphable depth" would be its own plan).
+- **Source rates as matrix destinations** (matrix-on-matrix: e.g. envelope follower →
+  perlin rate). Mechanically cheap (ordinary per-block dests) and musically potent, but it
+  belongs to the modulation-matrix plan's domain, not the expander — captured here only so
+  the idea isn't lost.
 - Hardware/MIDI surface binding for the expander (the Pd panel is the v1 surface).
