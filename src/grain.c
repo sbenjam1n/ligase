@@ -329,6 +329,85 @@ float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, flo
     }
 }
 
+// @region:ligase_pd.core.params.mod_matrix Modulation Matrix Helpers
+
+// Read ANY matrix source as a normalized [0,1] value. The single point that maps a
+// mod_source_t id to a number; reused by matrix_sum_for_dest. Generator instances reuse the
+// SAME readouts sample_param_range uses (lorenz_get_normalized, nbody_get_normalized, ...),
+// so a matrix source and a param_range source pointing at the same instance track together.
+// Out-of-range / unloaded ids -> neutral 0.5 (defensive, mirroring the pattern-slot guard
+// above) — no out-of-bounds read is possible on the audio thread. NOTE: MOD_SRC_RANDn
+// advances the shared rand_seed[n] LCG on each read (same seed the param_range RAND source
+// uses) — only when a rand connection exists, i.e. behavior the user opted into.
+float mod_source_value(perlin_state_t *ps, int source) {
+    if (source >= MOD_SRC_SINE1 && source <= MOD_SRC_SINE4) {
+        float phase_radians = ps->waveform_phase[source - MOD_SRC_SINE1] * 2.0f * M_PI;
+        return (sinf(phase_radians) + 1.0f) * 0.5f;
+    }
+    if (source >= MOD_SRC_SAW1 && source <= MOD_SRC_SAW4) {
+        return ps->waveform_phase[source - MOD_SRC_SAW1];
+    }
+    if (source >= MOD_SRC_SQUARE1 && source <= MOD_SRC_SQUARE4) {
+        return (ps->waveform_phase[source - MOD_SRC_SQUARE1] < 0.5f) ? 0.0f : 1.0f;
+    }
+    if (source >= MOD_SRC_PERLIN1 && source <= MOD_SRC_PERLIN4) {
+        int i = source - MOD_SRC_PERLIN1;
+        return (perlin1d(ps->noise_1d_coord[i] + ps->instance_offset_1d[i]) + 1.0f) * 0.5f;
+    }
+    if (source >= MOD_SRC_LORENZ1 && source <= MOD_SRC_LORENZ4) {
+        int i = source - MOD_SRC_LORENZ1;
+        return lorenz_get_normalized(&ps->lorenz[i], i % 3);   // same axis rotation as sample_param_range
+    }
+    if (source >= MOD_SRC_NBODY1 && source <= MOD_SRC_NBODY4) {
+        int i = source - MOD_SRC_NBODY1;
+        return nbody_get_normalized(&ps->nbody[i], ps->nbody_output_mode[i]);
+    }
+    if (source >= MOD_SRC_SPHERE1 && source <= MOD_SRC_SPHERE4) {
+        int i = source - MOD_SRC_SPHERE1;
+        return sphere_get_normalized(&ps->sphere[i], ps->sphere_output_mode[i]);
+    }
+    if (source >= MOD_SRC_RAND1 && source <= MOD_SRC_RAND4) {
+        return rand_float_seeded(&ps->rand_seed[source - MOD_SRC_RAND1]);
+    }
+    if (source >= MOD_SRC_PATTERN0 && source <= MOD_SRC_PATTERN7) {
+        int slot = source - MOD_SRC_PATTERN0;
+        return (ps->pattern[slot].step_count > 0) ? ps->pattern[slot].cached_value : 0.5f;
+    }
+    switch (source) {
+        case MOD_SRC_ENV_L:    return ps->env_follow_value[0];
+        case MOD_SRC_ENV_R:    return ps->env_follow_value[1];
+        case MOD_SRC_ENV_MONO: return ps->env_follow_value[2];
+        default:               return 0.5f;   // MOD_SRC_NONE / unknown -> neutral (no contribution)
+    }
+}
+
+// Cheap "does any enabled connection target this dest?" scan — the enabled-gate extension:
+// per-block setters gated on range.enabled become (range.enabled || matrix_dest_active(dest))
+// so a destination driven ONLY by the matrix still applies. O(mod_conn_count); 0 when inert.
+int matrix_dest_active(scheduler_t *sched, int dest) {
+    for (int i = 0; i < sched->mod_conn_count; i++) {
+        if (sched->mod_matrix[i].enabled && sched->mod_matrix[i].dest == dest) return 1;
+    }
+    return 0;
+}
+
+// Sum all enabled connections targeting `dest`. Returns a SIGNED OFFSET to add to the base
+// value. The [0,1] source is centered at 0.5 so a bipolar depth pushes both directions
+// symmetrically ((s-0.5)*2 -> [-1,1]); depth scales to destination units. A dest with no
+// connections -> 0 -> identical output (backward compat).
+float matrix_sum_for_dest(scheduler_t *sched, int dest) {
+    float sum = 0.0f;
+    for (int i = 0; i < sched->mod_conn_count; i++) {
+        mod_conn_t *c = &sched->mod_matrix[i];
+        if (!c->enabled || c->dest != dest) continue;
+        float s01 = mod_source_value(&sched->perlin_state, c->source);   // [0,1]
+        sum += c->depth * (s01 - 0.5f) * 2.0f;
+    }
+    return sum;
+}
+
+// @endregion:ligase_pd.core.params.mod_matrix
+
 // Update Perlin noise coordinates and Lorenz attractors based on IOT (called at grain trigger)
 static void update_perlin_coords(perlin_state_t *perlin_state, float iot_seconds) {
     // Advance all 4 1D coordinates (each with its own frequency scale)
@@ -672,6 +751,13 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     for (int i = 0; i < 4; i++) {
         sched->perlin_state.waveform_phase[i] = (float)i * 0.25f;  // 0.0, 0.25, 0.5, 0.75
     }
+
+    // MOD MATRIX: the memset above zeroed mod_matrix[]/mod_conn_count (inert) and the envelope
+    // follower state/value caches (silence -> 0). Only the follower release coeff needs a
+    // non-zero default: ~30 ms release (coeff = exp(-1/(t*sr))). Tunable via 'env_follow_ms'.
+    sched->perlin_state.env_follow_ms = 30.0f;
+    sched->perlin_state.env_follow_coeff = (sample_rate > 0)
+        ? expf(-1.0f / (0.030f * (float)sample_rate)) : 0.0f;
 
     // Read pool size from config file
     sched->pool_size = read_max_grains_from_config();

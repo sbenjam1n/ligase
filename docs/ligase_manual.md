@@ -318,6 +318,14 @@ modout_source/modout_range commands:
   rand_type <type_instance> modoutN   - assign a generator to outlet N
   param_range modoutN <min> <max>     - set the outlet's output range
 
+Modulation Matrix (N->M routing; see MODULATION MATRIX)
+
+matrix_connect <source> <dest> <depth> - Add/update a routing connection (depth signed, dest units)
+matrix_disconnect <source> <dest> - Disable a connection (kept; re-connect re-enables)
+matrix_clear - Remove all connections (matrix inert)
+matrix_dump - Post current connections to the console
+env_follow_ms <0-60000> - Envelope follower release time in ms (default 30; 0 = instant)
+
 Noise Frequency
 
 noise_freq <scale> - Set all generator speeds
@@ -2670,6 +2678,114 @@ Does not reset N-body physics parameters (epsilon, damping, etc.)
 Defaults
 
 All parameter ranges initialized to: min: 0.0, max: 1.0, rand_type: RAND_TYPE_RAND (instance 1), enabled: 0 (disabled). All noise_frequency_scale defaults to 1.0.
+
+# MODULATION MATRIX
+
+An N-to-M routing layer ON TOP of the per-parameter range system above. Where param_range binds
+exactly ONE generator to one parameter, the matrix routes MANY sources to MANY destinations, each
+connection with its own signed depth, and all contributions to a destination are SUMMED. It is a
+thin additive overlay: the param_range base value (or the plain scalar when the range is disabled)
+is computed exactly as before, then the matrix sum is added on top and the result is clamped to
+the destination's musical range. With zero connections the matrix is completely inert and every
+parameter behaves exactly as without it.
+
+Messages
+
+matrix_connect <source> <dest> <depth>
+
+Add a connection (or update its depth if the same source/dest pair already exists — this also
+re-enables a disconnected pair). Depth is SIGNED and in the DESTINATION'S OWN UNITS: the source
+value s in [0,1] is centered at 0.5, and the contribution is depth × (s − 0.5) × 2 — i.e. the
+source swings the destination by ±depth around its base. Example:
+
+  matrix_connect sine1 moog_cutoff 2000   → cutoff swings ±2000 Hz around its base
+  matrix_connect env_mono gdelay_mix 0.4  → input level pushes the delay mix ±0.4
+
+Up to 32 connections. Unknown source or destination names are rejected with an error and leave
+the matrix unchanged.
+
+matrix_disconnect <source> <dest> - Disable that connection (the slot is kept; a later
+matrix_connect of the same pair re-enables it in place).
+
+matrix_clear - Remove all connections. Instantly restores exact pre-matrix behavior.
+
+matrix_dump - Post the current connection list (index, source, dest, depth, disabled flags).
+
+env_follow_ms <0-60000> - Set the envelope follower's release time in milliseconds (default 30;
+0 = instant follow). See "Input envelope follower" below.
+
+Sources
+
+The matrix source vocabulary is SEPARATE from the rand_type generator names (param_range bindings
+are untouched by the matrix and vice versa):
+
+  sine1-4, saw1-4, square1-4   - the waveform LFO instances (lfo1-4 are aliases for sine1-4)
+  perlin1-4                    - 1D Perlin noise instances
+  lorenz1-4, nbody1-4, sphere1-4 - the chaotic/physics generator instances
+  rand1-4                      - the seeded random instances
+  pattern0-7                   - pattern slot caches (see PATTERNS); unloaded slots read neutral 0.5
+  env_l, env_r, env_mono       - the input envelope follower (left / right / mono mix)
+
+Generator instances read the SAME state the param_range system reads, so e.g. lorenz1 in the
+matrix and rand_type lorenz_1 on a range track the same attractor. Generator/pattern sources
+advance at the grain-trigger rate (like the range system); reading rand1-4 from the matrix
+advances the shared per-instance random seed.
+
+Destinations (v1: per-BLOCK parameters)
+
+  gdelay, gdelay_feed, gdelay_tone, gdelay_mix
+  moog_cutoff, moog_resonance, moog_mix
+  smear_frequency, smear_resonance, smear_stages, smear_feedback
+  scanrate, organize, sos, iot, env_skew
+  modout1-4
+
+These are applied once per DSP block. The per-GRAIN parameters (speed, pitch_fine, grainsize,
+grainstart, amplitude, pan) are NOT matrix destinations yet (planned v1.5); connecting to them is
+rejected with an explanatory error. Onset/pitch detection sources are planned for v2.
+
+Behavior notes
+
+- Additive over param_range: if the destination's range is ENABLED, the matrix sum is added to the
+  range-sampled value each block (both modulations combine). If the range is DISABLED, the matrix
+  alone drives the destination around its current scalar base — a destination no longer needs an
+  enabled range to be modulated.
+- Clamping: the matrix apply site clamps the summed result to the destination's musical range
+  (e.g. moog_cutoff 20-20000 Hz, gdelay 0-9.5 s, mixes 0-1). Overshoot from many connections or a
+  hot input simply saturates at the clamp — no instability. Exception: modout1-4 are NOT clamped
+  (they are patch-out floats; scale them in the patch).
+- modout as destination: a matrix connection to modoutN emits floats even when that modout's
+  param_range is disabled/unassigned; with only the matrix driving it the emitted value is
+  0.5 + sum (neutral center plus the overlay). With a generator assigned via rand_type/param_range
+  the matrix sum is added on top of the sampled range value.
+- gdelay_feed applies in Stut mode too (it retargets to stut reduction, which shares the same 0-1
+  meaning). gdelay_tone is NOT matrix-applied in Stut mode (there it maps to spacing in ms —
+  different units); the range modulation still applies as usual.
+- smear_frequency connections are bypassed while the smear pitch destination is enabled (the pitch
+  system owns the frequency then, exactly like the smear_frequency_range).
+
+Input envelope follower
+
+The follower makes the instrument listen to its own input: a rectified PEAK follower over the live
+input signal (instant attack, one-pole release, default ~30 ms, set via env_follow_ms). It is
+computed once per DSP block and exposed as the matrix sources env_l / env_r / env_mono (mono =
+0.5×(L+R)). The follower output is not hard-capped: input is normally ≤1.0, and the destination
+clamp catches any overshoot from hot input × high depth. Typical use:
+
+  matrix_connect env_mono moog_cutoff 4000   → the filter opens with the input level
+  matrix_connect env_mono modout1 1          → patch the input envelope out to the Pd graph
+
+Since a [0,1] source is centered at 0.5, a silent input contributes −depth (the follower sits at
+0). To bias a destination so silence = base and signal pushes up, raise the base by depth (or use
+a modout and offset in the patch).
+
+Example
+
+  param_range moog_cutoff 800 800          (fixed 800 Hz base, range enabled)
+  matrix_connect lorenz1 moog_cutoff 600   (chaos wobbles the cutoff ±600 Hz)
+  matrix_connect env_mono moog_cutoff 3000 (input level opens it up to ±3000 Hz more)
+  matrix_connect env_mono pan 0.5          → error: pan is per-grain (v1.5)
+  matrix_dump
+  matrix_clear                             (back to exactly the range-only behavior)
 
 # PATTERNS (TIDALCYCLES MINI-NOTATION)
 

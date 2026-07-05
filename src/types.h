@@ -402,6 +402,79 @@ typedef struct {
 
 // @endregion:ligase_pd.core.types.param_range
 
+// @region:ligase_pd.core.types.mod_matrix Modulation Matrix (N->M routing overlay)
+
+// Matrix SOURCE ids — a SEPARATE namespace from rand_type_t so the per-range source binding
+// (rand_type/rand_instance) is untouched (load-bearing for backward compat: the ~45 ranges,
+// the get_param_range_by_name registry, state dump, and the RAND_TYPE_PATTERN slot overload
+// all keep their existing vocabulary). Generator instances are enumerated explicitly so one
+// connection picks one concrete source; mod_source_value() (grain.c) maps ids to [0,1].
+typedef enum {
+    MOD_SRC_NONE = 0,
+    // --- waveform LFO instances (read waveform_phase[0..3]; same phase, three shapes) ---
+    MOD_SRC_SINE1, MOD_SRC_SINE2, MOD_SRC_SINE3, MOD_SRC_SINE4,       // "lfoN" aliases to sineN
+    MOD_SRC_SAW1, MOD_SRC_SAW2, MOD_SRC_SAW3, MOD_SRC_SAW4,
+    MOD_SRC_SQUARE1, MOD_SRC_SQUARE2, MOD_SRC_SQUARE3, MOD_SRC_SQUARE4,
+    // --- stochastic / chaotic generator instances (mirror perlin_state's 4-instance arrays) ---
+    MOD_SRC_PERLIN1, MOD_SRC_PERLIN2, MOD_SRC_PERLIN3, MOD_SRC_PERLIN4,   // 1D Perlin
+    MOD_SRC_LORENZ1, MOD_SRC_LORENZ2, MOD_SRC_LORENZ3, MOD_SRC_LORENZ4,
+    MOD_SRC_NBODY1, MOD_SRC_NBODY2, MOD_SRC_NBODY3, MOD_SRC_NBODY4,
+    MOD_SRC_SPHERE1, MOD_SRC_SPHERE2, MOD_SRC_SPHERE3, MOD_SRC_SPHERE4,
+    MOD_SRC_RAND1, MOD_SRC_RAND2, MOD_SRC_RAND3, MOD_SRC_RAND4,
+    // --- pattern slots (PATTERN_SLOTS == 8) ---
+    MOD_SRC_PATTERN0, MOD_SRC_PATTERN1, MOD_SRC_PATTERN2, MOD_SRC_PATTERN3,
+    MOD_SRC_PATTERN4, MOD_SRC_PATTERN5, MOD_SRC_PATTERN6, MOD_SRC_PATTERN7,
+    // --- input-LISTENING sources (envelope follower over the live input; v1) ---
+    MOD_SRC_ENV_L,     // follower, left input
+    MOD_SRC_ENV_R,     // follower, right input
+    MOD_SRC_ENV_MONO,  // follower, 0.5*(L+R) mix
+    // MOD_SRC_ONSET / MOD_SRC_PITCH: v2, deferred (own GATE A)
+    MOD_SRC_COUNT
+} mod_source_t;
+
+// Matrix DESTINATION ids — v1 scope is the PER-BLOCK apply tier only (effect/playback params
+// applied once per DSP block in ligase_update_inlets, plus the modout outlets). The per-GRAIN
+// tier (speed/pitch_fine/grainsize/grainstart/amplitude/pan) is v1.5 — deliberately absent.
+// Names in the connect message reuse the get_param_range_by_name vocabulary verbatim.
+typedef enum {
+    MOD_DEST_NONE = 0,
+    MOD_DEST_GDELAY,           // "gdelay"        delay time (s)
+    MOD_DEST_GDELAY_FEED,      // "gdelay_feed"   feedback 0-1 (stut: reduction, same 0-1 units)
+    MOD_DEST_GDELAY_TONE,      // "gdelay_tone"   tone 0-1 (stut mode: NOT applied — spacing is ms)
+    MOD_DEST_GDELAY_MIX,       // "gdelay_mix"    mix 0-1
+    MOD_DEST_MOOG_CUTOFF,      // "moog_cutoff"   Hz
+    MOD_DEST_MOOG_RESONANCE,   // "moog_resonance" 0-4
+    MOD_DEST_MOOG_MIX,         // "moog_mix"      0-1
+    MOD_DEST_SMEAR_FREQUENCY,  // "smear_frequency" Hz (bypassed while smear_pitch owns freq)
+    MOD_DEST_SMEAR_RESONANCE,  // "smear_resonance" 0-0.999
+    MOD_DEST_SMEAR_STAGES,     // "smear_stages"  0-48
+    MOD_DEST_SMEAR_FEEDBACK,   // "smear_feedback" -0.99..0.99
+    MOD_DEST_SCANRATE,         // "scanrate"
+    MOD_DEST_ORGANIZE,         // "organize"      0-1
+    MOD_DEST_SOS,              // "sos"           0-1
+    MOD_DEST_IOT,              // "iot"           seconds
+    MOD_DEST_ENV_SKEW,         // "env_skew"      0-1
+    MOD_DEST_MODOUT1,          // "modout1"       patched out; UNCLAMPED (see modout apply site)
+    MOD_DEST_MODOUT2,          // "modout2"
+    MOD_DEST_MODOUT3,          // "modout3"
+    MOD_DEST_MODOUT4,          // "modout4"
+    MOD_DEST_COUNT
+} mod_dest_t;
+
+#define MOD_MATRIX_MAX 32   // fixed capacity -> no audio-thread allocation
+
+// One sparse routing connection. Depth is SIGNED (bipolar), in the DESTINATION's own units;
+// contribution = depth * (source01 - 0.5) * 2, summed per destination on top of the existing
+// param_range base. enabled=0 keeps the slot but makes it inert (disconnect-without-remove).
+typedef struct {
+    int   source;    // mod_source_t
+    int   dest;      // mod_dest_t
+    float depth;     // signed, destination units
+    int   enabled;   // 0 = inert
+} mod_conn_t;
+
+// @endregion:ligase_pd.core.types.mod_matrix
+
 // @region:ligase_pd.core.pitch.types Pitch Control Data Types
 
 typedef enum {
@@ -603,6 +676,18 @@ typedef struct {
     pattern_table_t pattern[PATTERN_SLOTS];
     float           pattern_phase[PATTERN_SLOTS];        // free-running 0..1 cycle phase per slot
     long            pattern_cycle_index[PATTERN_SLOTS];  // integer cycle counter per slot (<> alternation)
+
+    // Input envelope follower — per-block input-LISTENING source for the modulation matrix.
+    // Mirrors the pattern cache discipline: written once per block in ligase_perform (sole
+    // writer), read by mod_source_value; no malloc, no locks. Rectified-PEAK one-pole: rises
+    // instantly toward a new peak, decays at env_follow_coeff (release, default ~30 ms —
+    // 'env_follow_ms' message). Output is NOT hard-capped: input is typically <=1.0, and the
+    // per-destination clamp at the matrix apply site catches any overshoot (hot input + high
+    // depth saturates the destination at its clamp — documented, intended).
+    float env_follow_state[2];   // one-pole rectified state per channel (L, R); leaky -> denormal-safe
+    float env_follow_value[3];   // CACHED block output: [0]=L, [1]=R, [2]=0.5*(L+R) mono mix
+    float env_follow_coeff;      // one-pole release coeff = exp(-1/(ms*0.001*sr)); 0 = instant
+    float env_follow_ms;         // release time in ms (kept so a samplerate change recomputes coeff)
 } perlin_state_t;
 
 // @endregion:ligase_pd.core.types.perlin_state
@@ -718,6 +803,15 @@ typedef struct scheduler {
     // Delay mode structures (for bencina and stut modes)
     grain_delay_stut_t *delay_stut;      // Stut mode state (NULL if not allocated)
     grain_delay_bencina_t *delay_bencina; // Bencina mode state (NULL if not allocated)
+
+    // MODULATION MATRIX — sparse N->M routing overlay, additive on top of the per-destination
+    // param_range base. WRITTEN by the matrix_* messages (control thread) with fields-first,
+    // count-last publish ordering (same barrier as pattern_table_t.step_count); READ by the
+    // per-block apply sites (perform thread). Covered by the scheduler_create memset, so
+    // mod_conn_count == 0 on construction -> matrix inert -> bit-identical to the pre-matrix
+    // engine (backward compat is load-bearing).
+    mod_conn_t mod_matrix[MOD_MATRIX_MAX];
+    int        mod_conn_count;           // 0 => matrix inert (publish barrier; incremented LAST)
 
 } scheduler_t;
 

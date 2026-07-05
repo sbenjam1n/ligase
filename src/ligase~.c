@@ -64,6 +64,10 @@ extern void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left,
 extern float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, float base_value);
 extern void pattern_eval_slot(perlin_state_t *perlin_state, int slot);
 extern float sample_scale_semitones(pitch_scale_t *scale, perlin_state_t *perlin_state, param_range_t *semitone_range);
+// Modulation matrix helpers (grain.c): source id -> [0,1]; per-dest overlay sum; active scan
+extern float mod_source_value(perlin_state_t *ps, int source);
+extern float matrix_sum_for_dest(scheduler_t *sched, int dest);
+extern int matrix_dest_active(scheduler_t *sched, int dest);
 
 extern grain_delay_t* grain_delay_create(int sample_rate);
 extern void grain_delay_destroy(grain_delay_t *delay);
@@ -338,6 +342,16 @@ struct _ligase {
     float bencina_grainsize_current;
     // @endregion:ligase_pd.pd_external.outlets.state.tracking
 
+    // MOD MATRIX: per-destination base tracking for matrix-ONLY drive (range disabled). Several
+    // per-block destinations read their base from the SAME field their setter writes (moog
+    // cutoff, gdelay time, scan_rate, envelope skew, ...): naively re-adding the matrix offset
+    // to last block's output would integrate (runaway until the clamp). mod_track_base()
+    // pins the base to the last EXTERNALLY-written value: if the field still equals our last
+    // matrix output nobody else wrote it (keep the stored base); if it differs, an inlet or
+    // message wrote it (adopt the new value as base). Untouched when the matrix is inert.
+    float mod_base[MOD_DEST_COUNT];
+    float mod_last_out[MOD_DEST_COUNT];
+
     // Fixed-size temporary buffers for DSP processing (avoid VLAs on audio thread stack)
     // Maximum block size is typically 64-4096, using 8192 for safety
     float temp_left[8192];
@@ -398,6 +412,74 @@ static inline float wrap_to_splice(float pos, float start, float len) {
 // playback. Kept just below unity so the loop sustains (long decay) at the "freeze" end of SOS
 // without growing unbounded; a tanh soft-limiter is the hard ceiling on top of this. Tunable.
 #define TLA_FEEDBACK_MAX 0.95f
+
+// @region:ligase_pd.pd_external.mod_matrix.apply Modulation Matrix Apply Helpers
+
+// Per-destination musical bounds for the matrix overlay — the MATRIX APPLY SITE owns the clamp
+// (the existing setters do not all clamp internally). Each bound REPRODUCES the clamp the engine
+// already applies for that parameter (setter-internal or inlet validation), so the table never
+// fights an existing clamp:
+//   gdelay time        [0, 9.5]      grain_delay_set_time clamps 0..9.5 s
+//   gdelay feed/tone/mix [0, 1]      grain_delay_set_* clamp 0..1
+//   moog cutoff        [20, 20000]   grain_moogladder_set_cutoff clamps 20..20000 (then nyquist)
+//   moog resonance     [0, 4]        grain_moogladder_set_resonance clamps 0..4
+//   moog mix           [0, 1]        grain_moogladder_set_mix clamps 0..1
+//   smear frequency    [20, 20000]   final owner is smear_update_coeffs' [20, 0.45*sr]
+//   smear resonance    [0, 0.999]    grain_smear_set_resonance clamps 0..0.999
+//   smear stages       [0, 48]       grain_smear_set_stages clamps 0..GRAIN_SMEAR_MAX_STAGES
+//   smear feedback     [-0.99, 0.99] grain_smear_set_feedback clamps -0.99..0.99
+//   scanrate           [-1000, 1000] inlet validation range
+//   organize/sos/env_skew [0, 1]     inlet validation / envelope_set_skew clamp
+//   iot                [0.0005, 2]   scheduler iot range (trigger period floored at 1 sample)
+//   modout1-4          UNCLAMPED     patch-out floats; overshoot is harmless and a user's
+//                                    modout range may deliberately span any values ({0,0} = none)
+typedef struct { float lo, hi; } mod_dest_bounds_t;
+static const mod_dest_bounds_t mod_dest_bounds[MOD_DEST_COUNT] = {
+    [MOD_DEST_NONE]            = {0.0f,     0.0f},
+    [MOD_DEST_GDELAY]          = {0.0f,     9.5f},
+    [MOD_DEST_GDELAY_FEED]     = {0.0f,     1.0f},
+    [MOD_DEST_GDELAY_TONE]     = {0.0f,     1.0f},
+    [MOD_DEST_GDELAY_MIX]      = {0.0f,     1.0f},
+    [MOD_DEST_MOOG_CUTOFF]     = {20.0f,    20000.0f},
+    [MOD_DEST_MOOG_RESONANCE]  = {0.0f,     4.0f},
+    [MOD_DEST_MOOG_MIX]        = {0.0f,     1.0f},
+    [MOD_DEST_SMEAR_FREQUENCY] = {20.0f,    20000.0f},
+    [MOD_DEST_SMEAR_RESONANCE] = {0.0f,     0.999f},
+    [MOD_DEST_SMEAR_STAGES]    = {0.0f,     48.0f},
+    [MOD_DEST_SMEAR_FEEDBACK]  = {-0.99f,   0.99f},
+    [MOD_DEST_SCANRATE]        = {-1000.0f, 1000.0f},
+    [MOD_DEST_ORGANIZE]        = {0.0f,     1.0f},
+    [MOD_DEST_SOS]             = {0.0f,     1.0f},
+    [MOD_DEST_IOT]             = {0.0005f,  2.0f},
+    [MOD_DEST_ENV_SKEW]        = {0.0f,     1.0f},
+    [MOD_DEST_MODOUT1]         = {0.0f,     0.0f},   // unclamped (lo==hi==0 sentinel)
+    [MOD_DEST_MODOUT2]         = {0.0f,     0.0f},
+    [MOD_DEST_MODOUT3]         = {0.0f,     0.0f},
+    [MOD_DEST_MODOUT4]         = {0.0f,     0.0f},
+};
+
+// Clamp a matrix-modulated value to its destination's musical range. lo==hi==0 = no bounds
+// registered (modout patch-outs). Only called when the matrix contributes, so with zero
+// connections no value ever passes through here (backward compat stays byte-for-byte).
+static inline float mod_dest_clamp(int dest, float v) {
+    if (dest <= MOD_DEST_NONE || dest >= MOD_DEST_COUNT) return v;
+    float lo = mod_dest_bounds[dest].lo, hi = mod_dest_bounds[dest].hi;
+    if (lo == 0.0f && hi == 0.0f) return v;
+    if (!isfinite(v)) return lo;          // defensive: never hand a NaN/Inf to a setter
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    return v;
+}
+
+// Stable base for matrix-ONLY drive of a self-read/write destination (see the mod_base field
+// comment). field_value == our last matrix output -> nobody else wrote it, keep the stored
+// base; differs -> external write (inlet/message/quantizer), adopt it as the new base.
+static inline float mod_track_base(ligase_t *x, int dest, float field_value) {
+    if (field_value != x->mod_last_out[dest]) x->mod_base[dest] = field_value;
+    return x->mod_base[dest];
+}
+
+// @endregion:ligase_pd.pd_external.mod_matrix.apply
 
 static void ligase_update_inlets(ligase_t *x,
     t_sample *grain_size_in, t_sample *grain_start_in,
@@ -808,55 +890,114 @@ static void ligase_update_inlets(ligase_t *x,
     float sampled_gdelay_time = sample_param_range(&x->scheduler->gdelay_range,
                                                    &x->scheduler->perlin_state,
                                                    x->grain_delay->delay_time);
-    // Only apply if range is enabled (preserves quantization when not ranging)
-    if (x->scheduler->gdelay_range.enabled) {
-        grain_delay_set_time(x->grain_delay, sampled_gdelay_time);
-        x->gdelay_time_current = sampled_gdelay_time;  // Store modulated value for query
+    // Only apply if range is enabled (preserves quantization when not ranging).
+    // MOD MATRIX overlay: when a connection targets this dest the sum is added on top of the
+    // base (range-sampled when enabled, else the tracked scalar base) and clamped; the setter
+    // then applies even with the range disabled (enabled-gate extension). Matrix inactive ->
+    // the original path below runs verbatim (byte-for-byte backward compat).
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_GDELAY)) {
+        if (x->scheduler->gdelay_range.enabled) {
+            grain_delay_set_time(x->grain_delay, sampled_gdelay_time);
+            x->gdelay_time_current = sampled_gdelay_time;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->gdelay_range.enabled
+                   ? sampled_gdelay_time
+                   : mod_track_base(x, MOD_DEST_GDELAY, x->grain_delay->delay_time);
+        float v = mod_dest_clamp(MOD_DEST_GDELAY,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_GDELAY));
+        grain_delay_set_time(x->grain_delay, v);
+        x->gdelay_time_current = v;
+        x->mod_last_out[MOD_DEST_GDELAY] = v;
     }
 
     // Sample GDelay feedback with range (if enabled)
     // In Stut mode, routes to stut_reduction instead of feedback
-    if (x->scheduler->gdelay_feedback_range.enabled) {
-        if (x->grain_delay->mode == DELAY_MODE_STUT) {
-            float sampled = sample_param_range(&x->scheduler->gdelay_feedback_range,
-                                               &x->scheduler->perlin_state,
-                                               x->delay_stut->gain_reduction);
-            grain_delay_stut_set_reduction(x->delay_stut, sampled);
-            x->gdelay_feedback_current = sampled;
-        } else {
-            float sampled_gdelay_feedback = sample_param_range(&x->scheduler->gdelay_feedback_range,
-                                                                &x->scheduler->perlin_state,
-                                                                x->grain_delay->feedback);
-            grain_delay_set_feedback(x->grain_delay, sampled_gdelay_feedback);
-            x->gdelay_feedback_current = sampled_gdelay_feedback;
+    // MOD MATRIX: gdelay_feed applies in BOTH modes (feedback and stut reduction share the
+    // same 0-1 units, so the depth means the same thing on either target).
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_GDELAY_FEED)) {
+        if (x->scheduler->gdelay_feedback_range.enabled) {
+            if (x->grain_delay->mode == DELAY_MODE_STUT) {
+                float sampled = sample_param_range(&x->scheduler->gdelay_feedback_range,
+                                                   &x->scheduler->perlin_state,
+                                                   x->delay_stut->gain_reduction);
+                grain_delay_stut_set_reduction(x->delay_stut, sampled);
+                x->gdelay_feedback_current = sampled;
+            } else {
+                float sampled_gdelay_feedback = sample_param_range(&x->scheduler->gdelay_feedback_range,
+                                                                    &x->scheduler->perlin_state,
+                                                                    x->grain_delay->feedback);
+                grain_delay_set_feedback(x->grain_delay, sampled_gdelay_feedback);
+                x->gdelay_feedback_current = sampled_gdelay_feedback;
+            }
         }
+    } else {
+        int   stut  = (x->grain_delay->mode == DELAY_MODE_STUT);
+        float field = stut ? x->delay_stut->gain_reduction : x->grain_delay->feedback;
+        float base  = x->scheduler->gdelay_feedback_range.enabled
+                    ? sample_param_range(&x->scheduler->gdelay_feedback_range,
+                                         &x->scheduler->perlin_state, field)
+                    : mod_track_base(x, MOD_DEST_GDELAY_FEED, field);
+        float v = mod_dest_clamp(MOD_DEST_GDELAY_FEED,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_GDELAY_FEED));
+        if (stut) grain_delay_stut_set_reduction(x->delay_stut, v);
+        else      grain_delay_set_feedback(x->grain_delay, v);
+        x->gdelay_feedback_current = v;
+        x->mod_last_out[MOD_DEST_GDELAY_FEED] = v;
     }
 
     // Sample GDelay tone with range (if enabled)
     // In Stut mode, routes to stut_spacing instead of tone
-    if (x->scheduler->gdelay_tone_range.enabled) {
-        if (x->grain_delay->mode == DELAY_MODE_STUT) {
+    // MOD MATRIX: gdelay_tone applies in DD-4/Bencina only. In Stut the range retargets to
+    // spacing in MILLISECONDS — a matrix depth expressed in tone units (0-1) has no meaning
+    // there, so the matrix contribution is deliberately NOT applied in Stut mode (the range
+    // path below still runs as today).
+    if (x->grain_delay->mode == DELAY_MODE_STUT) {
+        if (x->scheduler->gdelay_tone_range.enabled) {
             float sampled = sample_param_range(&x->scheduler->gdelay_tone_range,
                                                &x->scheduler->perlin_state,
                                                x->delay_stut->spacing_ms);
             grain_delay_stut_set_spacing(x->delay_stut, sampled);
             x->gdelay_tone_current = sampled;
-        } else {
+        }
+    } else if (!matrix_dest_active(x->scheduler, MOD_DEST_GDELAY_TONE)) {
+        if (x->scheduler->gdelay_tone_range.enabled) {
             float sampled_gdelay_tone = sample_param_range(&x->scheduler->gdelay_tone_range,
                                                             &x->scheduler->perlin_state,
                                                             x->grain_delay->tone);
             grain_delay_set_tone(x->grain_delay, sampled_gdelay_tone);
             x->gdelay_tone_current = sampled_gdelay_tone;
         }
+    } else {
+        float base = x->scheduler->gdelay_tone_range.enabled
+                   ? sample_param_range(&x->scheduler->gdelay_tone_range,
+                                        &x->scheduler->perlin_state, x->grain_delay->tone)
+                   : mod_track_base(x, MOD_DEST_GDELAY_TONE, x->grain_delay->tone);
+        float v = mod_dest_clamp(MOD_DEST_GDELAY_TONE,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_GDELAY_TONE));
+        grain_delay_set_tone(x->grain_delay, v);
+        x->gdelay_tone_current = v;
+        x->mod_last_out[MOD_DEST_GDELAY_TONE] = v;
     }
 
     // Sample GDelay mix with range (if enabled)
     float sampled_gdelay_mix = sample_param_range(&x->scheduler->gdelay_mix_range,
                                                    &x->scheduler->perlin_state,
                                                    x->grain_delay->mix);
-    if (x->scheduler->gdelay_mix_range.enabled) {
-        grain_delay_set_mix(x->grain_delay, sampled_gdelay_mix);
-        x->gdelay_mix_current = sampled_gdelay_mix;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_GDELAY_MIX)) {
+        if (x->scheduler->gdelay_mix_range.enabled) {
+            grain_delay_set_mix(x->grain_delay, sampled_gdelay_mix);
+            x->gdelay_mix_current = sampled_gdelay_mix;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->gdelay_mix_range.enabled
+                   ? sampled_gdelay_mix
+                   : mod_track_base(x, MOD_DEST_GDELAY_MIX, x->grain_delay->mix);
+        float v = mod_dest_clamp(MOD_DEST_GDELAY_MIX,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_GDELAY_MIX));
+        grain_delay_set_mix(x->grain_delay, v);
+        x->gdelay_mix_current = v;
+        x->mod_last_out[MOD_DEST_GDELAY_MIX] = v;
     }
 
     // Sample Moogladder parameters with ranges (if enabled)
@@ -864,25 +1005,58 @@ static void ligase_update_inlets(ligase_t *x,
     float sampled_moog_cutoff = sample_param_range(&x->scheduler->moog_cutoff_range,
                                                     &x->scheduler->perlin_state,
                                                     x->moogladder->cutoff);
-    if (x->scheduler->moog_cutoff_range.enabled) {
-        grain_moogladder_set_cutoff(x->moogladder, sampled_moog_cutoff);
-        x->moog_cutoff_current = sampled_moog_cutoff;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_MOOG_CUTOFF)) {
+        if (x->scheduler->moog_cutoff_range.enabled) {
+            grain_moogladder_set_cutoff(x->moogladder, sampled_moog_cutoff);
+            x->moog_cutoff_current = sampled_moog_cutoff;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->moog_cutoff_range.enabled
+                   ? sampled_moog_cutoff
+                   : mod_track_base(x, MOD_DEST_MOOG_CUTOFF, x->moogladder->cutoff);
+        float v = mod_dest_clamp(MOD_DEST_MOOG_CUTOFF,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_MOOG_CUTOFF));
+        grain_moogladder_set_cutoff(x->moogladder, v);
+        x->moog_cutoff_current = v;
+        x->mod_last_out[MOD_DEST_MOOG_CUTOFF] = v;
     }
 
     float sampled_moog_resonance = sample_param_range(&x->scheduler->moog_resonance_range,
                                                        &x->scheduler->perlin_state,
                                                        x->moogladder->resonance);
-    if (x->scheduler->moog_resonance_range.enabled) {
-        grain_moogladder_set_resonance(x->moogladder, sampled_moog_resonance);
-        x->moog_resonance_current = sampled_moog_resonance;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_MOOG_RESONANCE)) {
+        if (x->scheduler->moog_resonance_range.enabled) {
+            grain_moogladder_set_resonance(x->moogladder, sampled_moog_resonance);
+            x->moog_resonance_current = sampled_moog_resonance;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->moog_resonance_range.enabled
+                   ? sampled_moog_resonance
+                   : mod_track_base(x, MOD_DEST_MOOG_RESONANCE, x->moogladder->resonance);
+        float v = mod_dest_clamp(MOD_DEST_MOOG_RESONANCE,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_MOOG_RESONANCE));
+        grain_moogladder_set_resonance(x->moogladder, v);
+        x->moog_resonance_current = v;
+        x->mod_last_out[MOD_DEST_MOOG_RESONANCE] = v;
     }
 
     float sampled_moog_mix = sample_param_range(&x->scheduler->moog_mix_range,
                                                  &x->scheduler->perlin_state,
                                                  x->moogladder->mix);
-    if (x->scheduler->moog_mix_range.enabled) {
-        grain_moogladder_set_mix(x->moogladder, sampled_moog_mix);
-        x->moog_mix_current = sampled_moog_mix;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_MOOG_MIX)) {
+        if (x->scheduler->moog_mix_range.enabled) {
+            grain_moogladder_set_mix(x->moogladder, sampled_moog_mix);
+            x->moog_mix_current = sampled_moog_mix;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->moog_mix_range.enabled
+                   ? sampled_moog_mix
+                   : mod_track_base(x, MOD_DEST_MOOG_MIX, x->moogladder->mix);
+        float v = mod_dest_clamp(MOD_DEST_MOOG_MIX,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_MOOG_MIX));
+        grain_moogladder_set_mix(x->moogladder, v);
+        x->moog_mix_current = v;
+        x->mod_last_out[MOD_DEST_MOOG_MIX] = v;
     }
 
     // Sample stut_reps with range (if enabled)
@@ -920,21 +1094,50 @@ static void ligase_update_inlets(ligase_t *x,
         // OVERRIDE: when the smear pitch destination is enabled it OWNS freq_hz this block, so the
         // continuous smear_frequency_range modulation is BYPASSED here (consistent with grain pitch,
         // where engaging a pitch source bypasses speed_range). Disabled -> exactly today's behavior.
-        if (x->scheduler->smear_frequency_range.enabled && !x->scheduler->smear_pitch_control.enabled) {
-            grain_smear_set_frequency(x->smear,
-                sample_param_range(&x->scheduler->smear_frequency_range, &x->scheduler->perlin_state, 0.0f));
+        // MOD MATRIX: grain_smear_t is opaque (no readback), so matrix-only drive centers on the
+        // fx_shadow scalar base (the last message-set value, defaulting to the smear defaults) —
+        // sample_param_range returns that base when the range is disabled, and ignores it when
+        // enabled, so the enabled path is unchanged. The smear pitch override also gates the
+        // matrix (it is the sole freq owner while enabled).
+        {
+            int mx = matrix_dest_active(x->scheduler, MOD_DEST_SMEAR_FREQUENCY);
+            if ((x->scheduler->smear_frequency_range.enabled || mx) && !x->scheduler->smear_pitch_control.enabled) {
+                float v = sample_param_range(&x->scheduler->smear_frequency_range,
+                                             &x->scheduler->perlin_state, x->fx_shadow.smear_frequency);
+                if (mx) v = mod_dest_clamp(MOD_DEST_SMEAR_FREQUENCY,
+                                           v + matrix_sum_for_dest(x->scheduler, MOD_DEST_SMEAR_FREQUENCY));
+                grain_smear_set_frequency(x->smear, v);
+            }
         }
-        if (x->scheduler->smear_resonance_range.enabled) {
-            grain_smear_set_resonance(x->smear,
-                sample_param_range(&x->scheduler->smear_resonance_range, &x->scheduler->perlin_state, 0.0f));
+        {
+            int mx = matrix_dest_active(x->scheduler, MOD_DEST_SMEAR_RESONANCE);
+            if (x->scheduler->smear_resonance_range.enabled || mx) {
+                float v = sample_param_range(&x->scheduler->smear_resonance_range,
+                                             &x->scheduler->perlin_state, x->fx_shadow.smear_resonance);
+                if (mx) v = mod_dest_clamp(MOD_DEST_SMEAR_RESONANCE,
+                                           v + matrix_sum_for_dest(x->scheduler, MOD_DEST_SMEAR_RESONANCE));
+                grain_smear_set_resonance(x->smear, v);
+            }
         }
-        if (x->scheduler->smear_stages_range.enabled) {
-            grain_smear_set_stages(x->smear,
-                (int)sample_param_range(&x->scheduler->smear_stages_range, &x->scheduler->perlin_state, 0.0f));
+        {
+            int mx = matrix_dest_active(x->scheduler, MOD_DEST_SMEAR_STAGES);
+            if (x->scheduler->smear_stages_range.enabled || mx) {
+                float v = sample_param_range(&x->scheduler->smear_stages_range,
+                                             &x->scheduler->perlin_state, x->fx_shadow.smear_stages);
+                if (mx) v = mod_dest_clamp(MOD_DEST_SMEAR_STAGES,
+                                           v + matrix_sum_for_dest(x->scheduler, MOD_DEST_SMEAR_STAGES));
+                grain_smear_set_stages(x->smear, (int)v);
+            }
         }
-        if (x->scheduler->smear_feedback_range.enabled) {
-            grain_smear_set_feedback(x->smear,
-                sample_param_range(&x->scheduler->smear_feedback_range, &x->scheduler->perlin_state, 0.0f));
+        {
+            int mx = matrix_dest_active(x->scheduler, MOD_DEST_SMEAR_FEEDBACK);
+            if (x->scheduler->smear_feedback_range.enabled || mx) {
+                float v = sample_param_range(&x->scheduler->smear_feedback_range,
+                                             &x->scheduler->perlin_state, x->fx_shadow.smear_feedback);
+                if (mx) v = mod_dest_clamp(MOD_DEST_SMEAR_FEEDBACK,
+                                           v + matrix_sum_for_dest(x->scheduler, MOD_DEST_SMEAR_FEEDBACK));
+                grain_smear_set_feedback(x->smear, v);
+            }
         }
 
         // SMEAR pitch destination: resolve the source to a semitone, then hz = ref_hz * 2^(semitone/12).
@@ -992,39 +1195,83 @@ static void ligase_update_inlets(ligase_t *x,
     }
 
     // Sample scanrate with range (if enabled)
-    if (x->scheduler->scanrate_range.enabled) {
-        float sampled = sample_param_range(&x->scheduler->scanrate_range,
-                                           &x->scheduler->perlin_state,
-                                           x->scan_rate);
-        x->scan_rate = sampled;
-        x->scanrate_current = sampled;
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_SCANRATE)) {
+        if (x->scheduler->scanrate_range.enabled) {
+            float sampled = sample_param_range(&x->scheduler->scanrate_range,
+                                               &x->scheduler->perlin_state,
+                                               x->scan_rate);
+            x->scan_rate = sampled;
+            x->scanrate_current = sampled;
+        }
+    } else {
+        // MOD MATRIX: scan_rate is read back as its own base, so matrix-only drive uses the
+        // tracked base (see mod_track_base) to avoid integrating the offset block over block.
+        float base = x->scheduler->scanrate_range.enabled
+                   ? sample_param_range(&x->scheduler->scanrate_range,
+                                        &x->scheduler->perlin_state, x->scan_rate)
+                   : mod_track_base(x, MOD_DEST_SCANRATE, x->scan_rate);
+        float v = mod_dest_clamp(MOD_DEST_SCANRATE,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_SCANRATE));
+        x->scan_rate = v;
+        x->scanrate_current = v;
+        x->mod_last_out[MOD_DEST_SCANRATE] = v;
     }
 
     // Sample organize with range (if enabled)
     float sampled_organize = sample_param_range(&x->scheduler->organize_range,
                                                  &x->scheduler->perlin_state,
                                                  x->organize_cv);
-    if (x->scheduler->organize_range.enabled && sampled_organize > 0.001f && sampled_organize <= 1.0f) {
-        splice_organize(&x->reel->splices, sampled_organize);
-        x->organize_current = sampled_organize;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_ORGANIZE)) {
+        if (x->scheduler->organize_range.enabled && sampled_organize > 0.001f && sampled_organize <= 1.0f) {
+            splice_organize(&x->reel->splices, sampled_organize);
+            x->organize_current = sampled_organize;  // Store modulated value for query
+        }
+    } else {
+        // MOD MATRIX: base = range-sampled (enabled) or the stored organize CV (disabled — the
+        // sample call above already returned x->organize_cv in that case). Same >epsilon guard
+        // as the range path so a 0 value still means "no selection".
+        float v = mod_dest_clamp(MOD_DEST_ORGANIZE,
+                                 sampled_organize + matrix_sum_for_dest(x->scheduler, MOD_DEST_ORGANIZE));
+        if (v > 0.001f && v <= 1.0f) {
+            splice_organize(&x->reel->splices, v);
+            x->organize_current = v;
+        }
     }
 
     // Sample SOS mix with range (if enabled)
-    if (x->scheduler->sos_range.enabled && x->recorder && x->sos_mode == 0) {
-        float sampled_sos = sample_param_range(&x->scheduler->sos_range,
-                                                &x->scheduler->perlin_state,
-                                                x->sos_value);
-        x->recorder->crossfade_mix = sampled_sos;
-        x->sos_current = sampled_sos;  // Store modulated value for query
+    // MOD MATRIX: base = x->sos_value (message-stored scalar; not written back here, so no
+    // feedback) via sample_param_range's disabled path; matrix sum on top, clamped 0-1.
+    {
+        int mx = matrix_dest_active(x->scheduler, MOD_DEST_SOS);
+        if ((x->scheduler->sos_range.enabled || mx) && x->recorder && x->sos_mode == 0) {
+            float sampled_sos = sample_param_range(&x->scheduler->sos_range,
+                                                    &x->scheduler->perlin_state,
+                                                    x->sos_value);
+            if (mx) sampled_sos = mod_dest_clamp(MOD_DEST_SOS,
+                                                 sampled_sos + matrix_sum_for_dest(x->scheduler, MOD_DEST_SOS));
+            x->recorder->crossfade_mix = sampled_sos;
+            x->sos_current = sampled_sos;  // Store modulated value for query
+        }
     }
 
     // Sample env_skew with range (if enabled)
     float sampled_env_skew = sample_param_range(&x->scheduler->env_skew_range,
                                                  &x->scheduler->perlin_state,
                                                  x->envelope->skew);
-    if (x->scheduler->env_skew_range.enabled) {
-        envelope_set_skew(x->envelope, sampled_env_skew);
-        x->env_skew_current = sampled_env_skew;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_ENV_SKEW)) {
+        if (x->scheduler->env_skew_range.enabled) {
+            envelope_set_skew(x->envelope, sampled_env_skew);
+            x->env_skew_current = sampled_env_skew;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->env_skew_range.enabled
+                   ? sampled_env_skew
+                   : mod_track_base(x, MOD_DEST_ENV_SKEW, x->envelope->skew);
+        float v = mod_dest_clamp(MOD_DEST_ENV_SKEW,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_ENV_SKEW));
+        if (v != x->envelope->skew) envelope_set_skew(x->envelope, v);  // set_skew regenerates the table
+        x->env_skew_current = v;
+        x->mod_last_out[MOD_DEST_ENV_SKEW] = v;
     }
 
     // Calculate grain trigger period
@@ -1035,6 +1282,14 @@ static void ligase_update_inlets(ligase_t *x,
                                           x->scheduler->iot);
     if (x->scheduler->iot_range.enabled) {
         x->iot_current = sampled_iot;  // Store modulated value for query
+    }
+    // MOD MATRIX: iot flows into the trigger period below whether or not the range is enabled
+    // (sample_param_range returns x->scheduler->iot when disabled — a stable base, never written
+    // back), so the overlay just adds to sampled_iot before the period is computed.
+    if (matrix_dest_active(x->scheduler, MOD_DEST_IOT)) {
+        sampled_iot = mod_dest_clamp(MOD_DEST_IOT,
+                                     sampled_iot + matrix_sum_for_dest(x->scheduler, MOD_DEST_IOT));
+        x->iot_current = sampled_iot;
     }
     int base_trigger_period = (int)(sampled_iot * x->sample_rate);
 
@@ -1733,6 +1988,32 @@ null_ptr_error:
         }
     }
 
+    // --- Input envelope follower (input-LISTENING source for the modulation matrix) -----------
+    // One-pole rectified-PEAK envelope over the block: rises instantly toward a new peak, decays
+    // at env_follow_coeff (release; 'env_follow_ms', default ~30 ms). Runs BEFORE update_inlets /
+    // process_grains so the cached value is fresh for both apply tiers this block. Mirrors
+    // pattern_eval_slot's per-block cache discipline: single writer (perform), no malloc/locks.
+    // Output is deliberately NOT hard-capped — input is typically <=1.0 and the per-destination
+    // clamp at the matrix apply site catches overshoot (hot input + high depth saturates the
+    // destination at its clamp). LIGASE_FLUSH_DENORMALS() above keeps the leaky state clean.
+    if (x->scheduler) {
+        perlin_state_t *ps = &x->scheduler->perlin_state;
+        float c = ps->env_follow_coeff;            // 0 => one-pole degenerates to instant follow
+        float sl = ps->env_follow_state[0], sr = ps->env_follow_state[1];
+        for (int i = 0; i < n; i++) {
+            float al = fabsf(in_left[i]);          // rectify
+            float ar = fabsf(in_right[i]);
+            // leaky one-pole peak follower: rise fast (toward peak), fall at coeff
+            sl = (al > sl) ? al : (sl * c + al * (1.0f - c));
+            sr = (ar > sr) ? ar : (sr * c + ar * (1.0f - c));
+        }
+        ps->env_follow_state[0] = sl;
+        ps->env_follow_state[1] = sr;
+        ps->env_follow_value[0] = sl;
+        ps->env_follow_value[1] = sr;
+        ps->env_follow_value[2] = 0.5f * (sl + sr);  // mono mix
+    }
+
     // Morph stepper (control-rate), BEFORE update_inlets so morphed bands win and morphed scalar
     // bases follow the standard live-CV-wins precedence (GATE A.6). A running route drives the
     // cursor; otherwise (v1.1) the CV cursor signal inlets do, when engaged via morph_cursor 1.
@@ -1771,24 +2052,29 @@ null_ptr_error:
     // Compute and output modulation values (control rate, once per DSP block)
     // Modulation outlets now use unified param_range system (same as internal parameters)
 
-    if (x->modout1_range.enabled && x->modout1_range.rand_type != RAND_TYPE_NONE) {
-        float value = sample_param_range(&x->modout1_range, &x->scheduler->perlin_state, 0.5f);
-        outlet_float(x->x_modout1, value);
-    }
-
-    if (x->modout2_range.enabled && x->modout2_range.rand_type != RAND_TYPE_NONE) {
-        float value = sample_param_range(&x->modout2_range, &x->scheduler->perlin_state, 0.5f);
-        outlet_float(x->x_modout2, value);
-    }
-
-    if (x->modout3_range.enabled && x->modout3_range.rand_type != RAND_TYPE_NONE) {
-        float value = sample_param_range(&x->modout3_range, &x->scheduler->perlin_state, 0.5f);
-        outlet_float(x->x_modout3, value);
-    }
-
-    if (x->modout4_range.enabled && x->modout4_range.rand_type != RAND_TYPE_NONE) {
-        float value = sample_param_range(&x->modout4_range, &x->scheduler->perlin_state, 0.5f);
-        outlet_float(x->x_modout4, value);
+    // MOD MATRIX: modout1-4 are matrix destinations, so input-derived sources can be patched
+    // out to the rest of the Pd graph. The gate here is COMPOUND (enabled && rand_type != NONE),
+    // so a matrix-only connection to a disabled modout needs the || rewrite below; when only the
+    // matrix drives it the emitted float is 0.5 + sum (neutral center + overlay) rather than a
+    // sample of the disabled range. modout values are NOT clamped — they are patch-out floats
+    // (a user's modout range may deliberately span any units), so overshoot is harmless.
+    {
+        struct { param_range_t *range; t_outlet *out; int dest; } mo[4] = {
+            { &x->modout1_range, x->x_modout1, MOD_DEST_MODOUT1 },
+            { &x->modout2_range, x->x_modout2, MOD_DEST_MODOUT2 },
+            { &x->modout3_range, x->x_modout3, MOD_DEST_MODOUT3 },
+            { &x->modout4_range, x->x_modout4, MOD_DEST_MODOUT4 },
+        };
+        for (int m = 0; m < 4; m++) {
+            int base_on = mo[m].range->enabled && mo[m].range->rand_type != RAND_TYPE_NONE;
+            int mx = matrix_dest_active(x->scheduler, mo[m].dest);
+            if (!base_on && !mx) continue;
+            float value = base_on
+                        ? sample_param_range(mo[m].range, &x->scheduler->perlin_state, 0.5f)
+                        : 0.5f;
+            if (mx) value += matrix_sum_for_dest(x->scheduler, mo[m].dest);
+            outlet_float(mo[m].out, value);
+        }
     }
 
     // @endregion:ligase_pd.pd_external.outlets.modulation
@@ -1837,6 +2123,13 @@ static void ligase_set_sample_rate(ligase_t *x, int sr) {
     if (x->moogladder) x->moogladder->sample_rate = sr;  // cutoff normalized per-block
     if (x->delay_stut) x->delay_stut->sample_rate = sr;  // stut spacing computed per-trigger
     if (x->smear)      grain_smear_set_sample_rate(x->smear, sr);
+
+    // Envelope follower: keep the release TIME constant across a rate change (recompute coeff)
+    if (x->scheduler) {
+        perlin_state_t *ps = &x->scheduler->perlin_state;
+        ps->env_follow_coeff = (ps->env_follow_ms > 0.0f)
+            ? expf(-1.0f / (ps->env_follow_ms * 0.001f * (float)sr)) : 0.0f;
+    }
 
     // Subsystems that cache derived state — must reallocate / recompute
     if (x->reel)          reel_set_sample_rate(x->reel, sr);                          // resize 10-min reel to rate
@@ -4175,6 +4468,215 @@ static void ligase_param_range(ligase_t *x, t_symbol *s, int argc, t_atom *argv)
     }
 }
 
+// @region:ligase_pd.pd_external.methods.mod_matrix Modulation Matrix Messages
+
+// SOURCE name table — the matrix source vocabulary (a separate namespace from rand_type).
+// Canonical names first (matrix_dump prints the first match); "lfoN" aliases to sineN.
+static const struct { const char *name; int id; } mod_source_names[] = {
+    { "sine1",    MOD_SRC_SINE1 },   { "sine2",    MOD_SRC_SINE2 },
+    { "sine3",    MOD_SRC_SINE3 },   { "sine4",    MOD_SRC_SINE4 },
+    { "saw1",     MOD_SRC_SAW1 },    { "saw2",     MOD_SRC_SAW2 },
+    { "saw3",     MOD_SRC_SAW3 },    { "saw4",     MOD_SRC_SAW4 },
+    { "square1",  MOD_SRC_SQUARE1 }, { "square2",  MOD_SRC_SQUARE2 },
+    { "square3",  MOD_SRC_SQUARE3 }, { "square4",  MOD_SRC_SQUARE4 },
+    { "perlin1",  MOD_SRC_PERLIN1 }, { "perlin2",  MOD_SRC_PERLIN2 },
+    { "perlin3",  MOD_SRC_PERLIN3 }, { "perlin4",  MOD_SRC_PERLIN4 },
+    { "lorenz1",  MOD_SRC_LORENZ1 }, { "lorenz2",  MOD_SRC_LORENZ2 },
+    { "lorenz3",  MOD_SRC_LORENZ3 }, { "lorenz4",  MOD_SRC_LORENZ4 },
+    { "nbody1",   MOD_SRC_NBODY1 },  { "nbody2",   MOD_SRC_NBODY2 },
+    { "nbody3",   MOD_SRC_NBODY3 },  { "nbody4",   MOD_SRC_NBODY4 },
+    { "sphere1",  MOD_SRC_SPHERE1 }, { "sphere2",  MOD_SRC_SPHERE2 },
+    { "sphere3",  MOD_SRC_SPHERE3 }, { "sphere4",  MOD_SRC_SPHERE4 },
+    { "rand1",    MOD_SRC_RAND1 },   { "rand2",    MOD_SRC_RAND2 },
+    { "rand3",    MOD_SRC_RAND3 },   { "rand4",    MOD_SRC_RAND4 },
+    { "pattern0", MOD_SRC_PATTERN0 },{ "pattern1", MOD_SRC_PATTERN1 },
+    { "pattern2", MOD_SRC_PATTERN2 },{ "pattern3", MOD_SRC_PATTERN3 },
+    { "pattern4", MOD_SRC_PATTERN4 },{ "pattern5", MOD_SRC_PATTERN5 },
+    { "pattern6", MOD_SRC_PATTERN6 },{ "pattern7", MOD_SRC_PATTERN7 },
+    { "env_l",    MOD_SRC_ENV_L },   { "env_r",    MOD_SRC_ENV_R },
+    { "env_mono", MOD_SRC_ENV_MONO },
+    // aliases (after the canonical names so dump prints the canonical form)
+    { "lfo1", MOD_SRC_SINE1 }, { "lfo2", MOD_SRC_SINE2 },
+    { "lfo3", MOD_SRC_SINE3 }, { "lfo4", MOD_SRC_SINE4 },
+};
+
+// DEST name table — v1 = the PER-BLOCK destinations only. Names reuse the
+// get_param_range_by_name vocabulary verbatim; keep this adjacent to mod_dest_bounds so the
+// id/bounds/name triple never drifts. Per-grain dests (speed/pitch_fine/grainsize/grainstart/
+// amplitude/pan) are v1.5 and deliberately absent (the connect handler explains when asked).
+static const struct { const char *name; int id; } mod_dest_names[] = {
+    { "gdelay",          MOD_DEST_GDELAY },
+    { "gdelay_feed",     MOD_DEST_GDELAY_FEED },
+    { "gdelay_tone",     MOD_DEST_GDELAY_TONE },
+    { "gdelay_mix",      MOD_DEST_GDELAY_MIX },
+    { "moog_cutoff",     MOD_DEST_MOOG_CUTOFF },
+    { "moog_resonance",  MOD_DEST_MOOG_RESONANCE },
+    { "moog_mix",        MOD_DEST_MOOG_MIX },
+    { "smear_frequency", MOD_DEST_SMEAR_FREQUENCY },
+    { "smear_resonance", MOD_DEST_SMEAR_RESONANCE },
+    { "smear_stages",    MOD_DEST_SMEAR_STAGES },
+    { "smear_feedback",  MOD_DEST_SMEAR_FEEDBACK },
+    { "scanrate",        MOD_DEST_SCANRATE },
+    { "organize",        MOD_DEST_ORGANIZE },
+    { "sos",             MOD_DEST_SOS },
+    { "iot",             MOD_DEST_IOT },
+    { "env_skew",        MOD_DEST_ENV_SKEW },
+    { "modout1",         MOD_DEST_MODOUT1 },
+    { "modout2",         MOD_DEST_MODOUT2 },
+    { "modout3",         MOD_DEST_MODOUT3 },
+    { "modout4",         MOD_DEST_MODOUT4 },
+};
+
+static int mod_source_from_name(const char *name) {
+    for (size_t i = 0; i < sizeof(mod_source_names) / sizeof(mod_source_names[0]); i++)
+        if (strcmp(name, mod_source_names[i].name) == 0) return mod_source_names[i].id;
+    return -1;
+}
+
+static const char *mod_source_to_name(int id) {
+    for (size_t i = 0; i < sizeof(mod_source_names) / sizeof(mod_source_names[0]); i++)
+        if (mod_source_names[i].id == id) return mod_source_names[i].name;
+    return "?";
+}
+
+static int mod_dest_from_name(const char *name) {
+    for (size_t i = 0; i < sizeof(mod_dest_names) / sizeof(mod_dest_names[0]); i++)
+        if (strcmp(name, mod_dest_names[i].name) == 0) return mod_dest_names[i].id;
+    return -1;
+}
+
+static const char *mod_dest_to_name(int id) {
+    for (size_t i = 0; i < sizeof(mod_dest_names) / sizeof(mod_dest_names[0]); i++)
+        if (mod_dest_names[i].id == id) return mod_dest_names[i].name;
+    return "?";
+}
+
+// "matrix_connect <source> <dest> <depth>" — add (or update in place) a routing connection.
+// Depth is SIGNED, in the destination's own units: contribution = depth*(source01-0.5)*2, so a
+// [0,1] source swings +/-depth around the destination's base. Control thread only; publish
+// ordering is fields-first, count-last so perform never iterates a half-written entry.
+static void ligase_matrix_connect(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 3 || argv[0].a_type != A_SYMBOL || argv[1].a_type != A_SYMBOL ||
+        argv[2].a_type != A_FLOAT) {
+        pd_error(x, "ligase~: matrix_connect requires: <source> <dest> <depth>");
+        return;
+    }
+    if (!x->scheduler) return;
+    const char *src_name = argv[0].a_w.w_symbol->s_name;
+    const char *dst_name = argv[1].a_w.w_symbol->s_name;
+    float depth = argv[2].a_w.w_float;
+    if (!isfinite(depth)) {
+        pd_error(x, "ligase~: matrix_connect: depth must be finite");
+        return;
+    }
+    int src = mod_source_from_name(src_name);
+    if (src < 0) {
+        pd_error(x, "ligase~: matrix_connect: unknown source '%s'", src_name);
+        return;
+    }
+    int dst = mod_dest_from_name(dst_name);
+    if (dst < 0) {
+        if (get_param_range_by_name(x, dst_name))
+            pd_error(x, "ligase~: matrix_connect: '%s' is not a per-block matrix destination "
+                        "(per-grain destinations are v1.5)", dst_name);
+        else
+            pd_error(x, "ligase~: matrix_connect: unknown destination '%s'", dst_name);
+        return;
+    }
+    scheduler_t *sched = x->scheduler;
+    // Re-connect of an existing (source,dest) pair updates depth in place (and re-enables)
+    for (int i = 0; i < sched->mod_conn_count; i++) {
+        if (sched->mod_matrix[i].source == src && sched->mod_matrix[i].dest == dst) {
+            sched->mod_matrix[i].depth = depth;
+            sched->mod_matrix[i].enabled = 1;
+            post("ligase~: matrix %s -> %s depth %.4f (updated)", src_name, dst_name, depth);
+            return;
+        }
+    }
+    if (sched->mod_conn_count >= MOD_MATRIX_MAX) {
+        pd_error(x, "ligase~: matrix full (%d connections max)", MOD_MATRIX_MAX);
+        return;
+    }
+    int i = sched->mod_conn_count;
+    sched->mod_matrix[i].source  = src;      // fields first ...
+    sched->mod_matrix[i].dest    = dst;
+    sched->mod_matrix[i].depth   = depth;
+    sched->mod_matrix[i].enabled = 1;
+    sched->mod_conn_count = i + 1;           // ... count LAST (publish barrier)
+    post("ligase~: matrix %s -> %s depth %.4f (%d/%d)",
+         src_name, dst_name, depth, sched->mod_conn_count, MOD_MATRIX_MAX);
+}
+
+// "matrix_disconnect <source> <dest>" — disable that connection (slot kept; a later
+// matrix_connect of the same pair re-enables it in place).
+static void ligase_matrix_disconnect(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 2 || argv[0].a_type != A_SYMBOL || argv[1].a_type != A_SYMBOL) {
+        pd_error(x, "ligase~: matrix_disconnect requires: <source> <dest>");
+        return;
+    }
+    if (!x->scheduler) return;
+    const char *src_name = argv[0].a_w.w_symbol->s_name;
+    const char *dst_name = argv[1].a_w.w_symbol->s_name;
+    int src = mod_source_from_name(src_name);
+    int dst = mod_dest_from_name(dst_name);
+    if (src < 0 || dst < 0) {
+        pd_error(x, "ligase~: matrix_disconnect: unknown %s '%s'",
+                 (src < 0) ? "source" : "destination", (src < 0) ? src_name : dst_name);
+        return;
+    }
+    scheduler_t *sched = x->scheduler;
+    for (int i = 0; i < sched->mod_conn_count; i++) {
+        if (sched->mod_matrix[i].source == src && sched->mod_matrix[i].dest == dst) {
+            sched->mod_matrix[i].enabled = 0;
+            post("ligase~: matrix %s -> %s disconnected", src_name, dst_name);
+            return;
+        }
+    }
+    post("ligase~: matrix_disconnect: no connection %s -> %s", src_name, dst_name);
+}
+
+// "matrix_clear" — drop every connection. A single store: instantly inert (exact
+// backward-compat behavior returns this block).
+static void ligase_matrix_clear(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s; (void)argc; (void)argv;
+    if (!x->scheduler) return;
+    x->scheduler->mod_conn_count = 0;
+    post("ligase~: matrix cleared");
+}
+
+// "matrix_dump" — post the current connections to the Pd console.
+static void ligase_matrix_dump(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s; (void)argc; (void)argv;
+    if (!x->scheduler) return;
+    scheduler_t *sched = x->scheduler;
+    post("ligase~: matrix: %d/%d connection(s)", sched->mod_conn_count, MOD_MATRIX_MAX);
+    for (int i = 0; i < sched->mod_conn_count; i++) {
+        mod_conn_t *c = &sched->mod_matrix[i];
+        post("  [%d] %s -> %s depth %.4f%s", i,
+             mod_source_to_name(c->source), mod_dest_to_name(c->dest),
+             c->depth, c->enabled ? "" : " (disabled)");
+    }
+}
+
+// "env_follow_ms <ms>" — set the envelope follower's release time (one-pole coeff at the
+// current samplerate). 0 = instant follow. Default ~30 ms (set in scheduler_create).
+static void ligase_env_follow_ms(ligase_t *x, t_floatarg ms) {
+    if (!x->scheduler) return;
+    if (!isfinite(ms) || ms < 0.0f || ms > 60000.0f) {
+        pd_error(x, "ligase~: env_follow_ms must be 0-60000 ms");
+        return;
+    }
+    perlin_state_t *ps = &x->scheduler->perlin_state;
+    float sr = (x->sample_rate > 0) ? (float)x->sample_rate : 48000.0f;
+    ps->env_follow_ms = ms;
+    ps->env_follow_coeff = (ms > 0.0f) ? expf(-1.0f / (ms * 0.001f * sr)) : 0.0f;
+    post("ligase~: env_follow release %.1f ms (coeff %.6f)", ms, ps->env_follow_coeff);
+}
+
+// @endregion:ligase_pd.pd_external.methods.mod_matrix
+
 // Set parameter base_value for PERLIN_2D: "param_base_value modout1 0.3"
 static void ligase_param_base_value(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     if (argc < 2 || argv[0].a_type != A_SYMBOL || argv[1].a_type != A_FLOAT) {
@@ -5656,6 +6158,13 @@ static void *ligase_new(void) {
 
     x->sample_rate = 48000;
 
+    // MOD MATRIX: base-tracking arrays start neutral (only read when a connection targets a
+    // dest whose range is disabled; mod_track_base adopts the live field value on first use).
+    for (int i = 0; i < MOD_DEST_COUNT; i++) {
+        x->mod_base[i] = 0.0f;
+        x->mod_last_out[i] = 0.0f;
+    }
+
     return (void *)x;
 }
 
@@ -6660,6 +7169,12 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_moog_fb_saturation, gensym("moog_fb_saturation"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_moog_enable, gensym("moog_enable"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_param_range, gensym("param_range"), A_GIMME, 0);
+    // Modulation matrix (N->M routing overlay) + envelope-follower input source
+    class_addmethod(ligase_class, (t_method)ligase_matrix_connect,    gensym("matrix_connect"),    A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_matrix_disconnect, gensym("matrix_disconnect"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_matrix_clear,      gensym("matrix_clear"),      A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_matrix_dump,       gensym("matrix_dump"),       A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_env_follow_ms,     gensym("env_follow_ms"),     A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_param_base_value, gensym("param_base_value"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_param_slew, gensym("param_slew"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_param_invert, gensym("param_invert"), A_GIMME, 0);
