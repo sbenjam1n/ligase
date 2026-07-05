@@ -1,9 +1,9 @@
 # Modulation Layers — snapshots, metasurface, and the modulation matrix
 
-**Status:** design contract for modulation-matrix v1.5 (per-grain tier + capture transparency).
-Written to be translated into the manual once v1.5 ships. Every claim about the current build
-was verified against the source (perform ordering, capture reads, matrix apply sites) on
-2026-07-05; the "v1.5 rules" section is the part that is *not yet implemented*.
+**Status:** SHIPPED — modulation-matrix v1.5 (per-grain tier + capture transparency) is
+implemented; rules R1–R5 below are the as-built contract. Every claim about the build was
+verified against the source (perform ordering, capture reads, matrix apply sites) on
+2026-07-05. The manual's MODULATION MATRIX section carries the user-facing version.
 
 ---
 
@@ -63,9 +63,9 @@ Consequences, all verified in the source:
 |---|---|---|
 | param_range modulation | the **band** (min/max/generator/enabled), never the generator's momentary output | **clean** — recall reproduces the motion, not a frozen phase |
 | the 11 opaque-FX params (moog/smear/gdelay) | the **fx_shadow** — written only by user-facing setters, never by the matrix apply | **clean** — a wobbling cutoff snapshots as its knob value |
-| self-read transport params (scanrate, organize, sos, iot, env_skew) | the **live field**, which the v1 matrix writes | **dirty in v1** — SNAP bakes `base + this block's LFO value` (wrong phase, wrong voice) |
+| self-read transport params (scanrate, organize, sos, iot, env_skew) | the matrix's **tracked base** (`mod_base[dest]`) when a connection actively drives the captured field (scanrate); organize/sos/iot capture message-stored bases the matrix never writes, and env_skew's live field is not a captured scalar | **clean** (was dirty in v1 for scanrate — SNAP baked `base + this block's LFO value`) |
 
-**v1.5 closes the gap** (rules below): capture reads the matrix's tracked base
+**v1.5 closed the gap** (rules below): capture reads the matrix's tracked base
 (`mod_base[dest]`) whenever a connection is active on that destination, making SNAP
 **modulation-transparent everywhere**. The per-grain tier is clean *by construction* because
 it never writes the shared fields at all.

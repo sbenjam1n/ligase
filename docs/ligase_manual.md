@@ -330,6 +330,11 @@ modout_source/modout_range commands:
 Modulation Matrix (N->M routing; see MODULATION MATRIX)
 
 matrix_connect <source> <dest> <depth> - Add/update a routing connection (depth signed, dest units)
+  Destinations, per-block: gdelay, gdelay_feed, gdelay_tone, gdelay_mix, moog_cutoff,
+  moog_resonance, moog_mix, smear_frequency, smear_resonance, smear_stages, smear_feedback,
+  scanrate, organize, sos, iot, env_skew, modout1-4
+  Destinations, per-grain (applied at grain trigger): speed, grainsize, grain_start,
+  amplitude, pan, pitch_fine
 matrix_disconnect <source> <dest> - Disable a connection (kept; re-connect re-enables)
 matrix_clear - Remove all connections (matrix inert)
 matrix_dump - Post current connections to the console
@@ -2792,7 +2797,9 @@ matrix and rand_type lorenz_1 on a range track the same attractor. Generator/pat
 advance at the grain-trigger rate (like the range system); reading rand1-4 from the matrix
 advances the shared per-instance random seed.
 
-Destinations (v1: per-BLOCK parameters)
+Destinations
+
+Per-BLOCK parameters (applied once per DSP block):
 
   gdelay, gdelay_feed, gdelay_tone, gdelay_mix
   moog_cutoff, moog_resonance, moog_mix
@@ -2800,9 +2807,24 @@ Destinations (v1: per-BLOCK parameters)
   scanrate, organize, sos, iot, env_skew
   modout1-4
 
-These are applied once per DSP block. The per-GRAIN parameters (speed, pitch_fine, grainsize,
-grainstart, amplitude, pan) are NOT matrix destinations yet (planned v1.5); connecting to them is
-rejected with an explanatory error. Onset/pitch detection sources are planned for v2.
+Per-GRAIN parameters (applied at each grain trigger):
+
+  speed, grainsize, grain_start, amplitude, pan, pitch_fine
+  (grainstart is accepted as an alias for grain_start)
+
+Per-grain destination sums are computed once per DSP block (sources are per-block values) and
+added to each grain's value at trigger time, AFTER the param_range sample and BEFORE the same
+clamps the engine already applies (grainsize 0.01-2 s, amplitude 0-2, pan 0-1, grain_start 0-1
+normalized, speed ±4, pitch_fine ±0.5 semitones). The offsets are purely per-grain: the shared
+parameter bases (the values the inlets/messages own and queries report) are NEVER written by the
+matrix, so a per-grain connection composes with — and cleanly disconnects from — everything else.
+
+The speed destination applies in ALL pitch modes: the offset is added to the final pitch-derived
+speed (MIDI / scale / pattern pitch keep working), so a pin on speed is a detune/drift AROUND the
+note, not a pitch-source bypass. pitch_fine offsets add to the sampled fine value, bounded to the
+±0.5-semitone fine-tune range.
+
+Onset/pitch detection sources are planned for v2.
 
 Behavior notes
 
@@ -2823,6 +2845,12 @@ Behavior notes
   different units); the range modulation still applies as usual.
 - smear_frequency connections are bypassed while the smear pitch destination is enabled (the pitch
   system owns the frequency then, exactly like the smear_frequency_range).
+- Capture transparency: snapshots record the PRE-MODULATION base, never a momentary matrix value.
+  The 11 FX params capture from their message-set shadow values, the per-grain destinations never
+  write the shared fields at all, and the self-read transport params (scanrate in particular)
+  capture the matrix's tracked base while a connection is active — so a SNAP taken mid-wobble
+  stores the knob value, and recalling it restores the base the modulation was riding on.
+  (Connections themselves are never captured: pins are physical — see snapshots/morphing.)
 
 Input envelope follower
 
@@ -2844,7 +2872,8 @@ Example
   param_range moog_cutoff 800 800          (fixed 800 Hz base, range enabled)
   matrix_connect lorenz1 moog_cutoff 600   (chaos wobbles the cutoff ±600 Hz)
   matrix_connect env_mono moog_cutoff 3000 (input level opens it up to ±3000 Hz more)
-  matrix_connect env_mono pan 0.5          → error: pan is per-grain (v1.5)
+  matrix_connect env_mono pan 0.5          (input level spreads each grain's pan ±0.5)
+  matrix_connect sine1 grainsize 0.05      (LFO breathes every grain's length ±50 ms)
   matrix_dump
   matrix_clear                             (back to exactly the range-only behavior)
 

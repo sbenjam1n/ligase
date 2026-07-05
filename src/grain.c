@@ -406,6 +406,28 @@ float matrix_sum_for_dest(scheduler_t *sched, int dest) {
     return sum;
 }
 
+// v1.5 PER-GRAIN tier: cache the six per-grain destination sums ONCE PER BLOCK (sources are
+// per-block values; mirrors the env-follower's block-cache discipline, and keeps MOD_SRC_RANDn's
+// shared-LCG advance at one step per connection per block instead of per grain). Called from
+// ligase_perform before update_inlets/process_grains, so grains spawned this block read fresh
+// sums (pattern-event grains, fired during pattern eval earlier in perform, read the previous
+// block's cache — same one-block staleness as the follower, documented). With zero per-grain
+// connections mask == 0 and every sum is 0, so scheduler_trigger_grain pays ~one branch per
+// apply site (R5 backward compat).
+void matrix_cache_grain_sums(scheduler_t *sched) {
+    int mask = 0;
+    for (int d = 0; d < MOD_GRAIN_DEST_COUNT; d++) {
+        int dest = MOD_DEST_SPEED + d;
+        if (matrix_dest_active(sched, dest)) {
+            sched->mod_grain_sum[d] = matrix_sum_for_dest(sched, dest);
+            mask |= (1 << d);
+        } else {
+            sched->mod_grain_sum[d] = 0.0f;
+        }
+    }
+    sched->mod_grain_mask = mask;
+}
+
 // @endregion:ligase_pd.core.params.mod_matrix
 
 // Update Perlin noise coordinates and Lorenz attractors based on IOT (called at grain trigger)
@@ -980,12 +1002,29 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
     {
         float fine = sample_param_range(&sched->pitch_control.pitch_fine_range,
                                         &sched->perlin_state, sched->pitch_control.pitch_fine);
+        // MOD MATRIX (v1.5): pitch_fine offset adds to the sampled fine value, then the
+        // destination's own +/-0.5-semitone bound. Clamped only when a connection is active,
+        // so the unmodulated path keeps its historical no-clamp behavior. FUNCTIONAL — the
+        // pitch_control.pitch_fine base is never written.
+        if (sched->mod_grain_mask & MOD_GRAIN_BIT(MOD_DEST_PITCH_FINE)) {
+            fine += sched->mod_grain_sum[MOD_GRAIN_IDX(MOD_DEST_PITCH_FINE)];
+            if (fine < -0.5f) fine = -0.5f;
+            if (fine >  0.5f) fine =  0.5f;
+        }
         current_semitone += fine;
         final_speed = base_speed * semitones_to_speed(current_semitone);
     }
 
     // Store the semitone value for change detection in ligase~.c
     sched->pitch_control.last_semitone = current_semitone;
+
+    // MOD MATRIX (v1.5): per-grain SPEED offset — applies in ALL pitch modes, added to the
+    // final pitch-derived speed (R2: a pin on speed is a detune/drift AROUND the note, not a
+    // pitch-source bypass), then the existing +/-4.0 clamp below. FUNCTIONAL — the shared
+    // speed field is never written back.
+    if (sched->mod_grain_mask & MOD_GRAIN_BIT(MOD_DEST_SPEED)) {
+        final_speed += sched->mod_grain_sum[MOD_GRAIN_IDX(MOD_DEST_SPEED)];
+    }
 
     // Clamp final_speed to prevent extreme position jumps and aliasing
     // Max speed of ±4.0 prevents reading >4 samples per sample (Nyquist/aliasing issues)
@@ -1007,6 +1046,12 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
     }
 
     float grain_size = sample_param_range(&sched->grainsize_range, &sched->perlin_state, sched->grain_size);
+
+    // MOD MATRIX (v1.5): per-grain size offset, added AFTER the range sample and BEFORE the
+    // existing in-place clamps (R1). FUNCTIONAL — sched->grain_size is never written.
+    if (sched->mod_grain_mask & MOD_GRAIN_BIT(MOD_DEST_GRAINSIZE)) {
+        grain_size += sched->mod_grain_sum[MOD_GRAIN_IDX(MOD_DEST_GRAINSIZE)];
+    }
 
     //  Clamp grain_size to safe minimum (prevent zero-length grains)
     if (grain_size < 0.01f) grain_size = 0.01f;
@@ -1066,13 +1111,26 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
     }
 
     // GrainStart range: offset from current position (normalized 0-1)
-    // If enabled, this adds a random offset within the splice
+    // If enabled, this adds a random offset within the splice.
+    // MOD MATRIX (v1.5): the per-grain grain_start sum adds to the normalized offset (0 when
+    // the range is disabled) BEFORE the scale to splice length, clamped to [0, 1] only when a
+    // connection is active. Range-only path is byte-identical to the pre-v1.5 code.
     float grain_start_offset = 0.0f;
-    if (sched->grainstart_range.enabled) {
-        float splice_length = splice_end - splice_start;
-        // Sample normalized offset (0-1), then scale to splice length
-        float normalized_offset = sample_param_range(&sched->grainstart_range, &sched->perlin_state, 0.5f);
-        grain_start_offset = normalized_offset * splice_length;
+    {
+        int mx = sched->mod_grain_mask & MOD_GRAIN_BIT(MOD_DEST_GRAIN_START);
+        if (sched->grainstart_range.enabled || mx) {
+            float splice_length = splice_end - splice_start;
+            // Sample normalized offset (0-1), then scale to splice length
+            float normalized_offset = sched->grainstart_range.enabled
+                ? sample_param_range(&sched->grainstart_range, &sched->perlin_state, 0.5f)
+                : 0.0f;
+            if (mx) {
+                normalized_offset += sched->mod_grain_sum[MOD_GRAIN_IDX(MOD_DEST_GRAIN_START)];
+                if (normalized_offset < 0.0f) normalized_offset = 0.0f;
+                if (normalized_offset > 1.0f) normalized_offset = 1.0f;
+            }
+            grain_start_offset = normalized_offset * splice_length;
+        }
     }
 
     // Grain amplitude: use range if enabled, otherwise use inlet/message value
@@ -1083,6 +1141,11 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
     } else {
         // Use amplitude from inlet or message
         grain_amplitude = amplitude;
+    }
+
+    // MOD MATRIX (v1.5): per-grain amplitude offset, before the existing in-place clamps (R1).
+    if (sched->mod_grain_mask & MOD_GRAIN_BIT(MOD_DEST_AMPLITUDE)) {
+        grain_amplitude += sched->mod_grain_sum[MOD_GRAIN_IDX(MOD_DEST_AMPLITUDE)];
     }
 
     //  Clamp amplitude to reasonable range (prevent extreme clipping)
@@ -1097,6 +1160,11 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
     } else {
         // Use pan from inlet or message
         grain_pan = pan;
+    }
+
+    // MOD MATRIX (v1.5): per-grain pan offset, before the existing in-place clamps (R1).
+    if (sched->mod_grain_mask & MOD_GRAIN_BIT(MOD_DEST_PAN)) {
+        grain_pan += sched->mod_grain_sum[MOD_GRAIN_IDX(MOD_DEST_PAN)];
     }
 
     //  Clamp pan to valid range (prevent invalid gain calculations)
@@ -1149,6 +1217,17 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
 
     grain->splice_start = splice_start;
     grain->splice_end = splice_end;
+
+    // DEBUG: log the FINAL per-grain values for the first few grains (v1.5 verification aid:
+    // shows the per-grain matrix offsets landing on inc/len/amp/pan without touching the
+    // shared fields). Same first-N stderr discipline as the trigger log above.
+    static int final_dbg_count = 0;
+    if (final_dbg_count < 8) {
+        fprintf(stderr, "ligase~: grain final #%d: pos=%.1f inc=%.4f len=%d amp=%.3f pan=%.3f\n",
+                final_dbg_count, grain->position, grain->increment, grain->grain_length,
+                grain->amplitude, grain->pan);
+        final_dbg_count++;
+    }
 
     // --- SPATIAL snapshot (pan_mode 2): freeze the driving sim's 3D position onto the grain ---
     // Gated on the mode so the scalar pan path (pan_mode 0/1) is untouched. All the trig lives here

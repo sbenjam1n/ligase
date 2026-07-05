@@ -69,6 +69,7 @@ extern float sample_scale_semitones(pitch_scale_t *scale, perlin_state_t *perlin
 extern float mod_source_value(perlin_state_t *ps, int source);
 extern float matrix_sum_for_dest(scheduler_t *sched, int dest);
 extern int matrix_dest_active(scheduler_t *sched, int dest);
+extern void matrix_cache_grain_sums(scheduler_t *sched);   // v1.5: per-grain sums, once per block
 
 extern grain_delay_t* grain_delay_create(int sample_rate);
 extern void grain_delay_destroy(grain_delay_t *delay);
@@ -436,6 +437,15 @@ static inline float wrap_to_splice(float pos, float start, float len) {
 //   iot                [0.0005, 2]   scheduler iot range (trigger period floored at 1 sample)
 //   modout1-4          UNCLAMPED     patch-out floats; overshoot is harmless and a user's
 //                                    modout range may deliberately span any values ({0,0} = none)
+// PER-GRAIN tier (v1.5) — these clamp AT THE TRIGGER SITE in scheduler_trigger_grain (the
+// pre-existing in-place clamps, which the sum is added before); the entries here mirror those
+// clamps so the id/bounds/name triple stays complete:
+//   speed              [-4, 4]       trigger-path final_speed clamp (aliasing guard)
+//   grainsize          [0.01, 2]     trigger-path in-place clamp (seconds)
+//   grain_start        [0, 1]        normalized splice offset
+//   amplitude          [0, 2]        trigger-path in-place clamp (+6 dB headroom)
+//   pan                [0, 1]        trigger-path in-place clamp
+//   pitch_fine         [-0.5, 0.5]   semitones (+/-50 cents), the fine-tune contract
 typedef struct { float lo, hi; } mod_dest_bounds_t;
 static const mod_dest_bounds_t mod_dest_bounds[MOD_DEST_COUNT] = {
     [MOD_DEST_NONE]            = {0.0f,     0.0f},
@@ -459,6 +469,12 @@ static const mod_dest_bounds_t mod_dest_bounds[MOD_DEST_COUNT] = {
     [MOD_DEST_MODOUT2]         = {0.0f,     0.0f},
     [MOD_DEST_MODOUT3]         = {0.0f,     0.0f},
     [MOD_DEST_MODOUT4]         = {0.0f,     0.0f},
+    [MOD_DEST_SPEED]           = {-4.0f,    4.0f},
+    [MOD_DEST_GRAINSIZE]       = {0.01f,    2.0f},
+    [MOD_DEST_GRAIN_START]     = {0.0f,     1.0f},
+    [MOD_DEST_AMPLITUDE]       = {0.0f,     2.0f},
+    [MOD_DEST_PAN]             = {0.0f,     1.0f},
+    [MOD_DEST_PITCH_FINE]      = {-0.5f,    0.5f},
 };
 
 // Clamp a matrix-modulated value to its destination's musical range. lo==hi==0 = no bounds
@@ -2137,6 +2153,13 @@ null_ptr_error:
         ps->env_follow_value[1] = sr;
         ps->env_follow_value[2] = 0.5f * (sl + sr);  // mono mix
     }
+
+    // MOD MATRIX v1.5 — cache the six PER-GRAIN destination sums once per block (sources are
+    // per-block values, incl. the follower refreshed just above). Grains spawned this block in
+    // update_inlets/process_grains read the cache; the sums are added at trigger and NEVER
+    // written to the shared parameter fields. Zero per-grain connections => mask 0 => the
+    // trigger path is unchanged (~one branch per apply site).
+    if (x->scheduler) matrix_cache_grain_sums(x->scheduler);
 
     // Morph stepper (control-rate), BEFORE update_inlets so morphed bands win and morphed scalar
     // bases follow the standard live-CV-wins precedence (GATE A.6). A running route drives the
@@ -4854,10 +4877,10 @@ static const struct { const char *name; int id; } mod_source_names[] = {
     { "lfo3", MOD_SRC_SINE3 }, { "lfo4", MOD_SRC_SINE4 },
 };
 
-// DEST name table — v1 = the PER-BLOCK destinations only. Names reuse the
-// get_param_range_by_name vocabulary verbatim; keep this adjacent to mod_dest_bounds so the
-// id/bounds/name triple never drifts. Per-grain dests (speed/pitch_fine/grainsize/grainstart/
-// amplitude/pan) are v1.5 and deliberately absent (the connect handler explains when asked).
+// DEST name table — the PER-BLOCK destinations plus the six PER-GRAIN destinations (v1.5).
+// Names reuse the get_param_range_by_name vocabulary verbatim ("grain_start" is the canonical
+// contract name; "grainstart" is accepted as the param_range-vocabulary alias). Keep this
+// adjacent to mod_dest_bounds so the id/bounds/name triple never drifts.
 static const struct { const char *name; int id; } mod_dest_names[] = {
     { "gdelay",          MOD_DEST_GDELAY },
     { "gdelay_feed",     MOD_DEST_GDELAY_FEED },
@@ -4879,6 +4902,14 @@ static const struct { const char *name; int id; } mod_dest_names[] = {
     { "modout2",         MOD_DEST_MODOUT2 },
     { "modout3",         MOD_DEST_MODOUT3 },
     { "modout4",         MOD_DEST_MODOUT4 },
+    // v1.5 per-grain tier (applied at grain trigger in scheduler_trigger_grain)
+    { "speed",           MOD_DEST_SPEED },
+    { "grainsize",       MOD_DEST_GRAINSIZE },
+    { "grain_start",     MOD_DEST_GRAIN_START },
+    { "grainstart",      MOD_DEST_GRAIN_START },   // alias (param_range vocabulary)
+    { "amplitude",       MOD_DEST_AMPLITUDE },
+    { "pan",             MOD_DEST_PAN },
+    { "pitch_fine",      MOD_DEST_PITCH_FINE },
 };
 
 static int mod_source_from_name(const char *name) {
@@ -4932,8 +4963,8 @@ static void ligase_matrix_connect(ligase_t *x, t_symbol *s, int argc, t_atom *ar
     int dst = mod_dest_from_name(dst_name);
     if (dst < 0) {
         if (get_param_range_by_name(x, dst_name))
-            pd_error(x, "ligase~: matrix_connect: '%s' is not a per-block matrix destination "
-                        "(per-grain destinations are v1.5)", dst_name);
+            pd_error(x, "ligase~: matrix_connect: '%s' is a param_range target but not a "
+                        "matrix destination", dst_name);
         else
             pd_error(x, "ligase~: matrix_connect: unknown destination '%s'", dst_name);
         return;
@@ -6714,6 +6745,29 @@ static void morph_capture(ligase_t *x, morph_snapshot_t *snap) {
     float *fp[MORPH_SCALAR_COUNT];
     int fn = morph_collect_scalars(x, fp);
     for (int i = 0; i < fn; i++) snap->scalars[i] = *fp[i];
+    // R3 (v1.5) CAPTURE TRANSPARENCY for the self-read transport params. Of the five
+    // (scanrate/organize/sos/iot/env_skew), scanrate is the only captured scalar whose live
+    // field the matrix apply writes back (x->scan_rate): capture the matrix's tracked base
+    // instead of the field, so SNAP mid-wobble records the knob value, never base+offset.
+    // organize (x->organize_cv), sos (x->sos_value) and iot (sched->iot) capture message-stored
+    // bases the matrix never writes; env_skew's live field (envelope->skew) is not captured at
+    // all — those four are transparent already. Per-grain dests (R1) never dirty any field.
+    // The guard mirrors the apply site: mod_base is tracked only on the matrix-only path
+    // (range disabled); with the range enabled the band itself is captured and regenerates.
+    if (x->scheduler && matrix_dest_active(x->scheduler, MOD_DEST_SCANRATE) &&
+        !x->scheduler->scanrate_range.enabled) {
+        for (int i = 0; i < fn; i++) {
+            if (fp[i] == &x->scan_rate) {
+                // Non-mutating mod_track_base read: field != our last matrix output means an
+                // inlet/message wrote it since (the field IS the base); equal means the field
+                // holds base+offset — capture the tracked base.
+                snap->scalars[i] = (x->scan_rate != x->mod_last_out[MOD_DEST_SCANRATE])
+                                 ? x->scan_rate
+                                 : x->mod_base[MOD_DEST_SCANRATE];
+                break;
+            }
+        }
+    }
     // FX-shadow scalar bases at scalars[fn .. fn+MORPH_FX_SCALARS-1]
     const morph_fx_shadow_t *fx = &x->fx_shadow;
     snap->scalars[fn+0]=fx->moog_cutoff;    snap->scalars[fn+1]=fx->moog_resonance; snap->scalars[fn+2]=fx->moog_mix;

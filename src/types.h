@@ -441,10 +441,16 @@ typedef enum {
     MOD_SRC_COUNT
 } mod_source_t;
 
-// Matrix DESTINATION ids — v1 scope is the PER-BLOCK apply tier only (effect/playback params
-// applied once per DSP block in ligase_update_inlets, plus the modout outlets). The per-GRAIN
-// tier (speed/pitch_fine/grainsize/grainstart/amplitude/pan) is v1.5 — deliberately absent.
+// Matrix DESTINATION ids — two apply tiers. The PER-BLOCK tier (effect/playback params) is
+// applied once per DSP block in ligase_update_inlets, plus the modout outlets. The PER-GRAIN
+// tier (v1.5: speed/grainsize/grain_start/amplitude/pan/pitch_fine) is applied FUNCTIONALLY
+// at grain trigger in scheduler_trigger_grain: sums are cached once per block
+// (matrix_cache_grain_sums) and added to each grain's sampled value after param_range
+// sampling and before the existing in-place clamps — the shared fields (x->grain_size,
+// x->speed, ...) are never written back (capture stays clean by construction).
 // Names in the connect message reuse the get_param_range_by_name vocabulary verbatim.
+// NOTE: the six per-grain ids must stay CONTIGUOUS starting at MOD_DEST_SPEED — the
+// mod_grain_sum[] cache indexes by (dest - MOD_DEST_SPEED).
 typedef enum {
     MOD_DEST_NONE = 0,
     MOD_DEST_GDELAY,           // "gdelay"        delay time (s)
@@ -467,8 +473,20 @@ typedef enum {
     MOD_DEST_MODOUT2,          // "modout2"
     MOD_DEST_MODOUT3,          // "modout3"
     MOD_DEST_MODOUT4,          // "modout4"
+    // --- v1.5 PER-GRAIN tier (applied at grain trigger; contiguous — see note above) ---
+    MOD_DEST_SPEED,            // "speed"         offset on final pitch-derived speed, ±4 clamp
+    MOD_DEST_GRAINSIZE,        // "grainsize"     seconds, [0.01, 2]
+    MOD_DEST_GRAIN_START,      // "grain_start"   normalized splice offset [0, 1] ("grainstart" alias)
+    MOD_DEST_AMPLITUDE,        // "amplitude"     [0, 2]
+    MOD_DEST_PAN,              // "pan"           [0, 1]
+    MOD_DEST_PITCH_FINE,       // "pitch_fine"    semitones [-0.5, 0.5] (±50 cents)
     MOD_DEST_COUNT
 } mod_dest_t;
+
+// Per-grain destination indexing helpers (cache slot / active bit for MOD_DEST_SPEED..PITCH_FINE)
+#define MOD_GRAIN_DEST_COUNT  6
+#define MOD_GRAIN_IDX(dest)   ((dest) - MOD_DEST_SPEED)
+#define MOD_GRAIN_BIT(dest)   (1 << MOD_GRAIN_IDX(dest))
 
 #define MOD_MATRIX_MAX 32   // fixed capacity -> no audio-thread allocation
 
@@ -842,6 +860,17 @@ typedef struct scheduler {
     // engine (backward compat is load-bearing).
     mod_conn_t mod_matrix[MOD_MATRIX_MAX];
     int        mod_conn_count;           // 0 => matrix inert (publish barrier; incremented LAST)
+
+    // v1.5 PER-GRAIN destination tier: signed sums for the six per-grain destinations, cached
+    // ONCE PER BLOCK by matrix_cache_grain_sums() in ligase_perform (sources are per-block
+    // values — mirrors the env-follower cache discipline, and keeps MOD_SRC_RANDn's LCG at one
+    // advance per connection per block instead of per grain). READ at grain trigger in
+    // scheduler_trigger_grain, where each sum is added to the grain's sampled value BEFORE the
+    // existing in-place clamps — never written back to the shared fields. mod_grain_mask bit
+    // MOD_GRAIN_IDX(dest) set <=> that dest has an enabled connection; mask == 0 keeps the
+    // trigger path at ~one branch per apply site (R5). Covered by the scheduler_create memset.
+    float mod_grain_sum[MOD_GRAIN_DEST_COUNT];   // indexed by MOD_GRAIN_IDX(dest)
+    int   mod_grain_mask;                        // 0 => per-grain tier inert
 
 } scheduler_t;
 
