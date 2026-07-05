@@ -2,7 +2,7 @@
 
 **Owner:** SLB
 **Date:** 2026-07-05
-**Status:** PLANNED (GATE A — decisions 1–6 open, recommendations flagged [R]; **decision 7 OWNER-APPROVED 2026-07-05**)
+**Status:** IN PROGRESS — **GATE A fully cleared 2026-07-05** (decisions 1–6 owner-approved at their [R] recommendations; decision 7 owner-approved: schema v3). Implementation running per Steps 1–4.
 **Tracked in:** `QUEUE.md` §4a
 **Related:** `docs/modulation_layers.md` (the layer contract this slots into),
 `Plans/morph_metasurface.md` (the snapshot/surface system being exposed),
@@ -123,6 +123,10 @@ Pd prototype: the expander is its own canvas speaking only `snapbuf_*` messages 
 parsing outlet 9 — it validates the API with zero engine coupling beyond the messages.
 
 ## GATE A (approval) — owner decisions ([R] = recommendation)
+
+> ✅ **CLEARED 2026-07-05.** Owner approved decisions 1–6 at their [R] recommendations
+> ("I agree with recommendations for 1-6, continue") and decision 7 explicitly
+> ("params are weather control"). Retained below for the record.
 
 1. **Audition semantics.** **[R] cold-only v1**: edits are audible only after ASSIGN
    (`snapbuf_apply`). A momentary AUDITION (apply-and-revert on release) is useful but
