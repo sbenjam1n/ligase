@@ -1868,6 +1868,93 @@ static void ligase_process_effects(ligase_t *x,
 static void morph_step(ligase_t *x, int n);
 static void morph_apply_at(ligase_t *x, float cx, float cy);
 
+// @region:ligase_pd.core.pattern.event_fire Pattern event dispatcher (perform-thread)
+// Fire one discrete action for an EVENT-tagged pattern slot, called from the perform pattern-eval
+// loop on the slot's changed && !cached_is_rest edge (one fire per non-rest step entry, quantized
+// to the cycle clock). Does ONLY perform-safe work — the same int/flag writes and pool/outlet
+// calls the perform routine already issues (scheduler_trigger_grain / outlet_bang at the grain
+// trigger sites, the pending_splice write at the wrap sites, the ligase_trigger/ligase_play flag
+// writes). No malloc, no gensym, no binbuf, no t_clock. The optional stderr trace mirrors the
+// existing pattern_debug fprintf idiom in the eval loop.
+static void ligase_pattern_fire_event(ligase_t *x, int kind, float arg) {
+    switch (kind) {
+    case PATTERN_KIND_EVENT_GRAIN: {
+        // Burst: fire (int)arg grains at the current playhead (splice start + grain_start offset)
+        // with the CURRENT speed/pan/amplitude — the exact call + args of the grain trigger sites.
+        // Mono voice args (0,0): a burst is a transport-level event, not a poly-voice spawn.
+        // Block-order note: a splice-select event only writes pending_splice (applied at the NEXT
+        // wrap), so a grain burst in the same block fires at the CURRENT splice.
+        int burst = (int)arg;
+        if (burst < 1) burst = 1;
+        if (burst > PATTERN_EVENT_MAX_BURST) burst = PATTERN_EVENT_MAX_BURST;
+        if (x->reel && x->reel->length > 0 && x->scheduler) {
+            uint32_t s0, e0;
+            splice_get_bounds(&x->reel->splices, x->reel->splices.current_splice,
+                              x->reel->length, &s0, &e0);
+            float pos = (float)s0 + x->grain_start * (float)(e0 - s0);
+            for (int b = 0; b < burst; b++)
+                scheduler_trigger_grain(x->scheduler, pos, x->speed, s0, e0,
+                                        x->amplitude, x->pan, x->saw_cycles, x->saw_depth, 0, 0);
+            if (x->grain_bang_rate > 0) outlet_bang(x->x_grain_bang_out); // mirrors grain-onset bang policy
+            if (x->pattern_debug)
+                fprintf(stderr, "ligase~ pat-event t=%.1fms grain burst=%d splice=%d\n",
+                        (double)clock_getlogicaltime() / 14112.0, burst,
+                        x->reel->splices.current_splice);
+        }
+        break;
+    }
+    case PATTERN_KIND_EVENT_SPLICE: {
+        // Jump/select a splice: write pending_splice; the perform wrap sites apply it at the next
+        // wrap (atomic int write, no alloc). Wrap the index like ligase_shift.
+        if (x->reel && x->reel->splices.count > 0) {
+            int idx = (int)arg, c = x->reel->splices.count;
+            idx = ((idx % c) + c) % c;
+            x->splice_behavior.pending_splice = idx;
+            if (x->pattern_debug)
+                fprintf(stderr, "ligase~ pat-event t=%.1fms splice pending=%d (current=%d)\n",
+                        (double)clock_getlogicaltime() / 14112.0, idx,
+                        x->reel->splices.current_splice);
+        }
+        break;
+    }
+    case PATTERN_KIND_EVENT_RETRIG: {
+        // Retrigger from splice start WITHOUT silencing active grains (mirror ligase_trigger).
+        if (x->reel && x->reel->length > 0) {
+            uint32_t s0, e0;
+            splice_get_bounds(&x->reel->splices, x->reel->splices.current_splice,
+                              x->reel->length, &s0, &e0);
+            x->playback_position = (float)s0;
+            x->is_playing    = 1;
+            x->is_triggering = 1;
+            if (x->pattern_debug)
+                fprintf(stderr, "ligase~ pat-event t=%.1fms retrig pos=%u\n",
+                        (double)clock_getlogicaltime() / 14112.0, (unsigned)s0);
+        }
+        break;
+    }
+    case PATTERN_KIND_EVENT_GATE: {
+        // Gate transport: arg != 0 -> play, == 0 -> stop new triggering. Same flags ligase_play
+        // writes; active grains always play out (no hard cut) — the pattern owns the transport.
+        int on = (arg != 0.0f) ? 1 : 0;
+        x->is_triggering = on;
+        x->is_playing    = on;
+        if (x->pattern_debug)
+            fprintf(stderr, "ligase~ pat-event t=%.1fms gate %d\n",
+                    (double)clock_getlogicaltime() / 14112.0, on);
+        break;
+    }
+    case PATTERN_KIND_EVENT_BANG:
+        outlet_bang(x->x_grain_bang_out);  // same call as the grain-onset bang site
+        if (x->pattern_debug)
+            fprintf(stderr, "ligase~ pat-event t=%.1fms bang\n",
+                    (double)clock_getlogicaltime() / 14112.0);
+        break;
+    default:
+        break;
+    }
+}
+// @endregion:ligase_pd.core.pattern.event_fire
+
 static t_int *ligase_perform(t_int *w) {
     // Flush denormals to zero for this audio callback (FPU mode is per-thread). Prevents the
     // gradual CPU climb from subnormal floats piling up in delay/moog/distortion feedback
@@ -1979,6 +2066,18 @@ null_ptr_error:
                 ps->pattern_cycle_index[s] += 1;             // integer counter drives <> alternation
             }
             pattern_eval_slot(ps, s);
+            // Event dispatch: if this slot is an EVENT slot and the active step just advanced to a
+            // non-rest step, FIRE the action inline. Reuses the `changed` flag pattern_eval_slot
+            // just set (read again below for the debug trace). cached_value supplies the event
+            // arg. A rest holds cached_is_rest=1 so Euclid off-positions stay silent; `changed`
+            // is true only on the step-entry block, so a held step never re-fires.
+            {
+                int kind = ps->pattern_target_kind[s];
+                if (kind != PATTERN_KIND_VALUE &&
+                    ps->pattern[s].changed && !ps->pattern[s].cached_is_rest) {
+                    ligase_pattern_fire_event(x, kind, ps->pattern[s].cached_value);
+                }
+            }
             if (x->pattern_debug && ps->pattern[s].changed) {
                 fprintf(stderr, "ligase~ pat t=%.1fms slot %d: step %d value %.4f rest %d cycle %ld\n",
                         (double)clock_getlogicaltime() / 14112.0, s,
@@ -3193,6 +3292,34 @@ static int pattern_alloc_param_slot(ligase_t *x, param_range_t *range) {
     return -1;
 }
 
+// Event action sub-keyword -> pattern_target_kind_t. Returns PATTERN_KIND_VALUE (0) for an
+// unknown name (the caller treats 0 as "not an event action").
+static int pattern_event_kind_from_name(const char *name) {
+    if (strcmp(name, "grain")  == 0) return PATTERN_KIND_EVENT_GRAIN;
+    if (strcmp(name, "splice") == 0) return PATTERN_KIND_EVENT_SPLICE;
+    if (strcmp(name, "retrig") == 0) return PATTERN_KIND_EVENT_RETRIG;
+    if (strcmp(name, "gate")   == 0) return PATTERN_KIND_EVENT_GATE;
+    if (strcmp(name, "bang")   == 0) return PATTERN_KIND_EVENT_BANG;
+    return PATTERN_KIND_VALUE;
+}
+
+// Choose a pattern slot for an EVENT target. Free-scan-only sibling of pattern_alloc_param_slot:
+// that function dereferences its param_range_t* unconditionally, so it must NEVER be called with
+// NULL — event slots have no param_range and use this instead. Event slots ride the same shared
+// 0..PATTERN_SLOTS-3 auto-pool as param patterns (slots 6/7 stay reserved for smear/grain pitch).
+// Re-sending the SAME action reuses its live slot (replace, not duplicate — mirrors the param
+// allocator's reuse discipline); otherwise the first free slot (step_count==0) is taken.
+static int pattern_alloc_event_slot(ligase_t *x, int kind) {
+    perlin_state_t *ps = &x->scheduler->perlin_state;
+    for (int i = 0; i < PATTERN_SLOTS - 2; i++) {
+        if (ps->pattern_target_kind[i] == kind && ps->pattern[i].step_count > 0) return i;
+    }
+    for (int i = 0; i < PATTERN_SLOTS - 2; i++) {
+        if (ps->pattern[i].step_count == 0) return i;
+    }
+    return -1;
+}
+
 // pattern_cycle <N/D> <N/D> ... : set the quantization-cycle segment list. Each segment is a
 // musical duration ("num" notes of value 1/den) at the detected BPM; the cycle length is their
 // sum. A bare "pattern_cycle" (no args) resets to the default 1-bar 4/4 cycle. Validate-then-commit
@@ -3264,6 +3391,7 @@ static void ligase_pattern_clear(ligase_t *x, t_symbol *s, int argc, t_atom *arg
         ps->pattern[slot].step_count = 0;
         ps->pattern_phase[slot] = 0.0f;
         ps->pattern_cycle_index[slot] = 0;
+        ps->pattern_target_kind[slot] = PATTERN_KIND_VALUE;  // event slots reset on clear (pooled reuse)
         post("ligase~: pattern slot %d cleared", slot);
         return;
     }
@@ -3315,6 +3443,7 @@ static void ligase_pattern_clear(ligase_t *x, t_symbol *s, int argc, t_atom *arg
         ps->pattern[slot].step_count = 0;                 // free the slot
         ps->pattern_phase[slot] = 0.0f;
         ps->pattern_cycle_index[slot] = 0;
+        ps->pattern_target_kind[slot] = PATTERN_KIND_VALUE;  // event slots reset on clear (pooled reuse)
     }
     post("ligase~: pattern cleared from %s (restored type %s)",
          name, get_rand_type_name(range->saved_rand_type));
@@ -3390,25 +3519,126 @@ static void pattern_flatten(pattern_flatten_ctx_t *ctx, int node_idx, float span
     }
 }
 
+// Bjorklund recursion (pair-and-remainder construction). Emits one on/off cell per call at the
+// two base levels; `cap` bounds the output defensively (the algorithm emits exactly n cells).
+static void bjorklund_build(int level, const int *counts, const int *remainders,
+                            unsigned char *out, int *pos, int cap) {
+    if (*pos >= cap && level < 0) return;
+    if (level == -1) {
+        out[(*pos)++] = 0;
+    } else if (level == -2) {
+        out[(*pos)++] = 1;
+    } else {
+        for (int i = 0; i < counts[level]; i++)
+            bjorklund_build(level - 1, counts, remainders, out, pos, cap);
+        if (remainders[level] != 0)
+            bjorklund_build(level - 2, counts, remainders, out, pos, cap);
+    }
+}
+
+// Bjorklund(k,n): write a length-n on/off bitmap (1 = pulse) distributing k pulses as evenly as
+// possible, rotated so the pattern starts on a pulse — the canonical Tidal/Toussaint form:
+// E(3,8) = x..x..x. , E(5,8) = x.xx.xx. Message-thread only, stack arrays, no alloc.
+static void bjorklund(int k, int n, unsigned char *out) {
+    if (n < 1) return;
+    if (k <= 0) { memset(out, 0, (size_t)n); return; }
+    if (k >= n) { memset(out, 1, (size_t)n); return; }
+    int counts[PATTERN_MAX_STEPS + 2];
+    int remainders[PATTERN_MAX_STEPS + 2];
+    int divisor = n - k;
+    int level = 0;
+    remainders[0] = k;
+    while (1) {
+        counts[level] = divisor / remainders[level];
+        remainders[level + 1] = divisor % remainders[level];
+        divisor = remainders[level];
+        level++;
+        if (remainders[level] <= 1) break;
+    }
+    counts[level] = divisor;
+    int pos = 0;
+    bjorklund_build(level, counts, remainders, out, &pos, n);
+    while (pos < n) out[pos++] = 0;   // defensive; never reached for valid (k,n)
+    // Rotate so the first cell is a pulse (canonical form).
+    int first = 0;
+    while (first < n && !out[first]) first++;
+    if (first > 0 && first < n) {
+        unsigned char tmp[PATTERN_MAX_STEPS];
+        for (int i = 0; i < n; i++) tmp[i] = out[(first + i) % n];
+        memcpy(out, tmp, (size_t)n);
+    }
+}
+
+// 'rev' (Tidal transform, parse-time): reverse a group's children in TIME, recursing into nested
+// [ ] groups. ALT (< >) member ORDER is preserved (rev acts within a cycle, not across the
+// alternation sequence) but each member's contents are reversed. rev rev restores the original.
+static void pattern_reverse_tree(pattern_node_t *pool, int idx) {
+    if (idx < 0) return;
+    pattern_node_t *nd = &pool[idx];
+    if (nd->kind == PN_LEAF) return;
+    for (int c = nd->first_child; c >= 0; c = pool[c].next_sibling)
+        pattern_reverse_tree(pool, c);
+    if (nd->kind == PN_SEQ) {                 // relink the child list back-to-front
+        int prev = -1, c = nd->first_child;
+        while (c >= 0) {
+            int next = pool[c].next_sibling;
+            pool[c].next_sibling = prev;
+            prev = c;
+            c = next;
+        }
+        nd->first_child = prev;
+    }
+}
+
 // pattern <slot|pitch> <token>... : load a mini-notation pattern into a slot. P1 target is a
 // numeric slot 0..PATTERN_SLOTS-1 or the literal 'pitch' (the dedicated last slot; P3 wires the
 // pitch mode). Two-stage parse (tree -> flat table) with validate-then-commit (prior slot preserved
 // on any error; step_count published LAST). All parse work is on the message thread.
+// EVENT target: 'pattern event <grain|splice|retrig|gate|bang> <tokens...>' ('trigger' is an
+// accepted alias) tags the slot EVENT_* — steps FIRE actions on the cycle clock instead of
+// setting a value. Euclid suffix v(k,n) and the 'rev' transform parse here too.
 static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     (void)s;
     if (!x->scheduler) return;
-    if (argc < 2) { pd_error(x, "ligase~: pattern requires <slot|pitch> then tokens"); return; }
+    if (argc < 2) { pd_error(x, "ligase~: pattern requires <param|pitch|smear_pitch|event <action>|slot> then tokens"); return; }
 
     int slot;
     param_range_t *attach_range = NULL;      // non-NULL => attach this range to the slot after commit
     int attach_pitch = 0;                    // 1 => set PITCH_MODE_PATTERN on this slot after commit
     int attach_smear_pitch = 0;              // 1 => set smear SMEAR_PITCH_PATTERN on this slot after commit
+    int event_kind = PATTERN_KIND_VALUE;     // != VALUE => tag the slot EVENT_* at commit
+    int tok_start = 1;                       // first token index (2 for the event target: action at argv[1])
     if (argv[0].a_type == A_SYMBOL && strcmp(argv[0].a_w.w_symbol->s_name, "pitch") == 0) {
         slot = PATTERN_SLOTS - 1;            // grain pitch: dedicated last slot
         attach_pitch = 1;
     } else if (argv[0].a_type == A_SYMBOL && strcmp(argv[0].a_w.w_symbol->s_name, "smear_pitch") == 0) {
         slot = PATTERN_SLOTS - 2;            // smear pitch: dedicated slot 6
         attach_smear_pitch = 1;
+    } else if (argv[0].a_type == A_SYMBOL &&
+               (strcmp(argv[0].a_w.w_symbol->s_name, "event") == 0 ||
+                strcmp(argv[0].a_w.w_symbol->s_name, "trigger") == 0)) {
+        // EVENT target: pattern event <action> <tokens...>. 'trigger' is an alias ('event' is the
+        // documented lead — the bare 'trigger' selector is the separate transport method; the two
+        // never collide at dispatch, but the docs disambiguate). Steps FIRE the action on the
+        // changed non-rest edge; cached_value is the event arg (grain = burst count, splice =
+        // splice index, gate = on/off, retrig/bang = ignored).
+        if (argc < 3 || argv[1].a_type != A_SYMBOL) {
+            pd_error(x, "ligase~: pattern event needs <grain|splice|retrig|gate|bang> then tokens");
+            return;
+        }
+        event_kind = pattern_event_kind_from_name(argv[1].a_w.w_symbol->s_name);
+        if (event_kind == PATTERN_KIND_VALUE) {
+            pd_error(x, "ligase~: pattern event: unknown action '%s' (grain|splice|retrig|gate|bang)",
+                     argv[1].a_w.w_symbol->s_name);
+            return;
+        }
+        slot = pattern_alloc_event_slot(x, event_kind);   // shared 0..5 pool; NOT pattern_alloc_param_slot(x, NULL)
+        if (slot < 0) {
+            pd_error(x, "ligase~: pattern: no free pattern slots (param + event patterns share %d slots)",
+                     PATTERN_SLOTS - 2);
+            return;
+        }
+        tok_start = 2;                       // action keyword consumed; tokens start at argv[2]
     } else if (argv[0].a_type == A_SYMBOL) {
         const char *name = argv[0].a_w.w_symbol->s_name;
         attach_range = get_param_range_by_name(x, name);
@@ -3445,9 +3675,10 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     stack[0] = 0; last_child[0] = -1;
     int depth = 1; node_count = 1;
 
-    for (int i = 1; i < argc; i++) {
+    for (int i = tok_start; i < argc; i++) {
         int open_seq = 0, open_alt = 0, close_seq = 0, close_alt = 0, is_leaf = 0;
         int leaf_rest = 0, leaf_weight = 1, leaf_mult = 1, leaf_repl = 1;
+        int leaf_euclid_k = 0, leaf_euclid_n = 0;   // n > 0 => expand this leaf Euclid-style
         float leaf_val = 0.0f;
 
         if (argv[i].a_type == A_FLOAT) {
@@ -3458,6 +3689,20 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
             else if (strcmp(t, "]") == 0) close_seq = 1;
             else if (strcmp(t, "<") == 0) open_alt = 1;
             else if (strcmp(t, ">") == 0) close_alt = 1;
+            else if (strcmp(t, "rev") == 0) {
+                // Tidal 'rev' transform (parse-time): reverse the just-closed group — or, with no
+                // preceding group, everything parsed so far in the CURRENT group ("a b c rev").
+                int tgt = last_child[depth - 1];
+                if (tgt >= 0 && pool[tgt].kind != PN_LEAF) {
+                    pattern_reverse_tree(pool, tgt);
+                } else {
+                    pattern_reverse_tree(pool, stack[depth - 1]);
+                    int tail = pool[stack[depth - 1]].first_child;  // relink moved the tail
+                    while (tail >= 0 && pool[tail].next_sibling >= 0) tail = pool[tail].next_sibling;
+                    last_child[depth - 1] = tail;
+                }
+                continue;   // token consumed; emits no node itself
+            }
             else {
                 is_leaf = 1;
                 const char *p = t;
@@ -3468,9 +3713,26 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
                     if (endp == t) PAT_FAIL("ligase~: pattern: bad token '%s'", t);
                     p = endp;
                 }
-                if      (*p == '@') { leaf_weight = atoi(p + 1); if (leaf_weight < 1) leaf_weight = 1; }
-                else if (*p == '*') { leaf_mult   = atoi(p + 1); if (leaf_mult   < 1) leaf_mult   = 1; }
-                else if (*p == '!') { leaf_repl   = atoi(p + 1); if (leaf_repl   < 1) leaf_repl   = 1; }
+                if (*p == '(') {
+                    // Euclid suffix v(k,n): parsed BEFORE @/!/* so it must sit directly after the
+                    // value. NB in a Pd message box the comma must be escaped: 1(3\,8).
+                    int kk = 0, nn = 0, used = 0;
+                    if (sscanf(p, "(%d,%d)%n", &kk, &nn, &used) != 2 || used == 0)
+                        PAT_FAIL("ligase~: pattern: bad Euclid suffix in '%s' (want v(k,n), e.g. 1(3,8))", t);
+                    if (nn < 1 || nn > PATTERN_MAX_STEPS)
+                        PAT_FAIL("ligase~: pattern: Euclid n in '%s' must be 1..%d", t, PATTERN_MAX_STEPS);
+                    if (kk < 0) kk = 0;
+                    if (kk > nn) kk = nn;
+                    leaf_euclid_k = kk; leaf_euclid_n = nn;
+                    p += used;
+                }
+                if      (*p == '@') { leaf_weight = atoi(p + 1); if (leaf_weight < 1) leaf_weight = 1;
+                                      if (strchr(p + 1, '(')) PAT_FAIL("ligase~: pattern: '%s': Euclid (k,n) must come directly after the value", t); }
+                else if (*p == '*') { leaf_mult   = atoi(p + 1); if (leaf_mult   < 1) leaf_mult   = 1;
+                                      if (leaf_euclid_n > 0 || strchr(p + 1, '('))
+                                          PAT_FAIL("ligase~: pattern: '%s': *N cannot combine with Euclid (k,n) (ambiguous — both expand the step)", t); }
+                else if (*p == '!') { leaf_repl   = atoi(p + 1); if (leaf_repl   < 1) leaf_repl   = 1;
+                                      if (strchr(p + 1, '(')) PAT_FAIL("ligase~: pattern: '%s': Euclid (k,n) must come directly after the value", t); }
                 else if (*p != '\0') PAT_FAIL("ligase~: pattern: bad suffix in '%s'", t);
             }
         } else {
@@ -3498,7 +3760,31 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
         } else if (is_leaf) {
             for (int r = 0; r < leaf_repl; r++) {
                 int target_idx;
-                if (leaf_mult > 1) {
+                if (leaf_euclid_n > 0) {
+                    // Euclid expansion (mirrors *N): one leaf becomes a PN_SEQ of n children —
+                    // the k Bjorklund pulse positions carry the leaf value, the n-k off-positions
+                    // are rests. Downstream flatten/eval already handle rests, so an Euclid
+                    // pattern is just an ordinary step table. @N weights the whole group; !N
+                    // replicates it (outer loop); *N was rejected at suffix parse.
+                    unsigned char bits[PATTERN_MAX_STEPS];
+                    bjorklund(leaf_euclid_k, leaf_euclid_n, bits);
+                    if (node_count >= PATTERN_MAX_NODES) PAT_FAIL("ligase~: pattern too large (max %d nodes)", PATTERN_MAX_NODES);
+                    int seqidx = node_count++;
+                    pool[seqidx].kind = PN_SEQ; pool[seqidx].value = 0.0f; pool[seqidx].is_rest = 0;
+                    pool[seqidx].weight = leaf_weight; pool[seqidx].first_child = -1; pool[seqidx].next_sibling = -1;
+                    int lastc = -1;
+                    for (int k = 0; k < leaf_euclid_n; k++) {
+                        if (node_count >= PATTERN_MAX_NODES) PAT_FAIL("ligase~: pattern too large (max %d nodes)", PATTERN_MAX_NODES);
+                        int li = node_count++;
+                        pool[li].kind = PN_LEAF;
+                        pool[li].value = bits[k] ? leaf_val : 0.0f;
+                        pool[li].is_rest = bits[k] ? leaf_rest : 1;
+                        pool[li].weight = 1; pool[li].first_child = -1; pool[li].next_sibling = -1;
+                        if (lastc < 0) pool[seqidx].first_child = li; else pool[lastc].next_sibling = li;
+                        lastc = li;
+                    }
+                    target_idx = seqidx;
+                } else if (leaf_mult > 1) {
                     if (node_count >= PATTERN_MAX_NODES) PAT_FAIL("ligase~: pattern too large (max %d nodes)", PATTERN_MAX_NODES);
                     int seqidx = node_count++;
                     pool[seqidx].kind = PN_SEQ; pool[seqidx].value = 0.0f; pool[seqidx].is_rest = 0;
@@ -3557,9 +3843,20 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     memcpy(live, &scratch, sizeof(pattern_table_t));
     ps->pattern_phase[slot] = 0.0f;
     ps->pattern_cycle_index[slot] = 0;
+    // Publish the slot KIND before step_count so the audio thread never sees an active slot with
+    // a stale kind. VALUE (0) here also RESETS a pooled slot that previously held an event
+    // pattern (slot reuse must not mis-fire). The kind lives in the parallel array, outside the
+    // memcpy'd table, so this is a single ordered write.
+    ps->pattern_target_kind[slot] = event_kind;
     live->step_count = committed_steps;                  // publish barrier
     post("ligase~: pattern slot %d set (%d steps, %d alt groups)",
          slot, committed_steps, scratch.alt_group_total);
+
+    // ---- Event target: report the armed action (kind was published above, pre-barrier) ----
+    if (event_kind != PATTERN_KIND_VALUE) {
+        post("ligase~: pattern event '%s' armed (slot %d; fires once per non-rest step on the cycle clock)",
+             argv[1].a_w.w_symbol->s_name, slot);
+    }
 
     // ---- Attach (named param target only): point the range at this slot via RAND_TYPE_PATTERN ----
     if (attach_range) {

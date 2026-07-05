@@ -378,12 +378,14 @@ chord <n1> [n2] ... - Set the whole voice pool at once (max 8 notes; empty list 
 Patterns (TidalCycles Mini-Notation)
 
 pattern <param|pitch|slot> <tokens...> - Step-sequence a parameter (or pitch) from a mini-notation pattern
+pattern event <action> <tokens...> - FIRE events from a pattern: grain | splice | retrig | gate | bang ('trigger' = accepted alias)
 pattern_cycle <N/D> <N/D> ... - Quantization-cycle length as musical durations at the detected BPM (default = 1 bar)
-pattern_clear <param|pitch|slot> - Detach a pattern; restore the prior source (pitch -> OFF)
-pattern_debug <0|1> - Log step / semitone changes to stderr (off by default)
+pattern_clear <param|pitch|slot> - Detach a pattern; restore the prior source (pitch -> OFF; slot also resets an event tag)
+pattern_debug <0|1> - Log step / event / semitone changes to stderr (off by default)
 
-Tokens are space-separated (NO commas): values 0..1 for params or scale degrees for pitch; < > alternation
-(one per cycle); [ ] subdivision (nestable); @N weight; *N repeat; !N replicate; ~ rest. See PATTERNS.
+Tokens are space-separated: values 0..1 for params or scale degrees for pitch; < > alternation
+(one per cycle); [ ] subdivision (nestable); @N weight; *N repeat; !N replicate; ~ rest; v(k,n) Euclidean
+rhythm (escape the comma in a message box: 1(3\,8)); rev reverses the preceding group. See PATTERNS.
 
 Morph / Metasurface (snapshot interpolation surface)
 
@@ -2798,17 +2800,21 @@ Syntax (space-separated tokens; NO commas)
 
 A pattern is a sequence of space-separated tokens:
 
-  0.7           a value (0..1 for parameters; a scale DEGREE for pitch)
-  ~             a rest (holds the previous value / note)
+  0.7           a value (0..1 for parameters; a scale DEGREE for pitch; the event ARG for event patterns)
+  ~             a rest (holds the previous value / note; an event pattern stays SILENT on a rest)
   [ a b c ]     subdivision group — children evenly split the parent's time slice; nestable to any depth
   < a b c >     alternation — ONE child per cycle, advancing each cycle (Tidal "slowcat")
   a@3           weight — this step takes 3x the time of an unweighted step
   a*3           repeat — three copies of a within this step (subdivides the slot)
   a!3           replicate — three separate sibling steps
+  a(k,n)        Euclidean rhythm — this step becomes n sub-steps with a on the k Bjorklund pulse
+                positions and rests elsewhere (see EUCLIDEAN RHYTHMS below)
+  rev           reverse the preceding group in time (see REV below)
 
-Brackets and angles are standalone tokens: write "[ a b ]", not "[a b]". There are NO commas — in
-TidalCycles a comma means STACK (parallel layers), which does not apply to a single parameter/pitch over
-time and is intentionally unsupported (Pd also treats a comma as a message separator).
+Brackets and angles are standalone tokens: write "[ a b ]", not "[a b]". Bare commas as SEPARATORS are
+unsupported — in TidalCycles a separating comma means STACK (parallel layers), which does not apply here,
+and Pd treats an unescaped comma as a message separator. The only comma in the grammar is INSIDE an
+Euclid suffix, where it must be escaped in a Pd message box: 1(3\,8).
 
 Examples:
 
@@ -2848,8 +2854,9 @@ The pattern is a modulation SOURCE (RAND_TYPE_PATTERN), so param_invert and para
 glides between steps; leave slew at 0 for hard steps). Attaching auto-enables the range; a single-value range
 (min == max) is widened to [0, 1] so the pattern is audible.
 
-Up to 7 parameters can run independent patterns at once (8 slots, one reserved for pitch); each gets its own
-slot automatically, and re-sending pattern <param> reuses that param's slot.
+Up to 6 param + event patterns can run at once (8 slots; slot 7 is reserved for pitch and slot 6 for
+smear_pitch, leaving a shared 0-5 auto-pool); each gets its own slot automatically, and re-sending
+pattern <param> (or the same event action) reuses that pattern's slot.
 
   pattern_clear <param>              detach; restore the parameter's previous generator / source
 
@@ -2871,13 +2878,76 @@ Tokens are scale DEGREES indexed into the loaded pitch_scale (see PITCH & SPEED,
 Pitch is applied per grain (tempo-locked, not grain-locked): sparse grains can skip steps, dense grains
 re-trigger the same step. A rest (~) holds the previous note. pattern_clear pitch returns to pitch_mode 0 (OFF).
 
+Patterns that FIRE events
+
+  pattern event <action> <tokens...>          action = grain | splice | retrig | gate | bang
+
+Where a param/pitch pattern SETS a value that downstream code samples, an EVENT pattern FIRES a discrete
+action on each step: once per non-rest step, exactly when the step boundary passes on the BPM-locked cycle
+clock (tempo-locked, quantized to the same grid as every other pattern; a held step never re-fires, and
+rests — including the off-positions of an Euclidean rhythm — are silent). The step VALUE is the event's
+argument:
+
+  grain    fire a burst of <value> grains (1..16) at the current playhead (splice start + grainstart
+           offset) with the current speed / pan / amplitude / saw settings
+  splice   select splice <value> (wrapped into range) — applied at the NEXT splice wrap, like shift.
+           Block order: a splice event only QUEUES the jump, so a grain burst in the same step still
+           fires at the current splice
+  retrig   restart playback from the start of the current splice (value ignored) — active grains finish
+  gate     value != 0 starts the transport, 0 stops it (same flags as play 1/0); gate 0 does NOT cut
+           active grains — they play out
+  bang     bang the grain-onset outlet (outlet 4; value ignored)
+
+  pattern event grain [ 3 ~ 1 1 ]     a 3-grain cluster on beat 1, nothing on 2, one grain on 3 and 4
+  pattern event splice [ 0 1 2 ]      walk splices 0 -> 1 -> 2 across the cycle
+  pattern event gate [ 1 0 ]          transport on for the first half-cycle, off for the second
+
+'trigger' is accepted as an alias for 'event' (pattern trigger grain ... is the same message). Prefer
+'event': a BARE trigger message is the separate transport re-trigger — the two never collide at dispatch,
+but reading 'pattern trigger' next to 'trigger' invites confusion.
+
+Event patterns share the same 6-slot auto-pool as param patterns (slots 0-5; 6 and 7 stay reserved for
+smear/grain pitch), so params + events together are capped at 6 simultaneous patterns. Re-sending the same
+action replaces its pattern (no duplicates); clear one with pattern_clear <slot> (the slot number is shown
+when the pattern is armed), which also resets the slot's event tag. Events fire regardless of whether the
+transport is running (that is the point of gate/retrig); grain bursts need audio in the reel, and each
+burst bangs the grain-onset outlet once when grain_bang_rate > 0.
+
+Euclidean rhythms
+
+  a(k,n)      e.g.  1(3,8)  — as a Pd message-box token:  1(3\,8)
+
+Expands one step into n evenly-spaced sub-steps: a lands on the k pulse positions of the canonical
+Bjorklund/Toussaint distribution (rotated to start on a pulse) and the n-k off-positions are rests. It is
+pure notation — the result is an ordinary step table, so it works on params, pitch, and event patterns
+alike, and composes with @N (weight the whole group) and !N (replicate the group):
+
+  pattern event grain [ 1(3\,8) ]     x..x..x.  — bursts on the 3-of-8 Euclid pulses
+  pattern moog_cutoff 0.8(5\,8)       x.xx.xx.  — value 0.8 on 5-of-8 pulses, rest (hold) elsewhere
+
+k = 0 gives all rests, k >= n all pulses; n is capped at 64 (the step-table limit). a*N cannot combine
+with a(k,n) on the same step — both expand the step, so v*N(k,n) is rejected as ambiguous. NOTE the
+escaped comma \, — an unescaped comma would split the Pd message.
+
+rev
+
+  rev         reverse the preceding group in time (parse-time transform)
+
+Placed after a group (or after a run of bare steps), rev reverses that group's step order, recursing into
+nested [ ] subdivisions; < > alternation ORDER is preserved (rev acts within a cycle) but each member's
+contents are reversed. rev rev restores the original.
+
+  pattern speed [ 0.1 0.2 0.3 ] rev     plays 0.3 0.2 0.1
+  pattern speed 0.1 0.2 0.3 rev         same — with no preceding group, reverses the steps so far
+
 Notes
 
 - Parse errors (unbalanced brackets, unknown parameter, bad token) are reported and leave the previous pattern
   intact.
 - Single-level alternation only: < > may not be nested directly inside another < > (rejected). [ ] subdivision
   nests freely.
-- pattern_debug 1 logs step and applied-semitone changes to stderr (a development aid; off by default).
+- pattern_debug 1 logs step changes, fired events, and applied-semitone changes to stderr (a development
+  aid; off by default).
 
 # MORPH / METASURFACE
 

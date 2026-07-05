@@ -543,6 +543,7 @@ typedef struct {
 #define PATTERN_MAX_DEPTH  8     // recursive-descent open-group stack cap
 #define PATTERN_SLOTS      8     // independent pattern slots (>4 generator instances => per-target independence)
 #define PATTERN_MAX_SEGS   16    // pattern_cycle segment-list cap
+#define PATTERN_EVENT_MAX_BURST 16  // grain-burst event cap per step (pool NULL-on-full is the hard ceiling)
 
 // One compiled flat leaf (runtime representation, produced by flattening the parse tree)
 typedef struct {
@@ -568,6 +569,20 @@ typedef struct {
     int   last_step_index;     // for change detection
     long  last_alt_cycle;      // cycle index of last alt reselection (skip recompute when unchanged)
 } pattern_table_t;
+
+// What a pattern slot DRIVES. Default 0 = VALUE preserves every current pattern (param/pitch read
+// cached_value pull-style). EVENT_* slots instead FIRE a discrete action on the evaluator's
+// changed edge (one action per non-rest step entry, quantized to the cycle clock). The tag lives
+// in a parallel per-slot array on perlin_state_t (NOT inside pattern_table_t) so the commit-time
+// memcpy of the scratch table can never carry a stale kind.
+typedef enum {
+    PATTERN_KIND_VALUE = 0,   // 0 — continuous value (param via RAND_TYPE_PATTERN, or pitch). DEFAULT.
+    PATTERN_KIND_EVENT_GRAIN, // fire cached_value grains (a burst) on each step edge
+    PATTERN_KIND_EVENT_SPLICE,// write cached_value -> splice_behavior.pending_splice (jump at next wrap)
+    PATTERN_KIND_EVENT_RETRIG,// retrigger playback from splice start (mirror ligase_trigger)
+    PATTERN_KIND_EVENT_GATE,  // set transport: cached_value != 0 -> play, == 0 -> stop (grains finish)
+    PATTERN_KIND_EVENT_BANG   // outlet_bang(x_grain_bang_out)
+} pattern_target_kind_t;
 
 // Parse-time ONLY (function-local automatic array inside ligase_pattern; never in perform state)
 typedef enum { PN_LEAF, PN_SEQ, PN_ALT } pattern_node_kind_t;
@@ -676,6 +691,12 @@ typedef struct {
     pattern_table_t pattern[PATTERN_SLOTS];
     float           pattern_phase[PATTERN_SLOTS];        // free-running 0..1 cycle phase per slot
     long            pattern_cycle_index[PATTERN_SLOTS];  // integer cycle counter per slot (<> alternation)
+    // pattern_target_kind_t per slot; 0 = VALUE (default). Covered by the same scheduler_create
+    // memset as the arrays above, so every slot is a VALUE slot on construction — bit-identical
+    // behavior until 'pattern event <action> ...' explicitly tags a slot EVENT_*. Publish
+    // discipline: written on the message thread BEFORE step_count (the commit barrier), reset to
+    // VALUE on non-event commits and on pattern_clear (pooled-slot reuse must not mis-fire).
+    int             pattern_target_kind[PATTERN_SLOTS];
 
     // Input envelope follower — per-block input-LISTENING source for the modulation matrix.
     // Mirrors the pattern cache discipline: written once per block in ligase_perform (sole
