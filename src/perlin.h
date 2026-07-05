@@ -77,6 +77,11 @@ void nbody_update(nbody_state_t *state);
 // Returns value normalized to [0.0, 1.0] using auto-adjusting bounds
 float nbody_get_normalized(nbody_state_t *state, int mode);
 
+// Get one chosen body's position, all three axes normalized to [-1,1] via pos_min/pos_max.
+// Single point of truth for "nbody 3D -> normalized" used by spatial granulation (pan_mode 2).
+// out[0]=x (L..R), out[1]=y (down..up), out[2]=z (back..front); centered so 0 = box center.
+void nbody_get_normalized_vec3(const nbody_state_t *state, int body, float out[3]);
+
 // @endregion:ligase_pd.utils.random.nbody
 
 #endif // LIGASE_PERLIN_H

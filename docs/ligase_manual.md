@@ -169,7 +169,11 @@ iot <0.0005-2> - Interonset time in seconds
 maxgrains <1-pool_size> - Max concurrent grains
 amplitude <0-2> - Grain amplitude
 pan <0-1> - Stereo position (0=left, 0.5=center, 1=right)
-pan_mode <0|1> - Mono panning / Stereo balance
+pan_mode <0|1|2> - Mono panning / Stereo balance / Spatial 3D
+spatial <sphere|nbody> [inst 0-3] [body 0-2] - Physics source for pan_mode 2
+spatial_width <0-1> - Spatial stereo spread (0=center, 1=full)
+spatial_depth <0-1> - Distance-to-level amount (default 0 = off)
+spatial_tilt <0-1> - Elevation tilt amount (reserved; default 0 = off)
 saw_cycles <0-64> - Saw envelope modulation cycles
 saw_depth <0-1> - Saw envelope modulation depth
 envelope <0|1|2|3|4> - Parabolic/Trapezoidal/Cosine/Gaussian/Exponential
@@ -250,6 +254,15 @@ smear_pitch_rand_type <gen> - Stochastic generator for the smear SCALE source (r
 smear_pitch_fine <cents> - ±50-cent fine tune on the smear pitch (modulatable: param_range smear_pitch_fine)
 pattern smear_pitch <tokens...> - Mini-notation scale-degree pattern on the smear pitch (see PATTERNS)
 
+Resonator Bank (grains excite a bank of tuned smear voices — see SMEAR > Resonator Bank)
+
+smear_mode <0|1> - 0=single smear voice (default), 1=bank of tuned voices excited by the granular bus
+smear_bank_mix <0-1> - Bank dry/wet (independent of inlet 15's single-voice mix; default 0)
+smear_bank_feedback <-0.99 to 0.99> - Shared per-voice feedback (ring/sustain of the body)
+smear_bank_resonance <0-0.999> - Shared pole radius (high ≈0.995-0.999 = tight tuning)
+smear_bank_stages <0-48> - Shared allpass sections per voice (default 8)
+(voice tuning/count comes from smear_pitch_scale — each degree is one voice, max 16)
+
 Moogladder Filter
 
 moog_cutoff <20-20000> - Cutoff frequency (Hz)
@@ -314,6 +327,19 @@ modout_source/modout_range commands:
   rand_type <type_instance> modoutN   - assign a generator to outlet N
   param_range modoutN <min> <max>     - set the outlet's output range
 
+Modulation Matrix (N->M routing; see MODULATION MATRIX)
+
+matrix_connect <source> <dest> <depth> - Add/update a routing connection (depth signed, dest units)
+  Destinations, per-block: gdelay, gdelay_feed, gdelay_tone, gdelay_mix, moog_cutoff,
+  moog_resonance, moog_mix, smear_frequency, smear_resonance, smear_stages, smear_feedback,
+  scanrate, organize, sos, iot, env_skew, modout1-4
+  Destinations, per-grain (applied at grain trigger): speed, grainsize, grain_start,
+  amplitude, pan, pitch_fine
+matrix_disconnect <source> <dest> - Disable a connection (kept; re-connect re-enables)
+matrix_clear - Remove all connections (matrix inert)
+matrix_dump - Post current connections to the console
+env_follow_ms <0-60000> - Envelope follower release time in ms (default 30; 0 = instant)
+
 Noise Frequency
 
 noise_freq <scale> - Set all generator speeds
@@ -351,15 +377,29 @@ midi_channel <grain_ch> <smear_ch> - Set both routing channels (equal = unison);
 pitch_channel <ch> - MIDI channel routed to the GRAIN pitch destination
 smear_pitch_channel <ch> - MIDI channel routed to the SMEAR pitch destination
 
+CHORDAL POLY (N-transposition chord from the ONE shared playhead)
+
+poly <0|1> - Enable/disable POLY mode (default 0 = mono). Requires pitch_mode 4 (MIDI) to sound.
+chord <n1> [n2] ... - Set the whole voice pool at once (max 8 notes; empty list clears/silences)
+  In POLY mode each grain-trigger tick spawns one grain PER active voice, each transposed to that
+  voice's MIDI note vs middle C (60). The playhead/splice/SOS/recording are untouched. On the GRAIN
+  channel: `midi <note> [vel]` appends a voice (vel 0 = note-off, removes it); the pool holds up to 8
+  notes (MAX_VOICES) and steals the OLDEST note when a 9th distinct note arrives. The SMEAR pitch
+  destination stays MONO (last-note-wins). Default poly 0 is bit-identical to the mono scalar path.
+  BUDGET: all voices share the soft grain cap `max_grains` (default 4), so a chord can starve later
+  voices at default settings. Raise it for POLY (e.g. `maxgrains 32`); the hard ceiling is pool_size.
+
 Patterns (TidalCycles Mini-Notation)
 
 pattern <param|pitch|slot> <tokens...> - Step-sequence a parameter (or pitch) from a mini-notation pattern
+pattern event <action> <tokens...> - FIRE events from a pattern: grain | splice | retrig | gate | bang ('trigger' = accepted alias)
 pattern_cycle <N/D> <N/D> ... - Quantization-cycle length as musical durations at the detected BPM (default = 1 bar)
-pattern_clear <param|pitch|slot> - Detach a pattern; restore the prior source (pitch -> OFF)
-pattern_debug <0|1> - Log step / semitone changes to stderr (off by default)
+pattern_clear <param|pitch|slot> - Detach a pattern; restore the prior source (pitch -> OFF; slot also resets an event tag)
+pattern_debug <0|1> - Log step / event / semitone changes to stderr (off by default)
 
-Tokens are space-separated (NO commas): values 0..1 for params or scale degrees for pitch; < > alternation
-(one per cycle); [ ] subdivision (nestable); @N weight; *N repeat; !N replicate; ~ rest. See PATTERNS.
+Tokens are space-separated: values 0..1 for params or scale degrees for pitch; < > alternation
+(one per cycle); [ ] subdivision (nestable); @N weight; *N repeat; !N replicate; ~ rest; v(k,n) Euclidean
+rhythm (escape the comma in a message box: 1(3\,8)); rev reverses the preceding group. See PATTERNS.
 
 Morph / Metasurface (snapshot interpolation surface)
 
@@ -428,6 +468,9 @@ smear_frequency: 800 Hz
 smear_resonance: 0.7
 smear_stages: 12
 smear_feedback: 0.0
+smear_mode: 0 (single voice)
+smear_bank_mix: 0.0 (bank dry)
+smear_bank_stages: 8 (per voice)
 gdelay_time: 0.0 (off)
 gdelay_feed: 0.0
 gdelay_tone: 0.5
@@ -1171,11 +1214,19 @@ Maintains stereo image character while adjusting balance
 
 Ideal for stereo sources where width should be preserved
 
+Mode 2: Spatial 3D (physics-driven placement)
+
+Each grain freezes the 3D position of a physics simulation (the bouncing sphere or one n-body body) at the moment it is triggered, and is placed in the stereo field by that position for its whole life. Overlapping grains sit at different points of the trajectory, so the cloud spreads and moves through space as the simulation orbits.
+
+Select the driving simulation with spatial <sphere|nbody> [instance 0-3] [body 0-2] (default: sphere instance 0; for nbody, body 1 — the orbiting body), then engage with pan_mode 2. The grain is treated as a mono point source (like mode 0) and placed by a front-biased azimuth derived from the sim's horizontal plane (x = left/right, z = depth), so the whole orbit stays in the frontal arc — a stereo field cannot render "behind you." Constant-power law throughout.
+
+spatial_width <0-1> scales the spread: 0 collapses every grain to center, 1 is full left/right. spatial_depth <0-1> optionally makes far (back) positions quieter — default 0 (off). spatial_tilt is reserved for elevation and currently inert.
+
 Default: 0 (constant-power mono panning)
 
 Pan Law
 
-Both modes use constant-power panning to maintain consistent perceived loudness:
+All modes use constant-power panning to maintain consistent perceived loudness:
 
 pan_angle = pan * (π/2)
 
@@ -1627,6 +1678,35 @@ Backward compatibility: the inlet-19 signal MIDI (pitch_mode 4) keeps working ex
 time a `midi` message routes a note to the grain channel it takes over the grain destination (one source of
 truth) and the inlet is ignored; if you never send a `midi` message, nothing changes.
 
+Chordal Polyphony (POLY mode)
+
+POLY mode plays a CHORD as N simultaneous pitch transpositions of the SAME grain stream from the ONE shared
+playhead — not independent playheads. It is orthogonal to everything else: the playhead, splice, SOS, and
+recording paths are untouched; only the per-voice pitch of the grains changes. (For truly independent
+material/playheads per voice, instantiate parallel ligase~ objects.)
+
+  poly 1                                  enable POLY (default 0 = mono)
+  pitch_mode 4                            REQUIRED: POLY transpositions only apply in MIDI pitch mode
+  chord 60 64 67                          seat a C-major triad (root/third/fifth) in the voice pool
+  midi 60 100 1                           append note 60 (vel>0) to the grain-channel voice pool
+  midi 64 0 1                             note-off: velocity 0 removes note 64 from the pool
+
+When POLY is on, every grain-trigger tick spawns one grain per active voice, each at that voice's playback
+speed (2^((note-60)/12) x the base speed). Voices enter the pool via the channel-aware `midi` message on the
+grain channel (vel 0 = note-off) and/or the `chord` list (which replaces the whole pool at once). The pool
+holds up to 8 notes (MAX_VOICES); a 9th distinct note STEALS THE OLDEST note in the pool. Re-sending a note
+already in the pool just refreshes its age (no duplicate). The SMEAR/resonator pitch destination stays MONO
+(last-note-wins) — POLY only multiplies the grain pitch.
+
+Grain-pool budget (important): all voices share the soft grain cap `max_grains` (default 4). Because the
+per-voice loop fills grain slots in order, a chord at the default cap can starve its later voices (a triad may
+render as 1-2 notes). Raise the cap for POLY so every voice keeps density, e.g. `maxgrains 32`; the hard
+ceiling is pool_size (from ligase.conf). CPU scales with the live-grain count, i.e. roughly N x the mono cost
+for an N-note chord at the same per-voice density.
+
+Backward compatibility: with poly 0 (the default) the grain-trigger sites take the single-call scalar path and
+the `midi` grain-channel write is the unchanged last-note-wins scalar — bit-identical to the pre-POLY external.
+
 # DELAY
 
 Delay effect applied to the mixed grain output before recording. Three modes available: DD-4 (analog-style), Bencina (pitch-preserving granular), and Stut (quantized rhythmic). All modes share a 9.5-second stereo circular buffer (sized to the host rate) and common control parameters (time, feedback, tone, mix). Mode-specific parameters are set via messages.
@@ -1964,6 +2044,53 @@ Example — arpeggiate the resonator (root / fifth / octave, one per cycle):
   smear_feedback 0.85
   smear_pitch_scale 0 2 4 5 7 9 11
   pattern smear_pitch < 0 4 7 >
+
+Resonator Bank (smear_mode 1 — grains excite a tuned body)
+
+A distinct smear mode: instead of ONE resonator voice, a BANK of up to 16 tuned voices — each a full
+smear allpass cascade — is excited by the granular+delay output. The grains become the EXCITER
+(broadband dust, transients, clouds) and the bank becomes the INSTRUMENT: strike the body with grain
+dust and it rings a chord. Classic sympathetic-string / excited-physical-body topology.
+
+  smear_mode <0|1>   0 = single voice (default — the identical path described above); 1 = bank.
+                     Hard switch, no crossfade (the exciter is continuous, so the seam is small).
+
+Tuning — the chord IS the smear-pitch scale. The bank has no pitch path of its own: load
+smear_pitch_scale <semitones...> and each scale degree becomes one voice, tuned by the same
+hz = ref_hz * 2^(semitone/12) mapping as the single resonator (A440 reference by default;
+smear_pitch_fine detunes the whole body). Voice count = the scale's note count (capped at 16).
+Change the scale and the bank re-tunes on the next block. With no scale loaded the bank has zero
+voices and passes the signal through dry (the smear_mode message reminds you).
+
+  smear_pitch_scale 0 4 7 12   then   smear_mode 1
+  -> a 4-voice body ringing root / major 3rd / 5th / octave above 440 Hz.
+
+Bank controls (shared across all voices in v1):
+
+  smear_bank_mix <0-1>            Bank dry/wet. Independent of inlet 15 (which stays the SINGLE
+                                  voice's mix). 0 = dry bypass (default).
+  smear_bank_feedback <-0.99-0.99> Per-voice feedback — sustain/ring length of the body.
+  smear_bank_resonance <0-0.999>  Pole radius shared by all voices. For TIGHT tuning use a high
+                                  value (≈0.995-0.999): the closer to 1, the more exactly each
+                                  voice's ring lands on its note; lower values loosen the comb
+                                  around the tuned center (a broader, more dispersed body).
+  smear_bank_stages <0-48>        Allpass sections per voice (default 8 — lower than the single
+                                  voice's 12 to keep N*stages in CPU budget). More stages = denser
+                                  partial comb per voice, more CPU.
+
+Gain staging: each voice keeps the unity-gain cascade topology (|feedback| < 0.99 is unconditionally
+stable) and the voice sum is pre-scaled by 1/N, so a full chord never clips on correlated transients;
+the final output clamp remains the hard backstop. Like the single smear, the bank is a monitoring
+effect — never recorded into the reel — and sits at the same point in the chain (after delay, before
+distortion). smear_mode 0 returns to the single voice, bit-exact with the pre-bank behavior.
+
+Recipe — grain dust ringing a minor chord:
+
+  smear_pitch_scale 0 3 7
+  smear_mode 1
+  smear_bank_mix 0.7
+  smear_bank_feedback 0.92
+  smear_bank_resonance 0.998
 
 # DISTORTION
 
@@ -2618,6 +2745,138 @@ Defaults
 
 All parameter ranges initialized to: min: 0.0, max: 1.0, rand_type: RAND_TYPE_RAND (instance 1), enabled: 0 (disabled). All noise_frequency_scale defaults to 1.0.
 
+# MODULATION MATRIX
+
+An N-to-M routing layer ON TOP of the per-parameter range system above. Where param_range binds
+exactly ONE generator to one parameter, the matrix routes MANY sources to MANY destinations, each
+connection with its own signed depth, and all contributions to a destination are SUMMED. It is a
+thin additive overlay: the param_range base value (or the plain scalar when the range is disabled)
+is computed exactly as before, then the matrix sum is added on top and the result is clamped to
+the destination's musical range. With zero connections the matrix is completely inert and every
+parameter behaves exactly as without it.
+
+Messages
+
+matrix_connect <source> <dest> <depth>
+
+Add a connection (or update its depth if the same source/dest pair already exists — this also
+re-enables a disconnected pair). Depth is SIGNED and in the DESTINATION'S OWN UNITS: the source
+value s in [0,1] is centered at 0.5, and the contribution is depth × (s − 0.5) × 2 — i.e. the
+source swings the destination by ±depth around its base. Example:
+
+  matrix_connect sine1 moog_cutoff 2000   → cutoff swings ±2000 Hz around its base
+  matrix_connect env_mono gdelay_mix 0.4  → input level pushes the delay mix ±0.4
+
+Up to 32 connections. Unknown source or destination names are rejected with an error and leave
+the matrix unchanged.
+
+matrix_disconnect <source> <dest> - Disable that connection (the slot is kept; a later
+matrix_connect of the same pair re-enables it in place).
+
+matrix_clear - Remove all connections. Instantly restores exact pre-matrix behavior.
+
+matrix_dump - Post the current connection list (index, source, dest, depth, disabled flags).
+
+env_follow_ms <0-60000> - Set the envelope follower's release time in milliseconds (default 30;
+0 = instant follow). See "Input envelope follower" below.
+
+Sources
+
+The matrix source vocabulary is SEPARATE from the rand_type generator names (param_range bindings
+are untouched by the matrix and vice versa):
+
+  sine1-4, saw1-4, square1-4   - the waveform LFO instances (lfo1-4 are aliases for sine1-4)
+  perlin1-4                    - 1D Perlin noise instances
+  lorenz1-4, nbody1-4, sphere1-4 - the chaotic/physics generator instances
+  rand1-4                      - the seeded random instances
+  pattern0-7                   - pattern slot caches (see PATTERNS); unloaded slots read neutral 0.5
+  env_l, env_r, env_mono       - the input envelope follower (left / right / mono mix)
+
+Generator instances read the SAME state the param_range system reads, so e.g. lorenz1 in the
+matrix and rand_type lorenz_1 on a range track the same attractor. Generator/pattern sources
+advance at the grain-trigger rate (like the range system); reading rand1-4 from the matrix
+advances the shared per-instance random seed.
+
+Destinations
+
+Per-BLOCK parameters (applied once per DSP block):
+
+  gdelay, gdelay_feed, gdelay_tone, gdelay_mix
+  moog_cutoff, moog_resonance, moog_mix
+  smear_frequency, smear_resonance, smear_stages, smear_feedback
+  scanrate, organize, sos, iot, env_skew
+  modout1-4
+
+Per-GRAIN parameters (applied at each grain trigger):
+
+  speed, grainsize, grain_start, amplitude, pan, pitch_fine
+  (grainstart is accepted as an alias for grain_start)
+
+Per-grain destination sums are computed once per DSP block (sources are per-block values) and
+added to each grain's value at trigger time, AFTER the param_range sample and BEFORE the same
+clamps the engine already applies (grainsize 0.01-2 s, amplitude 0-2, pan 0-1, grain_start 0-1
+normalized, speed ±4, pitch_fine ±0.5 semitones). The offsets are purely per-grain: the shared
+parameter bases (the values the inlets/messages own and queries report) are NEVER written by the
+matrix, so a per-grain connection composes with — and cleanly disconnects from — everything else.
+
+The speed destination applies in ALL pitch modes: the offset is added to the final pitch-derived
+speed (MIDI / scale / pattern pitch keep working), so a pin on speed is a detune/drift AROUND the
+note, not a pitch-source bypass. pitch_fine offsets add to the sampled fine value, bounded to the
+±0.5-semitone fine-tune range.
+
+Onset/pitch detection sources are planned for v2.
+
+Behavior notes
+
+- Additive over param_range: if the destination's range is ENABLED, the matrix sum is added to the
+  range-sampled value each block (both modulations combine). If the range is DISABLED, the matrix
+  alone drives the destination around its current scalar base — a destination no longer needs an
+  enabled range to be modulated.
+- Clamping: the matrix apply site clamps the summed result to the destination's musical range
+  (e.g. moog_cutoff 20-20000 Hz, gdelay 0-9.5 s, mixes 0-1). Overshoot from many connections or a
+  hot input simply saturates at the clamp — no instability. Exception: modout1-4 are NOT clamped
+  (they are patch-out floats; scale them in the patch).
+- modout as destination: a matrix connection to modoutN emits floats even when that modout's
+  param_range is disabled/unassigned; with only the matrix driving it the emitted value is
+  0.5 + sum (neutral center plus the overlay). With a generator assigned via rand_type/param_range
+  the matrix sum is added on top of the sampled range value.
+- gdelay_feed applies in Stut mode too (it retargets to stut reduction, which shares the same 0-1
+  meaning). gdelay_tone is NOT matrix-applied in Stut mode (there it maps to spacing in ms —
+  different units); the range modulation still applies as usual.
+- smear_frequency connections are bypassed while the smear pitch destination is enabled (the pitch
+  system owns the frequency then, exactly like the smear_frequency_range).
+- Capture transparency: snapshots record the PRE-MODULATION base, never a momentary matrix value.
+  The 11 FX params capture from their message-set shadow values, the per-grain destinations never
+  write the shared fields at all, and the self-read transport params (scanrate in particular)
+  capture the matrix's tracked base while a connection is active — so a SNAP taken mid-wobble
+  stores the knob value, and recalling it restores the base the modulation was riding on.
+  (Connections themselves are never captured: pins are physical — see snapshots/morphing.)
+
+Input envelope follower
+
+The follower makes the instrument listen to its own input: a rectified PEAK follower over the live
+input signal (instant attack, one-pole release, default ~30 ms, set via env_follow_ms). It is
+computed once per DSP block and exposed as the matrix sources env_l / env_r / env_mono (mono =
+0.5×(L+R)). The follower output is not hard-capped: input is normally ≤1.0, and the destination
+clamp catches any overshoot from hot input × high depth. Typical use:
+
+  matrix_connect env_mono moog_cutoff 4000   → the filter opens with the input level
+  matrix_connect env_mono modout1 1          → patch the input envelope out to the Pd graph
+
+Since a [0,1] source is centered at 0.5, a silent input contributes −depth (the follower sits at
+0). To bias a destination so silence = base and signal pushes up, raise the base by depth (or use
+a modout and offset in the patch).
+
+Example
+
+  param_range moog_cutoff 800 800          (fixed 800 Hz base, range enabled)
+  matrix_connect lorenz1 moog_cutoff 600   (chaos wobbles the cutoff ±600 Hz)
+  matrix_connect env_mono moog_cutoff 3000 (input level opens it up to ±3000 Hz more)
+  matrix_connect env_mono pan 0.5          (input level spreads each grain's pan ±0.5)
+  matrix_connect sine1 grainsize 0.05      (LFO breathes every grain's length ±50 ms)
+  matrix_dump
+  matrix_clear                             (back to exactly the range-only behavior)
+
 # PATTERNS (TIDALCYCLES MINI-NOTATION)
 
 A step-sequencing layer adapted from TidalCycles mini-notation. A pattern distributes a list of values
@@ -2629,17 +2888,21 @@ Syntax (space-separated tokens; NO commas)
 
 A pattern is a sequence of space-separated tokens:
 
-  0.7           a value (0..1 for parameters; a scale DEGREE for pitch)
-  ~             a rest (holds the previous value / note)
+  0.7           a value (0..1 for parameters; a scale DEGREE for pitch; the event ARG for event patterns)
+  ~             a rest (holds the previous value / note; an event pattern stays SILENT on a rest)
   [ a b c ]     subdivision group — children evenly split the parent's time slice; nestable to any depth
   < a b c >     alternation — ONE child per cycle, advancing each cycle (Tidal "slowcat")
   a@3           weight — this step takes 3x the time of an unweighted step
   a*3           repeat — three copies of a within this step (subdivides the slot)
   a!3           replicate — three separate sibling steps
+  a(k,n)        Euclidean rhythm — this step becomes n sub-steps with a on the k Bjorklund pulse
+                positions and rests elsewhere (see EUCLIDEAN RHYTHMS below)
+  rev           reverse the preceding group in time (see REV below)
 
-Brackets and angles are standalone tokens: write "[ a b ]", not "[a b]". There are NO commas — in
-TidalCycles a comma means STACK (parallel layers), which does not apply to a single parameter/pitch over
-time and is intentionally unsupported (Pd also treats a comma as a message separator).
+Brackets and angles are standalone tokens: write "[ a b ]", not "[a b]". Bare commas as SEPARATORS are
+unsupported — in TidalCycles a separating comma means STACK (parallel layers), which does not apply here,
+and Pd treats an unescaped comma as a message separator. The only comma in the grammar is INSIDE an
+Euclid suffix, where it must be escaped in a Pd message box: 1(3\,8).
 
 Examples:
 
@@ -2679,8 +2942,9 @@ The pattern is a modulation SOURCE (RAND_TYPE_PATTERN), so param_invert and para
 glides between steps; leave slew at 0 for hard steps). Attaching auto-enables the range; a single-value range
 (min == max) is widened to [0, 1] so the pattern is audible.
 
-Up to 7 parameters can run independent patterns at once (8 slots, one reserved for pitch); each gets its own
-slot automatically, and re-sending pattern <param> reuses that param's slot.
+Up to 6 param + event patterns can run at once (8 slots; slot 7 is reserved for pitch and slot 6 for
+smear_pitch, leaving a shared 0-5 auto-pool); each gets its own slot automatically, and re-sending
+pattern <param> (or the same event action) reuses that pattern's slot.
 
   pattern_clear <param>              detach; restore the parameter's previous generator / source
 
@@ -2702,13 +2966,76 @@ Tokens are scale DEGREES indexed into the loaded pitch_scale (see PITCH & SPEED,
 Pitch is applied per grain (tempo-locked, not grain-locked): sparse grains can skip steps, dense grains
 re-trigger the same step. A rest (~) holds the previous note. pattern_clear pitch returns to pitch_mode 0 (OFF).
 
+Patterns that FIRE events
+
+  pattern event <action> <tokens...>          action = grain | splice | retrig | gate | bang
+
+Where a param/pitch pattern SETS a value that downstream code samples, an EVENT pattern FIRES a discrete
+action on each step: once per non-rest step, exactly when the step boundary passes on the BPM-locked cycle
+clock (tempo-locked, quantized to the same grid as every other pattern; a held step never re-fires, and
+rests — including the off-positions of an Euclidean rhythm — are silent). The step VALUE is the event's
+argument:
+
+  grain    fire a burst of <value> grains (1..16) at the current playhead (splice start + grainstart
+           offset) with the current speed / pan / amplitude / saw settings
+  splice   select splice <value> (wrapped into range) — applied at the NEXT splice wrap, like shift.
+           Block order: a splice event only QUEUES the jump, so a grain burst in the same step still
+           fires at the current splice
+  retrig   restart playback from the start of the current splice (value ignored) — active grains finish
+  gate     value != 0 starts the transport, 0 stops it (same flags as play 1/0); gate 0 does NOT cut
+           active grains — they play out
+  bang     bang the grain-onset outlet (outlet 4; value ignored)
+
+  pattern event grain [ 3 ~ 1 1 ]     a 3-grain cluster on beat 1, nothing on 2, one grain on 3 and 4
+  pattern event splice [ 0 1 2 ]      walk splices 0 -> 1 -> 2 across the cycle
+  pattern event gate [ 1 0 ]          transport on for the first half-cycle, off for the second
+
+'trigger' is accepted as an alias for 'event' (pattern trigger grain ... is the same message). Prefer
+'event': a BARE trigger message is the separate transport re-trigger — the two never collide at dispatch,
+but reading 'pattern trigger' next to 'trigger' invites confusion.
+
+Event patterns share the same 6-slot auto-pool as param patterns (slots 0-5; 6 and 7 stay reserved for
+smear/grain pitch), so params + events together are capped at 6 simultaneous patterns. Re-sending the same
+action replaces its pattern (no duplicates); clear one with pattern_clear <slot> (the slot number is shown
+when the pattern is armed), which also resets the slot's event tag. Events fire regardless of whether the
+transport is running (that is the point of gate/retrig); grain bursts need audio in the reel, and each
+burst bangs the grain-onset outlet once when grain_bang_rate > 0.
+
+Euclidean rhythms
+
+  a(k,n)      e.g.  1(3,8)  — as a Pd message-box token:  1(3\,8)
+
+Expands one step into n evenly-spaced sub-steps: a lands on the k pulse positions of the canonical
+Bjorklund/Toussaint distribution (rotated to start on a pulse) and the n-k off-positions are rests. It is
+pure notation — the result is an ordinary step table, so it works on params, pitch, and event patterns
+alike, and composes with @N (weight the whole group) and !N (replicate the group):
+
+  pattern event grain [ 1(3\,8) ]     x..x..x.  — bursts on the 3-of-8 Euclid pulses
+  pattern moog_cutoff 0.8(5\,8)       x.xx.xx.  — value 0.8 on 5-of-8 pulses, rest (hold) elsewhere
+
+k = 0 gives all rests, k >= n all pulses; n is capped at 64 (the step-table limit). a*N cannot combine
+with a(k,n) on the same step — both expand the step, so v*N(k,n) is rejected as ambiguous. NOTE the
+escaped comma \, — an unescaped comma would split the Pd message.
+
+rev
+
+  rev         reverse the preceding group in time (parse-time transform)
+
+Placed after a group (or after a run of bare steps), rev reverses that group's step order, recursing into
+nested [ ] subdivisions; < > alternation ORDER is preserved (rev acts within a cycle) but each member's
+contents are reversed. rev rev restores the original.
+
+  pattern speed [ 0.1 0.2 0.3 ] rev     plays 0.3 0.2 0.1
+  pattern speed 0.1 0.2 0.3 rev         same — with no preceding group, reverses the steps so far
+
 Notes
 
 - Parse errors (unbalanced brackets, unknown parameter, bad token) are reported and leave the previous pattern
   intact.
 - Single-level alternation only: < > may not be nested directly inside another < > (rejected). [ ] subdivision
   nests freely.
-- pattern_debug 1 logs step and applied-semitone changes to stderr (a development aid; off by default).
+- pattern_debug 1 logs step changes, fired events, and applied-semitone changes to stderr (a development
+  aid; off by default).
 
 # MORPH / METASURFACE
 
@@ -2733,6 +3060,17 @@ iot, the pitch + smear-pitch values, the quant amounts), every discrete mode/enu
 pitch mode, smear-pitch source, pan mode, sos mode, MIDI channels, …), both pitch scale lists, and the
 playable-FX scalar bases (moog cutoff/resonance/mix, smear frequency/resonance/stages/feedback, delay
 time/feedback/tone/mix).
+
+Since text schema v3 a snapshot ALSO carries the modulation sources' own "weather" params — the
+per-instance rate scales noise_freq_1..4, the envelope-follower release env_follow_ms, the sphere
+physics (sphere_damping/sphere_elasticity 1-4 and output modes), and the N-body physics (nbody_G /
+nbody_damping / nbody_epsilon / nbody_pump amount + interval 1-4 and output modes). Motion CHARACTER
+travels with the voice: retuning perlin_2's rate for scene B no longer retroactively changes scene A.
+If you prefer the old behaviour — one global rate knob sweeping every scene at once — exclude the
+group: `morph_exclude sources`.
+
+snapshot_recall (like the cursor blend and snapbuf_apply) honors the selection tree: excluded
+parameters keep their live values across a recall.
 
 ## The surface and the cursor
 
@@ -2762,17 +3100,21 @@ CPU, best for a static cursor than a fast route).
 By default the morph applies to the whole patch. morph_exclude <name...> drops parameters from the
 blend — an excluded parameter keeps whatever manual / modulation / inlet control owns it and the
 cursor leaves it untouched; morph_include <name...> adds them back, and morph_include all resets to
-the full patch. Snapshots still CAPTURE everything either way — this only changes what the cursor
-APPLIES (Bencina's Parameter Selection Tree).
+the full patch. Snapshots still CAPTURE everything either way — this only changes what a restore
+APPLIES: the cursor blend, snapshot_recall, and the expander's snapbuf_apply all honor it (Bencina's
+Parameter Selection Tree).
 
 Targets: all; a single parameter — amplitude, pan, speed, grainsize, grainstart, moog_cutoff,
 moog_resonance, moog_mix, smear_frequency, smear_resonance, smear_stages, smear_feedback, gdelay,
 gdelay_feedback, gdelay_tone, gdelay_mix; or a group — pitch (the grain pitch -> playback speed),
-smear_pitch (the resonator note), fx (moog + smear-resonator + delay + distortion). Each name covers
-that parameter's modulation band, its scalar base, and any mode it owns.
+smear_pitch (the resonator note), fx (moog + smear-resonator + delay + distortion), sources (the
+generator/weather params captured since schema v3: noise_freq_1..4, env_follow_ms, the sphere and
+N-body physics params and output modes). Each name covers that parameter's modulation band, its
+scalar base, and any mode it owns.
 
   morph_exclude pitch        # morph the timbre but hold the notes fixed
   morph_exclude fx           # morph grain + pitch but leave the effects alone
+  morph_exclude sources      # rates/physics stay global "weather" (pre-v3 behaviour)
   morph_include all          # back to morphing everything
 
 ## Routes (automated cursor paths)
@@ -2817,8 +3159,10 @@ bodies — those hold hundreds of values each and are not dumped as messages).
 morph_export <file> / morph_import <file> are the fully portable option: a human-readable .txt that
 holds EVERYTHING (every snapshot body + the surface), written as a logical-field schema rather than a
 memory image — so unlike the binary .morph it survives across builds whose struct layout differs (a
-"ligase_morph <version>" header refuses files whose schema changed). The snapshot lines are long (one
-per snapshot, hundreds of numbers) but it is plain text you can read, diff, and edit.
+"ligase_morph <version>" header guards the schema). The current schema is version 3 (v3 appended the
+generator/sources params); older v1/v2 files still import cleanly — their missing generator fields
+simply keep the values the engine has at import time. The snapshot lines are long (one per snapshot,
+hundreds of numbers) but it is plain text you can read, diff, and edit.
 
 Three persistence routes, then: morph_save/morph_load (binary, complete, fastest, build-specific);
 morph_export/morph_import (text, complete, human-readable + build-portable); morph_state (messages,
@@ -2839,6 +3183,92 @@ just the snapshots and layout but also which parameters the morph is allowed to 
 - morph_include/morph_exclude limit which parameters the morph applies (see "Limiting which parameters
 morph"). Both kernels ship: morph_interp 0 = IDW/Shepard (default), 1 = natural-neighbour (a mesh-free sampled
 Sibson approximation). The CV signal-inlet cursor is implemented (morph_cursor 1, inlets 22/23).
+
+# SNAPSHOT EXPANDER (EDIT BUFFER)
+
+Snapshots on their own are write-only: you can capture, recall, blend and export them, but you cannot
+look INSIDE one, and you cannot adjust one without recalling it into the live engine — hostile for
+live use, where preparing the next scene must not wreck the current one. The Snapshot Expander is a
+modular-synth style sidecar for exactly that: ONE edit buffer — patch memory's classic workbench —
+that you load snapshots into, inspect, and edit **completely offline**.
+
+**The cold-edit contract.** The edit buffer is never read by the audio pipeline. Every snapbuf_set is
+cold; the live engine changes on exactly two deliberate acts:
+
+- **snapbuf_apply** (panel: ASSIGN) — buffer -> live engine, through the same path as a snapshot
+  recall: it writes bases + bands + discretes, honors morph_include/morph_exclude, and never touches
+  matrix pins.
+- **snapbuf_store <id>** (panel: STORE) — buffer -> snapshot slot. **If that slot is placed on the
+  morph surface and part of an active blend, the field changes shape on the next block.** That is the
+  point — reshape a corner of the surface mid-set — and it is safe because it only ever happens on the
+  explicit STORE, never as a knob side-effect. Storing to an unplaced slot changes nothing live.
+
+**Audition / compare (v1.1 — the explicit opt-in).** `snapbuf_audition 1` TEMPORARILY applies the
+buffer so you can hear it: the current live voice is captured to a revert slot first (modulation-
+transparent, like any capture), then the buffer lands through the usual masked-restore path.
+`snapbuf_audition 0` restores the pre-audition voice exactly. `snapbuf_compare` is an A/B toggle
+over the same latch (A = your live voice, B = the buffer). Wire a panel button's press/release to
+`snapbuf_audition 1`/`0` for the momentary hardware gesture. Rules: buffer edits made WHILE
+auditioning stay cold (toggle off/on to hear them); `snapbuf_apply` during an audition COMMITS —
+the buffer becomes the real live voice and the revert is discarded; knob/message moves you make
+during an audition are overwritten by the revert (the latch owns the live voice while held);
+excluded fields (`morph_exclude`) stay live through both directions of the round-trip.
+
+## Messages
+
+  snapbuf_load <id>          copy stored snapshot -> buffer
+  snapbuf_from_live          capture the CURRENT voice -> buffer (the snapshot capture path:
+                             modulation-transparent — bases, never the momentary wobble)
+  snapbuf_set <field> ...    edit one field in the buffer (see grammar below)
+  snapbuf_get <field> [sub]  report one field/subfield on the state outlet (outlet 9),
+                             prefixed "snapbuf", e.g.  snapbuf amplitude_range min 0.2
+  snapbuf_dump               the whole buffer as RE-SENDABLE snapbuf_set lines on outlet 9
+                             (a panel populates every display from one dump; replaying the
+                             dump reconstructs the buffer)
+  snapbuf_store <id>         buffer -> slot (keeps the slot's surface placement; see above)
+  snapbuf_apply              buffer -> live engine (the ONLY committing touchpoint;
+                             during an audition it COMMITS and discards the revert)
+  snapbuf_audition <0|1>     v1.1: temporarily hear the buffer (1) / exact revert (0)
+  snapbuf_compare            v1.1: A/B toggle over the audition latch
+  snapbuf_clear              re-init the buffer to empty
+
+## Field addressing (the export-schema vocabulary)
+
+Fields use the text-export schema's logical names — the same enumeration, so the expander and the
+.txt schema can never diverge. Four kinds:
+
+- **Bands** (`<param>_range`, all 45): per-subfield —
+  `snapbuf_set moog_cutoff_range min 200` (subfields: min max enabled rand_type rand_instance
+  base_value slew invert) — or the whole band in export order:
+  `snapbuf_set amplitude_range 0.1 0.5 1 2 0 0.3 0.5 0`.
+- **Scalars** (`amplitude`, `moog_cutoff`, `gdelay_time`, `noise_freq_2`, `env_follow_ms`,
+  `sphere_damping_1`, `nbody_G_3`, …): `snapbuf_set amplitude 0.42`.
+- **Discretes** (`pan_mode`, `maxgrains`, `playhead`, `pitch_mode`, `nbody_mode_1`,
+  `sphere_mode_4`, `nbody_pump_interval_2`, …): `snapbuf_set pan_mode 1`.
+- **Scale lists**: whole-list set, matching the live message —
+  `snapbuf_set pitch_scale 0 4 7` / `snapbuf_set smear_pitch_scale 0 3 7`.
+
+An unknown field or subfield is a pd error and leaves the buffer untouched. `snapbuf_get <band>`
+without a subfield reports all 8 values in export order.
+
+## Workflow
+
+  # perform on the current scene, prepare the next one offline
+  snapbuf_load 3                          # pull scene B into the workbench
+  snapbuf_get moog_cutoff                 # look inside (outlet 9: "snapbuf moog_cutoff 800")
+  snapbuf_set moog_cutoff 1200            # cold edits — the live sound never flinches
+  snapbuf_set amplitude_range min 0.3
+  snapbuf_store 3                         # write it back to the slot...
+  snapbuf_apply                           # ...or land it on the live engine right now
+
+## Notes
+
+- One buffer (the slots are the storage; the buffer is a workbench). No audition/compare in v1 —
+  edits are audible only after ASSIGN.
+- snapbuf_apply respects the selection tree: with `morph_exclude sources` the applied voice leaves
+  the live generator rates untouched, exactly like a recall.
+- snapbuf_from_live inherits capture transparency: with the matrix wobbling a destination, the
+  buffer records the knob value (the tracked base), never base+offset.
 
 # QUERY STATE
 

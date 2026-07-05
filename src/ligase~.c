@@ -6,6 +6,7 @@
 #include "grain_distortion.h"
 #include "grain_moogladder.h"
 #include "grain_smear.h"
+#include "grain_smear_bank.h"
 #include "morph.h"
 #include <stdlib.h>
 #include <string.h>
@@ -59,11 +60,16 @@ extern float envelope_sample(envelope_t *env, float phase);
 
 extern scheduler_t* scheduler_create(envelope_t *env, int sample_rate);
 extern void scheduler_destroy(scheduler_t *sched);
-extern void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, uint32_t splice_start, uint32_t splice_end, float amplitude, float pan, float saw_cycles, float saw_depth);
+extern void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, uint32_t splice_start, uint32_t splice_end, float amplitude, float pan, float saw_cycles, float saw_depth, int voice_note, int voice_active);
 extern void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float *out_right, int blocksize);
 extern float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, float base_value);
 extern void pattern_eval_slot(perlin_state_t *perlin_state, int slot);
 extern float sample_scale_semitones(pitch_scale_t *scale, perlin_state_t *perlin_state, param_range_t *semitone_range);
+// Modulation matrix helpers (grain.c): source id -> [0,1]; per-dest overlay sum; active scan
+extern float mod_source_value(perlin_state_t *ps, int source);
+extern float matrix_sum_for_dest(scheduler_t *sched, int dest);
+extern int matrix_dest_active(scheduler_t *sched, int dest);
+extern void matrix_cache_grain_sums(scheduler_t *sched);   // v1.5: per-grain sums, once per block
 
 extern grain_delay_t* grain_delay_create(int sample_rate);
 extern void grain_delay_destroy(grain_delay_t *delay);
@@ -205,9 +211,22 @@ struct _ligase {
     grain_delay_bencina_t *delay_bencina;  // Bencina mode processor
     grain_moogladder_t *moogladder;
     grain_smear_t *smear;   // allpass smear effect
+    grain_smear_bank_t *smear_bank;  // resonator bank (smear_mode 1); eager-created beside smear
+    int smear_mode;         // smear_mode_t: SMEAR_MODE_SINGLE (default) | SMEAR_MODE_BANK
 
     morph_state_t *morph;   // morph / Metasurface layer (snapshot interpolation)
     morph_fx_shadow_t fx_shadow;  // last-set opaque-FX scalar bases (for morph capture)
+
+    // Snapshot Expander EDIT BUFFER (Plans/snapshot_expander.md) — patch memory's classic
+    // workbench: owned by the message thread, NEVER read in ligase_perform. Cold by
+    // construction; the live engine changes only on snapbuf_apply / snapbuf_store.
+    morph_snapshot_t snapbuf;
+    int snapbuf_has;        // buffer holds a voice (snapbuf_load / _from_live / _set)
+    // v1.1 AUDITION latch (the GATE A.1/A.3 pair): while latched, the buffer's voice is
+    // temporarily applied and the pre-audition live voice is held in snapbuf_revert for
+    // the release. COMPARE is a toggle over the same latch.
+    morph_snapshot_t snapbuf_revert;
+    int snapbuf_audition;   // 1 = auditioning (live currently carries the buffer's voice)
 
     // Parameters
     float grain_size;
@@ -338,6 +357,16 @@ struct _ligase {
     float bencina_grainsize_current;
     // @endregion:ligase_pd.pd_external.outlets.state.tracking
 
+    // MOD MATRIX: per-destination base tracking for matrix-ONLY drive (range disabled). Several
+    // per-block destinations read their base from the SAME field their setter writes (moog
+    // cutoff, gdelay time, scan_rate, envelope skew, ...): naively re-adding the matrix offset
+    // to last block's output would integrate (runaway until the clamp). mod_track_base()
+    // pins the base to the last EXTERNALLY-written value: if the field still equals our last
+    // matrix output nobody else wrote it (keep the stored base); if it differs, an inlet or
+    // message wrote it (adopt the new value as base). Untouched when the matrix is inert.
+    float mod_base[MOD_DEST_COUNT];
+    float mod_last_out[MOD_DEST_COUNT];
+
     // Fixed-size temporary buffers for DSP processing (avoid VLAs on audio thread stack)
     // Maximum block size is typically 64-4096, using 8192 for safety
     float temp_left[8192];
@@ -398,6 +427,89 @@ static inline float wrap_to_splice(float pos, float start, float len) {
 // playback. Kept just below unity so the loop sustains (long decay) at the "freeze" end of SOS
 // without growing unbounded; a tanh soft-limiter is the hard ceiling on top of this. Tunable.
 #define TLA_FEEDBACK_MAX 0.95f
+
+// @region:ligase_pd.pd_external.mod_matrix.apply Modulation Matrix Apply Helpers
+
+// Per-destination musical bounds for the matrix overlay — the MATRIX APPLY SITE owns the clamp
+// (the existing setters do not all clamp internally). Each bound REPRODUCES the clamp the engine
+// already applies for that parameter (setter-internal or inlet validation), so the table never
+// fights an existing clamp:
+//   gdelay time        [0, 9.5]      grain_delay_set_time clamps 0..9.5 s
+//   gdelay feed/tone/mix [0, 1]      grain_delay_set_* clamp 0..1
+//   moog cutoff        [20, 20000]   grain_moogladder_set_cutoff clamps 20..20000 (then nyquist)
+//   moog resonance     [0, 4]        grain_moogladder_set_resonance clamps 0..4
+//   moog mix           [0, 1]        grain_moogladder_set_mix clamps 0..1
+//   smear frequency    [20, 20000]   final owner is smear_update_coeffs' [20, 0.45*sr]
+//   smear resonance    [0, 0.999]    grain_smear_set_resonance clamps 0..0.999
+//   smear stages       [0, 48]       grain_smear_set_stages clamps 0..GRAIN_SMEAR_MAX_STAGES
+//   smear feedback     [-0.99, 0.99] grain_smear_set_feedback clamps -0.99..0.99
+//   scanrate           [-1000, 1000] inlet validation range
+//   organize/sos/env_skew [0, 1]     inlet validation / envelope_set_skew clamp
+//   iot                [0.0005, 2]   scheduler iot range (trigger period floored at 1 sample)
+//   modout1-4          UNCLAMPED     patch-out floats; overshoot is harmless and a user's
+//                                    modout range may deliberately span any values ({0,0} = none)
+// PER-GRAIN tier (v1.5) — these clamp AT THE TRIGGER SITE in scheduler_trigger_grain (the
+// pre-existing in-place clamps, which the sum is added before); the entries here mirror those
+// clamps so the id/bounds/name triple stays complete:
+//   speed              [-4, 4]       trigger-path final_speed clamp (aliasing guard)
+//   grainsize          [0.01, 2]     trigger-path in-place clamp (seconds)
+//   grain_start        [0, 1]        normalized splice offset
+//   amplitude          [0, 2]        trigger-path in-place clamp (+6 dB headroom)
+//   pan                [0, 1]        trigger-path in-place clamp
+//   pitch_fine         [-0.5, 0.5]   semitones (+/-50 cents), the fine-tune contract
+typedef struct { float lo, hi; } mod_dest_bounds_t;
+static const mod_dest_bounds_t mod_dest_bounds[MOD_DEST_COUNT] = {
+    [MOD_DEST_NONE]            = {0.0f,     0.0f},
+    [MOD_DEST_GDELAY]          = {0.0f,     9.5f},
+    [MOD_DEST_GDELAY_FEED]     = {0.0f,     1.0f},
+    [MOD_DEST_GDELAY_TONE]     = {0.0f,     1.0f},
+    [MOD_DEST_GDELAY_MIX]      = {0.0f,     1.0f},
+    [MOD_DEST_MOOG_CUTOFF]     = {20.0f,    20000.0f},
+    [MOD_DEST_MOOG_RESONANCE]  = {0.0f,     4.0f},
+    [MOD_DEST_MOOG_MIX]        = {0.0f,     1.0f},
+    [MOD_DEST_SMEAR_FREQUENCY] = {20.0f,    20000.0f},
+    [MOD_DEST_SMEAR_RESONANCE] = {0.0f,     0.999f},
+    [MOD_DEST_SMEAR_STAGES]    = {0.0f,     48.0f},
+    [MOD_DEST_SMEAR_FEEDBACK]  = {-0.99f,   0.99f},
+    [MOD_DEST_SCANRATE]        = {-1000.0f, 1000.0f},
+    [MOD_DEST_ORGANIZE]        = {0.0f,     1.0f},
+    [MOD_DEST_SOS]             = {0.0f,     1.0f},
+    [MOD_DEST_IOT]             = {0.0005f,  2.0f},
+    [MOD_DEST_ENV_SKEW]        = {0.0f,     1.0f},
+    [MOD_DEST_MODOUT1]         = {0.0f,     0.0f},   // unclamped (lo==hi==0 sentinel)
+    [MOD_DEST_MODOUT2]         = {0.0f,     0.0f},
+    [MOD_DEST_MODOUT3]         = {0.0f,     0.0f},
+    [MOD_DEST_MODOUT4]         = {0.0f,     0.0f},
+    [MOD_DEST_SPEED]           = {-4.0f,    4.0f},
+    [MOD_DEST_GRAINSIZE]       = {0.01f,    2.0f},
+    [MOD_DEST_GRAIN_START]     = {0.0f,     1.0f},
+    [MOD_DEST_AMPLITUDE]       = {0.0f,     2.0f},
+    [MOD_DEST_PAN]             = {0.0f,     1.0f},
+    [MOD_DEST_PITCH_FINE]      = {-0.5f,    0.5f},
+};
+
+// Clamp a matrix-modulated value to its destination's musical range. lo==hi==0 = no bounds
+// registered (modout patch-outs). Only called when the matrix contributes, so with zero
+// connections no value ever passes through here (backward compat stays byte-for-byte).
+static inline float mod_dest_clamp(int dest, float v) {
+    if (dest <= MOD_DEST_NONE || dest >= MOD_DEST_COUNT) return v;
+    float lo = mod_dest_bounds[dest].lo, hi = mod_dest_bounds[dest].hi;
+    if (lo == 0.0f && hi == 0.0f) return v;
+    if (!isfinite(v)) return lo;          // defensive: never hand a NaN/Inf to a setter
+    if (v < lo) v = lo;
+    if (v > hi) v = hi;
+    return v;
+}
+
+// Stable base for matrix-ONLY drive of a self-read/write destination (see the mod_base field
+// comment). field_value == our last matrix output -> nobody else wrote it, keep the stored
+// base; differs -> external write (inlet/message/quantizer), adopt it as the new base.
+static inline float mod_track_base(ligase_t *x, int dest, float field_value) {
+    if (field_value != x->mod_last_out[dest]) x->mod_base[dest] = field_value;
+    return x->mod_base[dest];
+}
+
+// @endregion:ligase_pd.pd_external.mod_matrix.apply
 
 static void ligase_update_inlets(ligase_t *x,
     t_sample *grain_size_in, t_sample *grain_start_in,
@@ -808,55 +920,114 @@ static void ligase_update_inlets(ligase_t *x,
     float sampled_gdelay_time = sample_param_range(&x->scheduler->gdelay_range,
                                                    &x->scheduler->perlin_state,
                                                    x->grain_delay->delay_time);
-    // Only apply if range is enabled (preserves quantization when not ranging)
-    if (x->scheduler->gdelay_range.enabled) {
-        grain_delay_set_time(x->grain_delay, sampled_gdelay_time);
-        x->gdelay_time_current = sampled_gdelay_time;  // Store modulated value for query
+    // Only apply if range is enabled (preserves quantization when not ranging).
+    // MOD MATRIX overlay: when a connection targets this dest the sum is added on top of the
+    // base (range-sampled when enabled, else the tracked scalar base) and clamped; the setter
+    // then applies even with the range disabled (enabled-gate extension). Matrix inactive ->
+    // the original path below runs verbatim (byte-for-byte backward compat).
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_GDELAY)) {
+        if (x->scheduler->gdelay_range.enabled) {
+            grain_delay_set_time(x->grain_delay, sampled_gdelay_time);
+            x->gdelay_time_current = sampled_gdelay_time;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->gdelay_range.enabled
+                   ? sampled_gdelay_time
+                   : mod_track_base(x, MOD_DEST_GDELAY, x->grain_delay->delay_time);
+        float v = mod_dest_clamp(MOD_DEST_GDELAY,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_GDELAY));
+        grain_delay_set_time(x->grain_delay, v);
+        x->gdelay_time_current = v;
+        x->mod_last_out[MOD_DEST_GDELAY] = v;
     }
 
     // Sample GDelay feedback with range (if enabled)
     // In Stut mode, routes to stut_reduction instead of feedback
-    if (x->scheduler->gdelay_feedback_range.enabled) {
-        if (x->grain_delay->mode == DELAY_MODE_STUT) {
-            float sampled = sample_param_range(&x->scheduler->gdelay_feedback_range,
-                                               &x->scheduler->perlin_state,
-                                               x->delay_stut->gain_reduction);
-            grain_delay_stut_set_reduction(x->delay_stut, sampled);
-            x->gdelay_feedback_current = sampled;
-        } else {
-            float sampled_gdelay_feedback = sample_param_range(&x->scheduler->gdelay_feedback_range,
-                                                                &x->scheduler->perlin_state,
-                                                                x->grain_delay->feedback);
-            grain_delay_set_feedback(x->grain_delay, sampled_gdelay_feedback);
-            x->gdelay_feedback_current = sampled_gdelay_feedback;
+    // MOD MATRIX: gdelay_feed applies in BOTH modes (feedback and stut reduction share the
+    // same 0-1 units, so the depth means the same thing on either target).
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_GDELAY_FEED)) {
+        if (x->scheduler->gdelay_feedback_range.enabled) {
+            if (x->grain_delay->mode == DELAY_MODE_STUT) {
+                float sampled = sample_param_range(&x->scheduler->gdelay_feedback_range,
+                                                   &x->scheduler->perlin_state,
+                                                   x->delay_stut->gain_reduction);
+                grain_delay_stut_set_reduction(x->delay_stut, sampled);
+                x->gdelay_feedback_current = sampled;
+            } else {
+                float sampled_gdelay_feedback = sample_param_range(&x->scheduler->gdelay_feedback_range,
+                                                                    &x->scheduler->perlin_state,
+                                                                    x->grain_delay->feedback);
+                grain_delay_set_feedback(x->grain_delay, sampled_gdelay_feedback);
+                x->gdelay_feedback_current = sampled_gdelay_feedback;
+            }
         }
+    } else {
+        int   stut  = (x->grain_delay->mode == DELAY_MODE_STUT);
+        float field = stut ? x->delay_stut->gain_reduction : x->grain_delay->feedback;
+        float base  = x->scheduler->gdelay_feedback_range.enabled
+                    ? sample_param_range(&x->scheduler->gdelay_feedback_range,
+                                         &x->scheduler->perlin_state, field)
+                    : mod_track_base(x, MOD_DEST_GDELAY_FEED, field);
+        float v = mod_dest_clamp(MOD_DEST_GDELAY_FEED,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_GDELAY_FEED));
+        if (stut) grain_delay_stut_set_reduction(x->delay_stut, v);
+        else      grain_delay_set_feedback(x->grain_delay, v);
+        x->gdelay_feedback_current = v;
+        x->mod_last_out[MOD_DEST_GDELAY_FEED] = v;
     }
 
     // Sample GDelay tone with range (if enabled)
     // In Stut mode, routes to stut_spacing instead of tone
-    if (x->scheduler->gdelay_tone_range.enabled) {
-        if (x->grain_delay->mode == DELAY_MODE_STUT) {
+    // MOD MATRIX: gdelay_tone applies in DD-4/Bencina only. In Stut the range retargets to
+    // spacing in MILLISECONDS — a matrix depth expressed in tone units (0-1) has no meaning
+    // there, so the matrix contribution is deliberately NOT applied in Stut mode (the range
+    // path below still runs as today).
+    if (x->grain_delay->mode == DELAY_MODE_STUT) {
+        if (x->scheduler->gdelay_tone_range.enabled) {
             float sampled = sample_param_range(&x->scheduler->gdelay_tone_range,
                                                &x->scheduler->perlin_state,
                                                x->delay_stut->spacing_ms);
             grain_delay_stut_set_spacing(x->delay_stut, sampled);
             x->gdelay_tone_current = sampled;
-        } else {
+        }
+    } else if (!matrix_dest_active(x->scheduler, MOD_DEST_GDELAY_TONE)) {
+        if (x->scheduler->gdelay_tone_range.enabled) {
             float sampled_gdelay_tone = sample_param_range(&x->scheduler->gdelay_tone_range,
                                                             &x->scheduler->perlin_state,
                                                             x->grain_delay->tone);
             grain_delay_set_tone(x->grain_delay, sampled_gdelay_tone);
             x->gdelay_tone_current = sampled_gdelay_tone;
         }
+    } else {
+        float base = x->scheduler->gdelay_tone_range.enabled
+                   ? sample_param_range(&x->scheduler->gdelay_tone_range,
+                                        &x->scheduler->perlin_state, x->grain_delay->tone)
+                   : mod_track_base(x, MOD_DEST_GDELAY_TONE, x->grain_delay->tone);
+        float v = mod_dest_clamp(MOD_DEST_GDELAY_TONE,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_GDELAY_TONE));
+        grain_delay_set_tone(x->grain_delay, v);
+        x->gdelay_tone_current = v;
+        x->mod_last_out[MOD_DEST_GDELAY_TONE] = v;
     }
 
     // Sample GDelay mix with range (if enabled)
     float sampled_gdelay_mix = sample_param_range(&x->scheduler->gdelay_mix_range,
                                                    &x->scheduler->perlin_state,
                                                    x->grain_delay->mix);
-    if (x->scheduler->gdelay_mix_range.enabled) {
-        grain_delay_set_mix(x->grain_delay, sampled_gdelay_mix);
-        x->gdelay_mix_current = sampled_gdelay_mix;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_GDELAY_MIX)) {
+        if (x->scheduler->gdelay_mix_range.enabled) {
+            grain_delay_set_mix(x->grain_delay, sampled_gdelay_mix);
+            x->gdelay_mix_current = sampled_gdelay_mix;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->gdelay_mix_range.enabled
+                   ? sampled_gdelay_mix
+                   : mod_track_base(x, MOD_DEST_GDELAY_MIX, x->grain_delay->mix);
+        float v = mod_dest_clamp(MOD_DEST_GDELAY_MIX,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_GDELAY_MIX));
+        grain_delay_set_mix(x->grain_delay, v);
+        x->gdelay_mix_current = v;
+        x->mod_last_out[MOD_DEST_GDELAY_MIX] = v;
     }
 
     // Sample Moogladder parameters with ranges (if enabled)
@@ -864,25 +1035,58 @@ static void ligase_update_inlets(ligase_t *x,
     float sampled_moog_cutoff = sample_param_range(&x->scheduler->moog_cutoff_range,
                                                     &x->scheduler->perlin_state,
                                                     x->moogladder->cutoff);
-    if (x->scheduler->moog_cutoff_range.enabled) {
-        grain_moogladder_set_cutoff(x->moogladder, sampled_moog_cutoff);
-        x->moog_cutoff_current = sampled_moog_cutoff;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_MOOG_CUTOFF)) {
+        if (x->scheduler->moog_cutoff_range.enabled) {
+            grain_moogladder_set_cutoff(x->moogladder, sampled_moog_cutoff);
+            x->moog_cutoff_current = sampled_moog_cutoff;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->moog_cutoff_range.enabled
+                   ? sampled_moog_cutoff
+                   : mod_track_base(x, MOD_DEST_MOOG_CUTOFF, x->moogladder->cutoff);
+        float v = mod_dest_clamp(MOD_DEST_MOOG_CUTOFF,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_MOOG_CUTOFF));
+        grain_moogladder_set_cutoff(x->moogladder, v);
+        x->moog_cutoff_current = v;
+        x->mod_last_out[MOD_DEST_MOOG_CUTOFF] = v;
     }
 
     float sampled_moog_resonance = sample_param_range(&x->scheduler->moog_resonance_range,
                                                        &x->scheduler->perlin_state,
                                                        x->moogladder->resonance);
-    if (x->scheduler->moog_resonance_range.enabled) {
-        grain_moogladder_set_resonance(x->moogladder, sampled_moog_resonance);
-        x->moog_resonance_current = sampled_moog_resonance;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_MOOG_RESONANCE)) {
+        if (x->scheduler->moog_resonance_range.enabled) {
+            grain_moogladder_set_resonance(x->moogladder, sampled_moog_resonance);
+            x->moog_resonance_current = sampled_moog_resonance;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->moog_resonance_range.enabled
+                   ? sampled_moog_resonance
+                   : mod_track_base(x, MOD_DEST_MOOG_RESONANCE, x->moogladder->resonance);
+        float v = mod_dest_clamp(MOD_DEST_MOOG_RESONANCE,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_MOOG_RESONANCE));
+        grain_moogladder_set_resonance(x->moogladder, v);
+        x->moog_resonance_current = v;
+        x->mod_last_out[MOD_DEST_MOOG_RESONANCE] = v;
     }
 
     float sampled_moog_mix = sample_param_range(&x->scheduler->moog_mix_range,
                                                  &x->scheduler->perlin_state,
                                                  x->moogladder->mix);
-    if (x->scheduler->moog_mix_range.enabled) {
-        grain_moogladder_set_mix(x->moogladder, sampled_moog_mix);
-        x->moog_mix_current = sampled_moog_mix;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_MOOG_MIX)) {
+        if (x->scheduler->moog_mix_range.enabled) {
+            grain_moogladder_set_mix(x->moogladder, sampled_moog_mix);
+            x->moog_mix_current = sampled_moog_mix;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->moog_mix_range.enabled
+                   ? sampled_moog_mix
+                   : mod_track_base(x, MOD_DEST_MOOG_MIX, x->moogladder->mix);
+        float v = mod_dest_clamp(MOD_DEST_MOOG_MIX,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_MOOG_MIX));
+        grain_moogladder_set_mix(x->moogladder, v);
+        x->moog_mix_current = v;
+        x->mod_last_out[MOD_DEST_MOOG_MIX] = v;
     }
 
     // Sample stut_reps with range (if enabled)
@@ -920,21 +1124,50 @@ static void ligase_update_inlets(ligase_t *x,
         // OVERRIDE: when the smear pitch destination is enabled it OWNS freq_hz this block, so the
         // continuous smear_frequency_range modulation is BYPASSED here (consistent with grain pitch,
         // where engaging a pitch source bypasses speed_range). Disabled -> exactly today's behavior.
-        if (x->scheduler->smear_frequency_range.enabled && !x->scheduler->smear_pitch_control.enabled) {
-            grain_smear_set_frequency(x->smear,
-                sample_param_range(&x->scheduler->smear_frequency_range, &x->scheduler->perlin_state, 0.0f));
+        // MOD MATRIX: grain_smear_t is opaque (no readback), so matrix-only drive centers on the
+        // fx_shadow scalar base (the last message-set value, defaulting to the smear defaults) —
+        // sample_param_range returns that base when the range is disabled, and ignores it when
+        // enabled, so the enabled path is unchanged. The smear pitch override also gates the
+        // matrix (it is the sole freq owner while enabled).
+        {
+            int mx = matrix_dest_active(x->scheduler, MOD_DEST_SMEAR_FREQUENCY);
+            if ((x->scheduler->smear_frequency_range.enabled || mx) && !x->scheduler->smear_pitch_control.enabled) {
+                float v = sample_param_range(&x->scheduler->smear_frequency_range,
+                                             &x->scheduler->perlin_state, x->fx_shadow.smear_frequency);
+                if (mx) v = mod_dest_clamp(MOD_DEST_SMEAR_FREQUENCY,
+                                           v + matrix_sum_for_dest(x->scheduler, MOD_DEST_SMEAR_FREQUENCY));
+                grain_smear_set_frequency(x->smear, v);
+            }
         }
-        if (x->scheduler->smear_resonance_range.enabled) {
-            grain_smear_set_resonance(x->smear,
-                sample_param_range(&x->scheduler->smear_resonance_range, &x->scheduler->perlin_state, 0.0f));
+        {
+            int mx = matrix_dest_active(x->scheduler, MOD_DEST_SMEAR_RESONANCE);
+            if (x->scheduler->smear_resonance_range.enabled || mx) {
+                float v = sample_param_range(&x->scheduler->smear_resonance_range,
+                                             &x->scheduler->perlin_state, x->fx_shadow.smear_resonance);
+                if (mx) v = mod_dest_clamp(MOD_DEST_SMEAR_RESONANCE,
+                                           v + matrix_sum_for_dest(x->scheduler, MOD_DEST_SMEAR_RESONANCE));
+                grain_smear_set_resonance(x->smear, v);
+            }
         }
-        if (x->scheduler->smear_stages_range.enabled) {
-            grain_smear_set_stages(x->smear,
-                (int)sample_param_range(&x->scheduler->smear_stages_range, &x->scheduler->perlin_state, 0.0f));
+        {
+            int mx = matrix_dest_active(x->scheduler, MOD_DEST_SMEAR_STAGES);
+            if (x->scheduler->smear_stages_range.enabled || mx) {
+                float v = sample_param_range(&x->scheduler->smear_stages_range,
+                                             &x->scheduler->perlin_state, x->fx_shadow.smear_stages);
+                if (mx) v = mod_dest_clamp(MOD_DEST_SMEAR_STAGES,
+                                           v + matrix_sum_for_dest(x->scheduler, MOD_DEST_SMEAR_STAGES));
+                grain_smear_set_stages(x->smear, (int)v);
+            }
         }
-        if (x->scheduler->smear_feedback_range.enabled) {
-            grain_smear_set_feedback(x->smear,
-                sample_param_range(&x->scheduler->smear_feedback_range, &x->scheduler->perlin_state, 0.0f));
+        {
+            int mx = matrix_dest_active(x->scheduler, MOD_DEST_SMEAR_FEEDBACK);
+            if (x->scheduler->smear_feedback_range.enabled || mx) {
+                float v = sample_param_range(&x->scheduler->smear_feedback_range,
+                                             &x->scheduler->perlin_state, x->fx_shadow.smear_feedback);
+                if (mx) v = mod_dest_clamp(MOD_DEST_SMEAR_FEEDBACK,
+                                           v + matrix_sum_for_dest(x->scheduler, MOD_DEST_SMEAR_FEEDBACK));
+                grain_smear_set_feedback(x->smear, v);
+            }
         }
 
         // SMEAR pitch destination: resolve the source to a semitone, then hz = ref_hz * 2^(semitone/12).
@@ -989,42 +1222,104 @@ static void ligase_update_inlets(ligase_t *x,
                 }
             }
         }
+
+        // RESONATOR BANK tuning (smear_mode 1): the bank's per-voice pitches ARE the smear-pitch
+        // scale's degrees (loaded by smear_pitch_scale) via the SAME note->Hz formula as above —
+        // no second pitch path. N = scale.count (capped); reads sp->scale directly, independent
+        // of the sp->enabled single-voice resolver, so loading a chord and enabling the single
+        // voice's pitch source stay decoupled. Once per block; each voice's Hz routes through
+        // grain_smear_set_frequency -> smear_update_coeffs' [20, 0.45*sr] clamp (sole bounds owner).
+        if (x->smear_mode == SMEAR_MODE_BANK && x->smear_bank) {
+            smear_pitch_control_t *sp = &x->scheduler->smear_pitch_control;
+            int count = sp->scale.count;
+            if (count > GRAIN_SMEAR_BANK_MAX_VOICES) count = GRAIN_SMEAR_BANK_MAX_VOICES;
+            grain_smear_bank_set_count(x->smear_bank, count);
+            for (int vi = 0; vi < count; vi++) {
+                float semitone = sp->scale.semitones[vi] + sp->semitone_fine;   // P1 scale + P3 fine
+                float hz = sp->ref_hz * powf(2.0f, semitone / 12.0f);           // same formula as the resolver above
+                grain_smear_bank_set_voice_freq(x->smear_bank, vi, hz);
+            }
+        }
     }
 
     // Sample scanrate with range (if enabled)
-    if (x->scheduler->scanrate_range.enabled) {
-        float sampled = sample_param_range(&x->scheduler->scanrate_range,
-                                           &x->scheduler->perlin_state,
-                                           x->scan_rate);
-        x->scan_rate = sampled;
-        x->scanrate_current = sampled;
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_SCANRATE)) {
+        if (x->scheduler->scanrate_range.enabled) {
+            float sampled = sample_param_range(&x->scheduler->scanrate_range,
+                                               &x->scheduler->perlin_state,
+                                               x->scan_rate);
+            x->scan_rate = sampled;
+            x->scanrate_current = sampled;
+        }
+    } else {
+        // MOD MATRIX: scan_rate is read back as its own base, so matrix-only drive uses the
+        // tracked base (see mod_track_base) to avoid integrating the offset block over block.
+        float base = x->scheduler->scanrate_range.enabled
+                   ? sample_param_range(&x->scheduler->scanrate_range,
+                                        &x->scheduler->perlin_state, x->scan_rate)
+                   : mod_track_base(x, MOD_DEST_SCANRATE, x->scan_rate);
+        float v = mod_dest_clamp(MOD_DEST_SCANRATE,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_SCANRATE));
+        x->scan_rate = v;
+        x->scanrate_current = v;
+        x->mod_last_out[MOD_DEST_SCANRATE] = v;
     }
 
     // Sample organize with range (if enabled)
     float sampled_organize = sample_param_range(&x->scheduler->organize_range,
                                                  &x->scheduler->perlin_state,
                                                  x->organize_cv);
-    if (x->scheduler->organize_range.enabled && sampled_organize > 0.001f && sampled_organize <= 1.0f) {
-        splice_organize(&x->reel->splices, sampled_organize);
-        x->organize_current = sampled_organize;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_ORGANIZE)) {
+        if (x->scheduler->organize_range.enabled && sampled_organize > 0.001f && sampled_organize <= 1.0f) {
+            splice_organize(&x->reel->splices, sampled_organize);
+            x->organize_current = sampled_organize;  // Store modulated value for query
+        }
+    } else {
+        // MOD MATRIX: base = range-sampled (enabled) or the stored organize CV (disabled — the
+        // sample call above already returned x->organize_cv in that case). Same >epsilon guard
+        // as the range path so a 0 value still means "no selection".
+        float v = mod_dest_clamp(MOD_DEST_ORGANIZE,
+                                 sampled_organize + matrix_sum_for_dest(x->scheduler, MOD_DEST_ORGANIZE));
+        if (v > 0.001f && v <= 1.0f) {
+            splice_organize(&x->reel->splices, v);
+            x->organize_current = v;
+        }
     }
 
     // Sample SOS mix with range (if enabled)
-    if (x->scheduler->sos_range.enabled && x->recorder && x->sos_mode == 0) {
-        float sampled_sos = sample_param_range(&x->scheduler->sos_range,
-                                                &x->scheduler->perlin_state,
-                                                x->sos_value);
-        x->recorder->crossfade_mix = sampled_sos;
-        x->sos_current = sampled_sos;  // Store modulated value for query
+    // MOD MATRIX: base = x->sos_value (message-stored scalar; not written back here, so no
+    // feedback) via sample_param_range's disabled path; matrix sum on top, clamped 0-1.
+    {
+        int mx = matrix_dest_active(x->scheduler, MOD_DEST_SOS);
+        if ((x->scheduler->sos_range.enabled || mx) && x->recorder && x->sos_mode == 0) {
+            float sampled_sos = sample_param_range(&x->scheduler->sos_range,
+                                                    &x->scheduler->perlin_state,
+                                                    x->sos_value);
+            if (mx) sampled_sos = mod_dest_clamp(MOD_DEST_SOS,
+                                                 sampled_sos + matrix_sum_for_dest(x->scheduler, MOD_DEST_SOS));
+            x->recorder->crossfade_mix = sampled_sos;
+            x->sos_current = sampled_sos;  // Store modulated value for query
+        }
     }
 
     // Sample env_skew with range (if enabled)
     float sampled_env_skew = sample_param_range(&x->scheduler->env_skew_range,
                                                  &x->scheduler->perlin_state,
                                                  x->envelope->skew);
-    if (x->scheduler->env_skew_range.enabled) {
-        envelope_set_skew(x->envelope, sampled_env_skew);
-        x->env_skew_current = sampled_env_skew;  // Store modulated value for query
+    if (!matrix_dest_active(x->scheduler, MOD_DEST_ENV_SKEW)) {
+        if (x->scheduler->env_skew_range.enabled) {
+            envelope_set_skew(x->envelope, sampled_env_skew);
+            x->env_skew_current = sampled_env_skew;  // Store modulated value for query
+        }
+    } else {
+        float base = x->scheduler->env_skew_range.enabled
+                   ? sampled_env_skew
+                   : mod_track_base(x, MOD_DEST_ENV_SKEW, x->envelope->skew);
+        float v = mod_dest_clamp(MOD_DEST_ENV_SKEW,
+                                 base + matrix_sum_for_dest(x->scheduler, MOD_DEST_ENV_SKEW));
+        if (v != x->envelope->skew) envelope_set_skew(x->envelope, v);  // set_skew regenerates the table
+        x->env_skew_current = v;
+        x->mod_last_out[MOD_DEST_ENV_SKEW] = v;
     }
 
     // Calculate grain trigger period
@@ -1035,6 +1330,14 @@ static void ligase_update_inlets(ligase_t *x,
                                           x->scheduler->iot);
     if (x->scheduler->iot_range.enabled) {
         x->iot_current = sampled_iot;  // Store modulated value for query
+    }
+    // MOD MATRIX: iot flows into the trigger period below whether or not the range is enabled
+    // (sample_param_range returns x->scheduler->iot when disabled — a stable base, never written
+    // back), so the overlay just adds to sampled_iot before the period is computed.
+    if (matrix_dest_active(x->scheduler, MOD_DEST_IOT)) {
+        sampled_iot = mod_dest_clamp(MOD_DEST_IOT,
+                                     sampled_iot + matrix_sum_for_dest(x->scheduler, MOD_DEST_IOT));
+        x->iot_current = sampled_iot;
     }
     int base_trigger_period = (int)(sampled_iot * x->sample_rate);
 
@@ -1165,7 +1468,16 @@ static void ligase_process_grains(ligase_t *x,
                     // GrainStart parameter slides the playhead position through splice
                     float grain_pos = splice_start + (x->grain_start * splice_length);
 
-                    scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth);
+                    // CHORDAL POLY: snapshot voice_count once (tear-tolerant), spawn one grain per
+                    // active voice at that voice's note. Mono default -> single call, voice_active=0.
+                    int vc = x->scheduler->voice_count;
+                    if (x->scheduler->poly_enabled && vc > 0) {
+                        for (int v = 0; v < vc; v++) {
+                            scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, x->scheduler->voice_note[v], 1);
+                        }
+                    } else {
+                        scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, 0, 0);
+                    }
 
                     // Grain bang output: bang every x grains
                     if (x->grain_bang_rate > 0) {
@@ -1194,7 +1506,15 @@ static void ligase_process_grains(ligase_t *x,
                     // Wrap grain position within splice bounds (O(1), can't hang)
                     grain_pos = wrap_to_splice(grain_pos, (float)splice_start, splice_length);
 
-                    scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth);
+                    // CHORDAL POLY: one grain per active voice (see STATIC site for rationale).
+                    int vc = x->scheduler->voice_count;
+                    if (x->scheduler->poly_enabled && vc > 0) {
+                        for (int v = 0; v < vc; v++) {
+                            scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, x->scheduler->voice_note[v], 1);
+                        }
+                    } else {
+                        scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, 0, 0);
+                    }
 
                     // Grain bang output: bang every x grains
                     if (x->grain_bang_rate > 0) {
@@ -1315,7 +1635,15 @@ static void ligase_process_grains(ligase_t *x,
                     // Wrap grain position within splice bounds (O(1), can't hang)
                     grain_pos = wrap_to_splice(grain_pos, (float)splice_start, splice_length);
 
-                    scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth);
+                    // CHORDAL POLY: one grain per active voice (see STATIC site for rationale).
+                    int vc = x->scheduler->voice_count;
+                    if (x->scheduler->poly_enabled && vc > 0) {
+                        for (int v = 0; v < vc; v++) {
+                            scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, x->scheduler->voice_note[v], 1);
+                        }
+                    } else {
+                        scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, 0, 0);
+                    }
 
                     // Grain bang output: bang every x grains
                     if (x->grain_bang_rate > 0) {
@@ -1541,7 +1869,11 @@ static void ligase_process_effects(ligase_t *x,
 
     // Allpass smear (monitoring only, not recorded): a cascade of 2nd-order
     // allpass sections — cheap, stable, time-domain spectral smearing.
-    if (x->smear) {
+    // smear_mode BANK routes the granular+delay bus through the resonator bank instead
+    // (grains = exciter, bank = body); SINGLE (default) is the identical call as always.
+    if (x->smear_mode == SMEAR_MODE_BANK && x->smear_bank) {
+        grain_smear_bank_process(x->smear_bank, out_left, out_right, n);
+    } else if (x->smear) {
         grain_smear_process(x->smear, out_left, out_right, n);
     }
 
@@ -1587,6 +1919,93 @@ static void ligase_process_effects(ligase_t *x,
 // drive the route and the CV cursor at control rate.
 static void morph_step(ligase_t *x, int n);
 static void morph_apply_at(ligase_t *x, float cx, float cy);
+
+// @region:ligase_pd.core.pattern.event_fire Pattern event dispatcher (perform-thread)
+// Fire one discrete action for an EVENT-tagged pattern slot, called from the perform pattern-eval
+// loop on the slot's changed && !cached_is_rest edge (one fire per non-rest step entry, quantized
+// to the cycle clock). Does ONLY perform-safe work — the same int/flag writes and pool/outlet
+// calls the perform routine already issues (scheduler_trigger_grain / outlet_bang at the grain
+// trigger sites, the pending_splice write at the wrap sites, the ligase_trigger/ligase_play flag
+// writes). No malloc, no gensym, no binbuf, no t_clock. The optional stderr trace mirrors the
+// existing pattern_debug fprintf idiom in the eval loop.
+static void ligase_pattern_fire_event(ligase_t *x, int kind, float arg) {
+    switch (kind) {
+    case PATTERN_KIND_EVENT_GRAIN: {
+        // Burst: fire (int)arg grains at the current playhead (splice start + grain_start offset)
+        // with the CURRENT speed/pan/amplitude — the exact call + args of the grain trigger sites.
+        // Mono voice args (0,0): a burst is a transport-level event, not a poly-voice spawn.
+        // Block-order note: a splice-select event only writes pending_splice (applied at the NEXT
+        // wrap), so a grain burst in the same block fires at the CURRENT splice.
+        int burst = (int)arg;
+        if (burst < 1) burst = 1;
+        if (burst > PATTERN_EVENT_MAX_BURST) burst = PATTERN_EVENT_MAX_BURST;
+        if (x->reel && x->reel->length > 0 && x->scheduler) {
+            uint32_t s0, e0;
+            splice_get_bounds(&x->reel->splices, x->reel->splices.current_splice,
+                              x->reel->length, &s0, &e0);
+            float pos = (float)s0 + x->grain_start * (float)(e0 - s0);
+            for (int b = 0; b < burst; b++)
+                scheduler_trigger_grain(x->scheduler, pos, x->speed, s0, e0,
+                                        x->amplitude, x->pan, x->saw_cycles, x->saw_depth, 0, 0);
+            if (x->grain_bang_rate > 0) outlet_bang(x->x_grain_bang_out); // mirrors grain-onset bang policy
+            if (x->pattern_debug)
+                fprintf(stderr, "ligase~ pat-event t=%.1fms grain burst=%d splice=%d\n",
+                        (double)clock_getlogicaltime() / 14112.0, burst,
+                        x->reel->splices.current_splice);
+        }
+        break;
+    }
+    case PATTERN_KIND_EVENT_SPLICE: {
+        // Jump/select a splice: write pending_splice; the perform wrap sites apply it at the next
+        // wrap (atomic int write, no alloc). Wrap the index like ligase_shift.
+        if (x->reel && x->reel->splices.count > 0) {
+            int idx = (int)arg, c = x->reel->splices.count;
+            idx = ((idx % c) + c) % c;
+            x->splice_behavior.pending_splice = idx;
+            if (x->pattern_debug)
+                fprintf(stderr, "ligase~ pat-event t=%.1fms splice pending=%d (current=%d)\n",
+                        (double)clock_getlogicaltime() / 14112.0, idx,
+                        x->reel->splices.current_splice);
+        }
+        break;
+    }
+    case PATTERN_KIND_EVENT_RETRIG: {
+        // Retrigger from splice start WITHOUT silencing active grains (mirror ligase_trigger).
+        if (x->reel && x->reel->length > 0) {
+            uint32_t s0, e0;
+            splice_get_bounds(&x->reel->splices, x->reel->splices.current_splice,
+                              x->reel->length, &s0, &e0);
+            x->playback_position = (float)s0;
+            x->is_playing    = 1;
+            x->is_triggering = 1;
+            if (x->pattern_debug)
+                fprintf(stderr, "ligase~ pat-event t=%.1fms retrig pos=%u\n",
+                        (double)clock_getlogicaltime() / 14112.0, (unsigned)s0);
+        }
+        break;
+    }
+    case PATTERN_KIND_EVENT_GATE: {
+        // Gate transport: arg != 0 -> play, == 0 -> stop new triggering. Same flags ligase_play
+        // writes; active grains always play out (no hard cut) — the pattern owns the transport.
+        int on = (arg != 0.0f) ? 1 : 0;
+        x->is_triggering = on;
+        x->is_playing    = on;
+        if (x->pattern_debug)
+            fprintf(stderr, "ligase~ pat-event t=%.1fms gate %d\n",
+                    (double)clock_getlogicaltime() / 14112.0, on);
+        break;
+    }
+    case PATTERN_KIND_EVENT_BANG:
+        outlet_bang(x->x_grain_bang_out);  // same call as the grain-onset bang site
+        if (x->pattern_debug)
+            fprintf(stderr, "ligase~ pat-event t=%.1fms bang\n",
+                    (double)clock_getlogicaltime() / 14112.0);
+        break;
+    default:
+        break;
+    }
+}
+// @endregion:ligase_pd.core.pattern.event_fire
 
 static t_int *ligase_perform(t_int *w) {
     // Flush denormals to zero for this audio callback (FPU mode is per-thread). Prevents the
@@ -1699,6 +2118,18 @@ null_ptr_error:
                 ps->pattern_cycle_index[s] += 1;             // integer counter drives <> alternation
             }
             pattern_eval_slot(ps, s);
+            // Event dispatch: if this slot is an EVENT slot and the active step just advanced to a
+            // non-rest step, FIRE the action inline. Reuses the `changed` flag pattern_eval_slot
+            // just set (read again below for the debug trace). cached_value supplies the event
+            // arg. A rest holds cached_is_rest=1 so Euclid off-positions stay silent; `changed`
+            // is true only on the step-entry block, so a held step never re-fires.
+            {
+                int kind = ps->pattern_target_kind[s];
+                if (kind != PATTERN_KIND_VALUE &&
+                    ps->pattern[s].changed && !ps->pattern[s].cached_is_rest) {
+                    ligase_pattern_fire_event(x, kind, ps->pattern[s].cached_value);
+                }
+            }
             if (x->pattern_debug && ps->pattern[s].changed) {
                 fprintf(stderr, "ligase~ pat t=%.1fms slot %d: step %d value %.4f rest %d cycle %ld\n",
                         (double)clock_getlogicaltime() / 14112.0, s,
@@ -1707,6 +2138,39 @@ null_ptr_error:
             }
         }
     }
+
+    // --- Input envelope follower (input-LISTENING source for the modulation matrix) -----------
+    // One-pole rectified-PEAK envelope over the block: rises instantly toward a new peak, decays
+    // at env_follow_coeff (release; 'env_follow_ms', default ~30 ms). Runs BEFORE update_inlets /
+    // process_grains so the cached value is fresh for both apply tiers this block. Mirrors
+    // pattern_eval_slot's per-block cache discipline: single writer (perform), no malloc/locks.
+    // Output is deliberately NOT hard-capped — input is typically <=1.0 and the per-destination
+    // clamp at the matrix apply site catches overshoot (hot input + high depth saturates the
+    // destination at its clamp). LIGASE_FLUSH_DENORMALS() above keeps the leaky state clean.
+    if (x->scheduler) {
+        perlin_state_t *ps = &x->scheduler->perlin_state;
+        float c = ps->env_follow_coeff;            // 0 => one-pole degenerates to instant follow
+        float sl = ps->env_follow_state[0], sr = ps->env_follow_state[1];
+        for (int i = 0; i < n; i++) {
+            float al = fabsf(in_left[i]);          // rectify
+            float ar = fabsf(in_right[i]);
+            // leaky one-pole peak follower: rise fast (toward peak), fall at coeff
+            sl = (al > sl) ? al : (sl * c + al * (1.0f - c));
+            sr = (ar > sr) ? ar : (sr * c + ar * (1.0f - c));
+        }
+        ps->env_follow_state[0] = sl;
+        ps->env_follow_state[1] = sr;
+        ps->env_follow_value[0] = sl;
+        ps->env_follow_value[1] = sr;
+        ps->env_follow_value[2] = 0.5f * (sl + sr);  // mono mix
+    }
+
+    // MOD MATRIX v1.5 — cache the six PER-GRAIN destination sums once per block (sources are
+    // per-block values, incl. the follower refreshed just above). Grains spawned this block in
+    // update_inlets/process_grains read the cache; the sums are added at trigger and NEVER
+    // written to the shared parameter fields. Zero per-grain connections => mask 0 => the
+    // trigger path is unchanged (~one branch per apply site).
+    if (x->scheduler) matrix_cache_grain_sums(x->scheduler);
 
     // Morph stepper (control-rate), BEFORE update_inlets so morphed bands win and morphed scalar
     // bases follow the standard live-CV-wins precedence (GATE A.6). A running route drives the
@@ -1746,24 +2210,29 @@ null_ptr_error:
     // Compute and output modulation values (control rate, once per DSP block)
     // Modulation outlets now use unified param_range system (same as internal parameters)
 
-    if (x->modout1_range.enabled && x->modout1_range.rand_type != RAND_TYPE_NONE) {
-        float value = sample_param_range(&x->modout1_range, &x->scheduler->perlin_state, 0.5f);
-        outlet_float(x->x_modout1, value);
-    }
-
-    if (x->modout2_range.enabled && x->modout2_range.rand_type != RAND_TYPE_NONE) {
-        float value = sample_param_range(&x->modout2_range, &x->scheduler->perlin_state, 0.5f);
-        outlet_float(x->x_modout2, value);
-    }
-
-    if (x->modout3_range.enabled && x->modout3_range.rand_type != RAND_TYPE_NONE) {
-        float value = sample_param_range(&x->modout3_range, &x->scheduler->perlin_state, 0.5f);
-        outlet_float(x->x_modout3, value);
-    }
-
-    if (x->modout4_range.enabled && x->modout4_range.rand_type != RAND_TYPE_NONE) {
-        float value = sample_param_range(&x->modout4_range, &x->scheduler->perlin_state, 0.5f);
-        outlet_float(x->x_modout4, value);
+    // MOD MATRIX: modout1-4 are matrix destinations, so input-derived sources can be patched
+    // out to the rest of the Pd graph. The gate here is COMPOUND (enabled && rand_type != NONE),
+    // so a matrix-only connection to a disabled modout needs the || rewrite below; when only the
+    // matrix drives it the emitted float is 0.5 + sum (neutral center + overlay) rather than a
+    // sample of the disabled range. modout values are NOT clamped — they are patch-out floats
+    // (a user's modout range may deliberately span any units), so overshoot is harmless.
+    {
+        struct { param_range_t *range; t_outlet *out; int dest; } mo[4] = {
+            { &x->modout1_range, x->x_modout1, MOD_DEST_MODOUT1 },
+            { &x->modout2_range, x->x_modout2, MOD_DEST_MODOUT2 },
+            { &x->modout3_range, x->x_modout3, MOD_DEST_MODOUT3 },
+            { &x->modout4_range, x->x_modout4, MOD_DEST_MODOUT4 },
+        };
+        for (int m = 0; m < 4; m++) {
+            int base_on = mo[m].range->enabled && mo[m].range->rand_type != RAND_TYPE_NONE;
+            int mx = matrix_dest_active(x->scheduler, mo[m].dest);
+            if (!base_on && !mx) continue;
+            float value = base_on
+                        ? sample_param_range(mo[m].range, &x->scheduler->perlin_state, 0.5f)
+                        : 0.5f;
+            if (mx) value += matrix_sum_for_dest(x->scheduler, mo[m].dest);
+            outlet_float(mo[m].out, value);
+        }
     }
 
     // @endregion:ligase_pd.pd_external.outlets.modulation
@@ -1812,6 +2281,14 @@ static void ligase_set_sample_rate(ligase_t *x, int sr) {
     if (x->moogladder) x->moogladder->sample_rate = sr;  // cutoff normalized per-block
     if (x->delay_stut) x->delay_stut->sample_rate = sr;  // stut spacing computed per-trigger
     if (x->smear)      grain_smear_set_sample_rate(x->smear, sr);
+    if (x->smear_bank) grain_smear_bank_set_sample_rate(x->smear_bank, sr);  // re-derives every voice's a1/a2
+
+    // Envelope follower: keep the release TIME constant across a rate change (recompute coeff)
+    if (x->scheduler) {
+        perlin_state_t *ps = &x->scheduler->perlin_state;
+        ps->env_follow_coeff = (ps->env_follow_ms > 0.0f)
+            ? expf(-1.0f / (ps->env_follow_ms * 0.001f * (float)sr)) : 0.0f;
+    }
 
     // Subsystems that cache derived state — must reallocate / recompute
     if (x->reel)          reel_set_sample_rate(x->reel, sr);                          // resize 10-min reel to rate
@@ -2635,11 +3112,63 @@ static void ligase_saw_depth(ligase_t *x, t_floatarg depth) {
 static void ligase_pan_mode(ligase_t *x, t_floatarg mode) {
     int m = (int)mode;
     if (m < 0) m = 0;
-    if (m > 1) m = 1;
+    if (m > 2) m = 2;
     x->scheduler->pan_mode = m;
     post("ligase~: pan mode set to %d (%s)",
          m,
-         m == 0 ? "constant-power mono panning" : "stereo balance");
+         m == 0 ? "constant-power mono panning" :
+         m == 1 ? "stereo balance" : "spatial 3D (physics-driven)");
+}
+
+// spatial <source> [instance] [body]   e.g.  "spatial sphere 0"  |  "spatial nbody 2 1"
+// Selects which physics generator drives per-grain 3D placement (pan_mode 2 engages it).
+static void ligase_spatial(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 1 || argv[0].a_type != A_SYMBOL) {
+        pd_error(x, "ligase~: spatial <sphere|nbody> [instance 0-3] [body 0-2]");
+        return;
+    }
+    const char *src = argv[0].a_w.w_symbol->s_name;
+    if (strcmp(src, "sphere") == 0) {
+        x->scheduler->spatial_source = RAND_TYPE_SPHERE;
+    } else if (strcmp(src, "nbody") == 0) {
+        x->scheduler->spatial_source = RAND_TYPE_NBODY;
+    } else {
+        pd_error(x, "ligase~: spatial source must be 'sphere' or 'nbody'");
+        return;
+    }
+    if (argc >= 2 && argv[1].a_type == A_FLOAT) {
+        int i = (int)argv[1].a_w.w_float;
+        x->scheduler->spatial_instance = (i < 0) ? 0 : (i > 3) ? 3 : i;
+    }
+    if (argc >= 3 && argv[2].a_type == A_FLOAT) {
+        int b = (int)argv[2].a_w.w_float;
+        x->scheduler->spatial_nbody_body = (b < 0) ? 0 : (b > 2) ? 2 : b;
+    }
+    post("ligase~: spatial source = %s instance %d (nbody body %d); send 'pan_mode 2' to engage",
+         (x->scheduler->spatial_source == RAND_TYPE_SPHERE) ? "sphere" : "nbody",
+         x->scheduler->spatial_instance, x->scheduler->spatial_nbody_body);
+}
+
+static void ligase_spatial_width(ligase_t *x, t_floatarg w) {
+    if (w < 0.0f) w = 0.0f;
+    if (w > 1.0f) w = 1.0f;
+    x->scheduler->spatial_width = w;
+    post("ligase~: spatial_width = %.3f", w);
+}
+
+static void ligase_spatial_depth(ligase_t *x, t_floatarg d) {
+    if (d < 0.0f) d = 0.0f;
+    if (d > 1.0f) d = 1.0f;
+    x->scheduler->spatial_depth_amt = d;
+    post("ligase~: spatial_depth = %.3f", d);
+}
+
+static void ligase_spatial_tilt(ligase_t *x, t_floatarg t) {
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    x->scheduler->spatial_tilt_amt = t;
+    post("ligase~: spatial_tilt = %.3f", t);
 }
 
 static void ligase_grainsize(ligase_t *x, t_floatarg grainsize) {
@@ -2823,6 +3352,34 @@ static int pattern_alloc_param_slot(ligase_t *x, param_range_t *range) {
     return -1;
 }
 
+// Event action sub-keyword -> pattern_target_kind_t. Returns PATTERN_KIND_VALUE (0) for an
+// unknown name (the caller treats 0 as "not an event action").
+static int pattern_event_kind_from_name(const char *name) {
+    if (strcmp(name, "grain")  == 0) return PATTERN_KIND_EVENT_GRAIN;
+    if (strcmp(name, "splice") == 0) return PATTERN_KIND_EVENT_SPLICE;
+    if (strcmp(name, "retrig") == 0) return PATTERN_KIND_EVENT_RETRIG;
+    if (strcmp(name, "gate")   == 0) return PATTERN_KIND_EVENT_GATE;
+    if (strcmp(name, "bang")   == 0) return PATTERN_KIND_EVENT_BANG;
+    return PATTERN_KIND_VALUE;
+}
+
+// Choose a pattern slot for an EVENT target. Free-scan-only sibling of pattern_alloc_param_slot:
+// that function dereferences its param_range_t* unconditionally, so it must NEVER be called with
+// NULL — event slots have no param_range and use this instead. Event slots ride the same shared
+// 0..PATTERN_SLOTS-3 auto-pool as param patterns (slots 6/7 stay reserved for smear/grain pitch).
+// Re-sending the SAME action reuses its live slot (replace, not duplicate — mirrors the param
+// allocator's reuse discipline); otherwise the first free slot (step_count==0) is taken.
+static int pattern_alloc_event_slot(ligase_t *x, int kind) {
+    perlin_state_t *ps = &x->scheduler->perlin_state;
+    for (int i = 0; i < PATTERN_SLOTS - 2; i++) {
+        if (ps->pattern_target_kind[i] == kind && ps->pattern[i].step_count > 0) return i;
+    }
+    for (int i = 0; i < PATTERN_SLOTS - 2; i++) {
+        if (ps->pattern[i].step_count == 0) return i;
+    }
+    return -1;
+}
+
 // pattern_cycle <N/D> <N/D> ... : set the quantization-cycle segment list. Each segment is a
 // musical duration ("num" notes of value 1/den) at the detected BPM; the cycle length is their
 // sum. A bare "pattern_cycle" (no args) resets to the default 1-bar 4/4 cycle. Validate-then-commit
@@ -2894,6 +3451,7 @@ static void ligase_pattern_clear(ligase_t *x, t_symbol *s, int argc, t_atom *arg
         ps->pattern[slot].step_count = 0;
         ps->pattern_phase[slot] = 0.0f;
         ps->pattern_cycle_index[slot] = 0;
+        ps->pattern_target_kind[slot] = PATTERN_KIND_VALUE;  // event slots reset on clear (pooled reuse)
         post("ligase~: pattern slot %d cleared", slot);
         return;
     }
@@ -2945,6 +3503,7 @@ static void ligase_pattern_clear(ligase_t *x, t_symbol *s, int argc, t_atom *arg
         ps->pattern[slot].step_count = 0;                 // free the slot
         ps->pattern_phase[slot] = 0.0f;
         ps->pattern_cycle_index[slot] = 0;
+        ps->pattern_target_kind[slot] = PATTERN_KIND_VALUE;  // event slots reset on clear (pooled reuse)
     }
     post("ligase~: pattern cleared from %s (restored type %s)",
          name, get_rand_type_name(range->saved_rand_type));
@@ -3020,25 +3579,126 @@ static void pattern_flatten(pattern_flatten_ctx_t *ctx, int node_idx, float span
     }
 }
 
+// Bjorklund recursion (pair-and-remainder construction). Emits one on/off cell per call at the
+// two base levels; `cap` bounds the output defensively (the algorithm emits exactly n cells).
+static void bjorklund_build(int level, const int *counts, const int *remainders,
+                            unsigned char *out, int *pos, int cap) {
+    if (*pos >= cap && level < 0) return;
+    if (level == -1) {
+        out[(*pos)++] = 0;
+    } else if (level == -2) {
+        out[(*pos)++] = 1;
+    } else {
+        for (int i = 0; i < counts[level]; i++)
+            bjorklund_build(level - 1, counts, remainders, out, pos, cap);
+        if (remainders[level] != 0)
+            bjorklund_build(level - 2, counts, remainders, out, pos, cap);
+    }
+}
+
+// Bjorklund(k,n): write a length-n on/off bitmap (1 = pulse) distributing k pulses as evenly as
+// possible, rotated so the pattern starts on a pulse — the canonical Tidal/Toussaint form:
+// E(3,8) = x..x..x. , E(5,8) = x.xx.xx. Message-thread only, stack arrays, no alloc.
+static void bjorklund(int k, int n, unsigned char *out) {
+    if (n < 1) return;
+    if (k <= 0) { memset(out, 0, (size_t)n); return; }
+    if (k >= n) { memset(out, 1, (size_t)n); return; }
+    int counts[PATTERN_MAX_STEPS + 2];
+    int remainders[PATTERN_MAX_STEPS + 2];
+    int divisor = n - k;
+    int level = 0;
+    remainders[0] = k;
+    while (1) {
+        counts[level] = divisor / remainders[level];
+        remainders[level + 1] = divisor % remainders[level];
+        divisor = remainders[level];
+        level++;
+        if (remainders[level] <= 1) break;
+    }
+    counts[level] = divisor;
+    int pos = 0;
+    bjorklund_build(level, counts, remainders, out, &pos, n);
+    while (pos < n) out[pos++] = 0;   // defensive; never reached for valid (k,n)
+    // Rotate so the first cell is a pulse (canonical form).
+    int first = 0;
+    while (first < n && !out[first]) first++;
+    if (first > 0 && first < n) {
+        unsigned char tmp[PATTERN_MAX_STEPS];
+        for (int i = 0; i < n; i++) tmp[i] = out[(first + i) % n];
+        memcpy(out, tmp, (size_t)n);
+    }
+}
+
+// 'rev' (Tidal transform, parse-time): reverse a group's children in TIME, recursing into nested
+// [ ] groups. ALT (< >) member ORDER is preserved (rev acts within a cycle, not across the
+// alternation sequence) but each member's contents are reversed. rev rev restores the original.
+static void pattern_reverse_tree(pattern_node_t *pool, int idx) {
+    if (idx < 0) return;
+    pattern_node_t *nd = &pool[idx];
+    if (nd->kind == PN_LEAF) return;
+    for (int c = nd->first_child; c >= 0; c = pool[c].next_sibling)
+        pattern_reverse_tree(pool, c);
+    if (nd->kind == PN_SEQ) {                 // relink the child list back-to-front
+        int prev = -1, c = nd->first_child;
+        while (c >= 0) {
+            int next = pool[c].next_sibling;
+            pool[c].next_sibling = prev;
+            prev = c;
+            c = next;
+        }
+        nd->first_child = prev;
+    }
+}
+
 // pattern <slot|pitch> <token>... : load a mini-notation pattern into a slot. P1 target is a
 // numeric slot 0..PATTERN_SLOTS-1 or the literal 'pitch' (the dedicated last slot; P3 wires the
 // pitch mode). Two-stage parse (tree -> flat table) with validate-then-commit (prior slot preserved
 // on any error; step_count published LAST). All parse work is on the message thread.
+// EVENT target: 'pattern event <grain|splice|retrig|gate|bang> <tokens...>' ('trigger' is an
+// accepted alias) tags the slot EVENT_* — steps FIRE actions on the cycle clock instead of
+// setting a value. Euclid suffix v(k,n) and the 'rev' transform parse here too.
 static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     (void)s;
     if (!x->scheduler) return;
-    if (argc < 2) { pd_error(x, "ligase~: pattern requires <slot|pitch> then tokens"); return; }
+    if (argc < 2) { pd_error(x, "ligase~: pattern requires <param|pitch|smear_pitch|event <action>|slot> then tokens"); return; }
 
     int slot;
     param_range_t *attach_range = NULL;      // non-NULL => attach this range to the slot after commit
     int attach_pitch = 0;                    // 1 => set PITCH_MODE_PATTERN on this slot after commit
     int attach_smear_pitch = 0;              // 1 => set smear SMEAR_PITCH_PATTERN on this slot after commit
+    int event_kind = PATTERN_KIND_VALUE;     // != VALUE => tag the slot EVENT_* at commit
+    int tok_start = 1;                       // first token index (2 for the event target: action at argv[1])
     if (argv[0].a_type == A_SYMBOL && strcmp(argv[0].a_w.w_symbol->s_name, "pitch") == 0) {
         slot = PATTERN_SLOTS - 1;            // grain pitch: dedicated last slot
         attach_pitch = 1;
     } else if (argv[0].a_type == A_SYMBOL && strcmp(argv[0].a_w.w_symbol->s_name, "smear_pitch") == 0) {
         slot = PATTERN_SLOTS - 2;            // smear pitch: dedicated slot 6
         attach_smear_pitch = 1;
+    } else if (argv[0].a_type == A_SYMBOL &&
+               (strcmp(argv[0].a_w.w_symbol->s_name, "event") == 0 ||
+                strcmp(argv[0].a_w.w_symbol->s_name, "trigger") == 0)) {
+        // EVENT target: pattern event <action> <tokens...>. 'trigger' is an alias ('event' is the
+        // documented lead — the bare 'trigger' selector is the separate transport method; the two
+        // never collide at dispatch, but the docs disambiguate). Steps FIRE the action on the
+        // changed non-rest edge; cached_value is the event arg (grain = burst count, splice =
+        // splice index, gate = on/off, retrig/bang = ignored).
+        if (argc < 3 || argv[1].a_type != A_SYMBOL) {
+            pd_error(x, "ligase~: pattern event needs <grain|splice|retrig|gate|bang> then tokens");
+            return;
+        }
+        event_kind = pattern_event_kind_from_name(argv[1].a_w.w_symbol->s_name);
+        if (event_kind == PATTERN_KIND_VALUE) {
+            pd_error(x, "ligase~: pattern event: unknown action '%s' (grain|splice|retrig|gate|bang)",
+                     argv[1].a_w.w_symbol->s_name);
+            return;
+        }
+        slot = pattern_alloc_event_slot(x, event_kind);   // shared 0..5 pool; NOT pattern_alloc_param_slot(x, NULL)
+        if (slot < 0) {
+            pd_error(x, "ligase~: pattern: no free pattern slots (param + event patterns share %d slots)",
+                     PATTERN_SLOTS - 2);
+            return;
+        }
+        tok_start = 2;                       // action keyword consumed; tokens start at argv[2]
     } else if (argv[0].a_type == A_SYMBOL) {
         const char *name = argv[0].a_w.w_symbol->s_name;
         attach_range = get_param_range_by_name(x, name);
@@ -3075,9 +3735,10 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     stack[0] = 0; last_child[0] = -1;
     int depth = 1; node_count = 1;
 
-    for (int i = 1; i < argc; i++) {
+    for (int i = tok_start; i < argc; i++) {
         int open_seq = 0, open_alt = 0, close_seq = 0, close_alt = 0, is_leaf = 0;
         int leaf_rest = 0, leaf_weight = 1, leaf_mult = 1, leaf_repl = 1;
+        int leaf_euclid_k = 0, leaf_euclid_n = 0;   // n > 0 => expand this leaf Euclid-style
         float leaf_val = 0.0f;
 
         if (argv[i].a_type == A_FLOAT) {
@@ -3088,6 +3749,20 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
             else if (strcmp(t, "]") == 0) close_seq = 1;
             else if (strcmp(t, "<") == 0) open_alt = 1;
             else if (strcmp(t, ">") == 0) close_alt = 1;
+            else if (strcmp(t, "rev") == 0) {
+                // Tidal 'rev' transform (parse-time): reverse the just-closed group — or, with no
+                // preceding group, everything parsed so far in the CURRENT group ("a b c rev").
+                int tgt = last_child[depth - 1];
+                if (tgt >= 0 && pool[tgt].kind != PN_LEAF) {
+                    pattern_reverse_tree(pool, tgt);
+                } else {
+                    pattern_reverse_tree(pool, stack[depth - 1]);
+                    int tail = pool[stack[depth - 1]].first_child;  // relink moved the tail
+                    while (tail >= 0 && pool[tail].next_sibling >= 0) tail = pool[tail].next_sibling;
+                    last_child[depth - 1] = tail;
+                }
+                continue;   // token consumed; emits no node itself
+            }
             else {
                 is_leaf = 1;
                 const char *p = t;
@@ -3098,9 +3773,26 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
                     if (endp == t) PAT_FAIL("ligase~: pattern: bad token '%s'", t);
                     p = endp;
                 }
-                if      (*p == '@') { leaf_weight = atoi(p + 1); if (leaf_weight < 1) leaf_weight = 1; }
-                else if (*p == '*') { leaf_mult   = atoi(p + 1); if (leaf_mult   < 1) leaf_mult   = 1; }
-                else if (*p == '!') { leaf_repl   = atoi(p + 1); if (leaf_repl   < 1) leaf_repl   = 1; }
+                if (*p == '(') {
+                    // Euclid suffix v(k,n): parsed BEFORE @/!/* so it must sit directly after the
+                    // value. NB in a Pd message box the comma must be escaped: 1(3\,8).
+                    int kk = 0, nn = 0, used = 0;
+                    if (sscanf(p, "(%d,%d)%n", &kk, &nn, &used) != 2 || used == 0)
+                        PAT_FAIL("ligase~: pattern: bad Euclid suffix in '%s' (want v(k,n), e.g. 1(3,8))", t);
+                    if (nn < 1 || nn > PATTERN_MAX_STEPS)
+                        PAT_FAIL("ligase~: pattern: Euclid n in '%s' must be 1..%d", t, PATTERN_MAX_STEPS);
+                    if (kk < 0) kk = 0;
+                    if (kk > nn) kk = nn;
+                    leaf_euclid_k = kk; leaf_euclid_n = nn;
+                    p += used;
+                }
+                if      (*p == '@') { leaf_weight = atoi(p + 1); if (leaf_weight < 1) leaf_weight = 1;
+                                      if (strchr(p + 1, '(')) PAT_FAIL("ligase~: pattern: '%s': Euclid (k,n) must come directly after the value", t); }
+                else if (*p == '*') { leaf_mult   = atoi(p + 1); if (leaf_mult   < 1) leaf_mult   = 1;
+                                      if (leaf_euclid_n > 0 || strchr(p + 1, '('))
+                                          PAT_FAIL("ligase~: pattern: '%s': *N cannot combine with Euclid (k,n) (ambiguous — both expand the step)", t); }
+                else if (*p == '!') { leaf_repl   = atoi(p + 1); if (leaf_repl   < 1) leaf_repl   = 1;
+                                      if (strchr(p + 1, '(')) PAT_FAIL("ligase~: pattern: '%s': Euclid (k,n) must come directly after the value", t); }
                 else if (*p != '\0') PAT_FAIL("ligase~: pattern: bad suffix in '%s'", t);
             }
         } else {
@@ -3128,7 +3820,31 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
         } else if (is_leaf) {
             for (int r = 0; r < leaf_repl; r++) {
                 int target_idx;
-                if (leaf_mult > 1) {
+                if (leaf_euclid_n > 0) {
+                    // Euclid expansion (mirrors *N): one leaf becomes a PN_SEQ of n children —
+                    // the k Bjorklund pulse positions carry the leaf value, the n-k off-positions
+                    // are rests. Downstream flatten/eval already handle rests, so an Euclid
+                    // pattern is just an ordinary step table. @N weights the whole group; !N
+                    // replicates it (outer loop); *N was rejected at suffix parse.
+                    unsigned char bits[PATTERN_MAX_STEPS];
+                    bjorklund(leaf_euclid_k, leaf_euclid_n, bits);
+                    if (node_count >= PATTERN_MAX_NODES) PAT_FAIL("ligase~: pattern too large (max %d nodes)", PATTERN_MAX_NODES);
+                    int seqidx = node_count++;
+                    pool[seqidx].kind = PN_SEQ; pool[seqidx].value = 0.0f; pool[seqidx].is_rest = 0;
+                    pool[seqidx].weight = leaf_weight; pool[seqidx].first_child = -1; pool[seqidx].next_sibling = -1;
+                    int lastc = -1;
+                    for (int k = 0; k < leaf_euclid_n; k++) {
+                        if (node_count >= PATTERN_MAX_NODES) PAT_FAIL("ligase~: pattern too large (max %d nodes)", PATTERN_MAX_NODES);
+                        int li = node_count++;
+                        pool[li].kind = PN_LEAF;
+                        pool[li].value = bits[k] ? leaf_val : 0.0f;
+                        pool[li].is_rest = bits[k] ? leaf_rest : 1;
+                        pool[li].weight = 1; pool[li].first_child = -1; pool[li].next_sibling = -1;
+                        if (lastc < 0) pool[seqidx].first_child = li; else pool[lastc].next_sibling = li;
+                        lastc = li;
+                    }
+                    target_idx = seqidx;
+                } else if (leaf_mult > 1) {
                     if (node_count >= PATTERN_MAX_NODES) PAT_FAIL("ligase~: pattern too large (max %d nodes)", PATTERN_MAX_NODES);
                     int seqidx = node_count++;
                     pool[seqidx].kind = PN_SEQ; pool[seqidx].value = 0.0f; pool[seqidx].is_rest = 0;
@@ -3187,9 +3903,20 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     memcpy(live, &scratch, sizeof(pattern_table_t));
     ps->pattern_phase[slot] = 0.0f;
     ps->pattern_cycle_index[slot] = 0;
+    // Publish the slot KIND before step_count so the audio thread never sees an active slot with
+    // a stale kind. VALUE (0) here also RESETS a pooled slot that previously held an event
+    // pattern (slot reuse must not mis-fire). The kind lives in the parallel array, outside the
+    // memcpy'd table, so this is a single ordered write.
+    ps->pattern_target_kind[slot] = event_kind;
     live->step_count = committed_steps;                  // publish barrier
     post("ligase~: pattern slot %d set (%d steps, %d alt groups)",
          slot, committed_steps, scratch.alt_group_total);
+
+    // ---- Event target: report the armed action (kind was published above, pre-barrier) ----
+    if (event_kind != PATTERN_KIND_VALUE) {
+        post("ligase~: pattern event '%s' armed (slot %d; fires once per non-rest step on the cycle clock)",
+             argv[1].a_w.w_symbol->s_name, slot);
+    }
 
     // ---- Attach (named param target only): point the range at this slot via RAND_TYPE_PATTERN ----
     if (attach_range) {
@@ -3723,6 +4450,37 @@ static void ligase_smear_pitch_rand_type(ligase_t *x, t_symbol *s) {
     x->scheduler->smear_pitch_control.semitone_range.rand_instance = inst;
     post("ligase~: smear pitch random type set to %s", t);
 }
+
+// smear_mode <0|1> : 0 = single resonator voice (default, identical path as always);
+// 1 = resonator bank excited by the granular bus (grains = exciter, bank = body).
+// Mirrors the delay_mode selector. Hard switch (no crossfade) — the exciter is continuous.
+static void ligase_smear_mode(ligase_t *x, t_floatarg mode) {
+    int m = (int)mode;
+    if (m >= 0 && m <= 1) {
+        x->smear_mode = m;
+        const char *mode_names[] = {"single (resonator)", "bank (excited body)"};
+        post("ligase~: smear mode set to %d (%s)", m, mode_names[m]);
+        if (m == SMEAR_MODE_BANK && x->scheduler->smear_pitch_control.scale.count == 0)
+            post("ligase~: bank mode: load a smear_pitch_scale to tune the voices (bank is dry until then)");
+    } else {
+        pd_error(x, "ligase~: invalid smear mode %d (use 0=single, 1=bank)", m);
+    }
+}
+
+// Bank controls (shared across voices in v1). Voice count is NOT a message — it is
+// driven by smear_pitch_scale's count (the chord defines the bank size).
+static void ligase_smear_bank_resonance(ligase_t *x, t_floatarg r) {
+    if (x->smear_bank) grain_smear_bank_set_resonance(x->smear_bank, r);
+}
+static void ligase_smear_bank_stages(ligase_t *x, t_floatarg stages) {
+    if (x->smear_bank) grain_smear_bank_set_stages(x->smear_bank, (int)stages);
+}
+static void ligase_smear_bank_feedback(ligase_t *x, t_floatarg fb) {
+    if (x->smear_bank) grain_smear_bank_set_feedback(x->smear_bank, fb);
+}
+static void ligase_smear_bank_mix(ligase_t *x, t_floatarg mix) {
+    if (x->smear_bank) grain_smear_bank_set_mix(x->smear_bank, mix);
+}
 // @endregion:ligase_pd.core.grain.smear.messages
 
 // @region:ligase_pd.core.grain.distortion Grain Distortion Methods
@@ -4097,6 +4855,223 @@ static void ligase_param_range(ligase_t *x, t_symbol *s, int argc, t_atom *argv)
         post("ligase~: %s range disabled (single value: %.3f)", param_name, min_val);
     }
 }
+
+// @region:ligase_pd.pd_external.methods.mod_matrix Modulation Matrix Messages
+
+// SOURCE name table — the matrix source vocabulary (a separate namespace from rand_type).
+// Canonical names first (matrix_dump prints the first match); "lfoN" aliases to sineN.
+static const struct { const char *name; int id; } mod_source_names[] = {
+    { "sine1",    MOD_SRC_SINE1 },   { "sine2",    MOD_SRC_SINE2 },
+    { "sine3",    MOD_SRC_SINE3 },   { "sine4",    MOD_SRC_SINE4 },
+    { "saw1",     MOD_SRC_SAW1 },    { "saw2",     MOD_SRC_SAW2 },
+    { "saw3",     MOD_SRC_SAW3 },    { "saw4",     MOD_SRC_SAW4 },
+    { "square1",  MOD_SRC_SQUARE1 }, { "square2",  MOD_SRC_SQUARE2 },
+    { "square3",  MOD_SRC_SQUARE3 }, { "square4",  MOD_SRC_SQUARE4 },
+    { "perlin1",  MOD_SRC_PERLIN1 }, { "perlin2",  MOD_SRC_PERLIN2 },
+    { "perlin3",  MOD_SRC_PERLIN3 }, { "perlin4",  MOD_SRC_PERLIN4 },
+    { "lorenz1",  MOD_SRC_LORENZ1 }, { "lorenz2",  MOD_SRC_LORENZ2 },
+    { "lorenz3",  MOD_SRC_LORENZ3 }, { "lorenz4",  MOD_SRC_LORENZ4 },
+    { "nbody1",   MOD_SRC_NBODY1 },  { "nbody2",   MOD_SRC_NBODY2 },
+    { "nbody3",   MOD_SRC_NBODY3 },  { "nbody4",   MOD_SRC_NBODY4 },
+    { "sphere1",  MOD_SRC_SPHERE1 }, { "sphere2",  MOD_SRC_SPHERE2 },
+    { "sphere3",  MOD_SRC_SPHERE3 }, { "sphere4",  MOD_SRC_SPHERE4 },
+    { "rand1",    MOD_SRC_RAND1 },   { "rand2",    MOD_SRC_RAND2 },
+    { "rand3",    MOD_SRC_RAND3 },   { "rand4",    MOD_SRC_RAND4 },
+    { "pattern0", MOD_SRC_PATTERN0 },{ "pattern1", MOD_SRC_PATTERN1 },
+    { "pattern2", MOD_SRC_PATTERN2 },{ "pattern3", MOD_SRC_PATTERN3 },
+    { "pattern4", MOD_SRC_PATTERN4 },{ "pattern5", MOD_SRC_PATTERN5 },
+    { "pattern6", MOD_SRC_PATTERN6 },{ "pattern7", MOD_SRC_PATTERN7 },
+    { "env_l",    MOD_SRC_ENV_L },   { "env_r",    MOD_SRC_ENV_R },
+    { "env_mono", MOD_SRC_ENV_MONO },
+    // aliases (after the canonical names so dump prints the canonical form)
+    { "lfo1", MOD_SRC_SINE1 }, { "lfo2", MOD_SRC_SINE2 },
+    { "lfo3", MOD_SRC_SINE3 }, { "lfo4", MOD_SRC_SINE4 },
+};
+
+// DEST name table — the PER-BLOCK destinations plus the six PER-GRAIN destinations (v1.5).
+// Names reuse the get_param_range_by_name vocabulary verbatim ("grain_start" is the canonical
+// contract name; "grainstart" is accepted as the param_range-vocabulary alias). Keep this
+// adjacent to mod_dest_bounds so the id/bounds/name triple never drifts.
+static const struct { const char *name; int id; } mod_dest_names[] = {
+    { "gdelay",          MOD_DEST_GDELAY },
+    { "gdelay_feed",     MOD_DEST_GDELAY_FEED },
+    { "gdelay_tone",     MOD_DEST_GDELAY_TONE },
+    { "gdelay_mix",      MOD_DEST_GDELAY_MIX },
+    { "moog_cutoff",     MOD_DEST_MOOG_CUTOFF },
+    { "moog_resonance",  MOD_DEST_MOOG_RESONANCE },
+    { "moog_mix",        MOD_DEST_MOOG_MIX },
+    { "smear_frequency", MOD_DEST_SMEAR_FREQUENCY },
+    { "smear_resonance", MOD_DEST_SMEAR_RESONANCE },
+    { "smear_stages",    MOD_DEST_SMEAR_STAGES },
+    { "smear_feedback",  MOD_DEST_SMEAR_FEEDBACK },
+    { "scanrate",        MOD_DEST_SCANRATE },
+    { "organize",        MOD_DEST_ORGANIZE },
+    { "sos",             MOD_DEST_SOS },
+    { "iot",             MOD_DEST_IOT },
+    { "env_skew",        MOD_DEST_ENV_SKEW },
+    { "modout1",         MOD_DEST_MODOUT1 },
+    { "modout2",         MOD_DEST_MODOUT2 },
+    { "modout3",         MOD_DEST_MODOUT3 },
+    { "modout4",         MOD_DEST_MODOUT4 },
+    // v1.5 per-grain tier (applied at grain trigger in scheduler_trigger_grain)
+    { "speed",           MOD_DEST_SPEED },
+    { "grainsize",       MOD_DEST_GRAINSIZE },
+    { "grain_start",     MOD_DEST_GRAIN_START },
+    { "grainstart",      MOD_DEST_GRAIN_START },   // alias (param_range vocabulary)
+    { "amplitude",       MOD_DEST_AMPLITUDE },
+    { "pan",             MOD_DEST_PAN },
+    { "pitch_fine",      MOD_DEST_PITCH_FINE },
+};
+
+static int mod_source_from_name(const char *name) {
+    for (size_t i = 0; i < sizeof(mod_source_names) / sizeof(mod_source_names[0]); i++)
+        if (strcmp(name, mod_source_names[i].name) == 0) return mod_source_names[i].id;
+    return -1;
+}
+
+static const char *mod_source_to_name(int id) {
+    for (size_t i = 0; i < sizeof(mod_source_names) / sizeof(mod_source_names[0]); i++)
+        if (mod_source_names[i].id == id) return mod_source_names[i].name;
+    return "?";
+}
+
+static int mod_dest_from_name(const char *name) {
+    for (size_t i = 0; i < sizeof(mod_dest_names) / sizeof(mod_dest_names[0]); i++)
+        if (strcmp(name, mod_dest_names[i].name) == 0) return mod_dest_names[i].id;
+    return -1;
+}
+
+static const char *mod_dest_to_name(int id) {
+    for (size_t i = 0; i < sizeof(mod_dest_names) / sizeof(mod_dest_names[0]); i++)
+        if (mod_dest_names[i].id == id) return mod_dest_names[i].name;
+    return "?";
+}
+
+// "matrix_connect <source> <dest> <depth>" — add (or update in place) a routing connection.
+// Depth is SIGNED, in the destination's own units: contribution = depth*(source01-0.5)*2, so a
+// [0,1] source swings +/-depth around the destination's base. Control thread only; publish
+// ordering is fields-first, count-last so perform never iterates a half-written entry.
+static void ligase_matrix_connect(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 3 || argv[0].a_type != A_SYMBOL || argv[1].a_type != A_SYMBOL ||
+        argv[2].a_type != A_FLOAT) {
+        pd_error(x, "ligase~: matrix_connect requires: <source> <dest> <depth>");
+        return;
+    }
+    if (!x->scheduler) return;
+    const char *src_name = argv[0].a_w.w_symbol->s_name;
+    const char *dst_name = argv[1].a_w.w_symbol->s_name;
+    float depth = argv[2].a_w.w_float;
+    if (!isfinite(depth)) {
+        pd_error(x, "ligase~: matrix_connect: depth must be finite");
+        return;
+    }
+    int src = mod_source_from_name(src_name);
+    if (src < 0) {
+        pd_error(x, "ligase~: matrix_connect: unknown source '%s'", src_name);
+        return;
+    }
+    int dst = mod_dest_from_name(dst_name);
+    if (dst < 0) {
+        if (get_param_range_by_name(x, dst_name))
+            pd_error(x, "ligase~: matrix_connect: '%s' is a param_range target but not a "
+                        "matrix destination", dst_name);
+        else
+            pd_error(x, "ligase~: matrix_connect: unknown destination '%s'", dst_name);
+        return;
+    }
+    scheduler_t *sched = x->scheduler;
+    // Re-connect of an existing (source,dest) pair updates depth in place (and re-enables)
+    for (int i = 0; i < sched->mod_conn_count; i++) {
+        if (sched->mod_matrix[i].source == src && sched->mod_matrix[i].dest == dst) {
+            sched->mod_matrix[i].depth = depth;
+            sched->mod_matrix[i].enabled = 1;
+            post("ligase~: matrix %s -> %s depth %.4f (updated)", src_name, dst_name, depth);
+            return;
+        }
+    }
+    if (sched->mod_conn_count >= MOD_MATRIX_MAX) {
+        pd_error(x, "ligase~: matrix full (%d connections max)", MOD_MATRIX_MAX);
+        return;
+    }
+    int i = sched->mod_conn_count;
+    sched->mod_matrix[i].source  = src;      // fields first ...
+    sched->mod_matrix[i].dest    = dst;
+    sched->mod_matrix[i].depth   = depth;
+    sched->mod_matrix[i].enabled = 1;
+    sched->mod_conn_count = i + 1;           // ... count LAST (publish barrier)
+    post("ligase~: matrix %s -> %s depth %.4f (%d/%d)",
+         src_name, dst_name, depth, sched->mod_conn_count, MOD_MATRIX_MAX);
+}
+
+// "matrix_disconnect <source> <dest>" — disable that connection (slot kept; a later
+// matrix_connect of the same pair re-enables it in place).
+static void ligase_matrix_disconnect(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 2 || argv[0].a_type != A_SYMBOL || argv[1].a_type != A_SYMBOL) {
+        pd_error(x, "ligase~: matrix_disconnect requires: <source> <dest>");
+        return;
+    }
+    if (!x->scheduler) return;
+    const char *src_name = argv[0].a_w.w_symbol->s_name;
+    const char *dst_name = argv[1].a_w.w_symbol->s_name;
+    int src = mod_source_from_name(src_name);
+    int dst = mod_dest_from_name(dst_name);
+    if (src < 0 || dst < 0) {
+        pd_error(x, "ligase~: matrix_disconnect: unknown %s '%s'",
+                 (src < 0) ? "source" : "destination", (src < 0) ? src_name : dst_name);
+        return;
+    }
+    scheduler_t *sched = x->scheduler;
+    for (int i = 0; i < sched->mod_conn_count; i++) {
+        if (sched->mod_matrix[i].source == src && sched->mod_matrix[i].dest == dst) {
+            sched->mod_matrix[i].enabled = 0;
+            post("ligase~: matrix %s -> %s disconnected", src_name, dst_name);
+            return;
+        }
+    }
+    post("ligase~: matrix_disconnect: no connection %s -> %s", src_name, dst_name);
+}
+
+// "matrix_clear" — drop every connection. A single store: instantly inert (exact
+// backward-compat behavior returns this block).
+static void ligase_matrix_clear(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s; (void)argc; (void)argv;
+    if (!x->scheduler) return;
+    x->scheduler->mod_conn_count = 0;
+    post("ligase~: matrix cleared");
+}
+
+// "matrix_dump" — post the current connections to the Pd console.
+static void ligase_matrix_dump(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s; (void)argc; (void)argv;
+    if (!x->scheduler) return;
+    scheduler_t *sched = x->scheduler;
+    post("ligase~: matrix: %d/%d connection(s)", sched->mod_conn_count, MOD_MATRIX_MAX);
+    for (int i = 0; i < sched->mod_conn_count; i++) {
+        mod_conn_t *c = &sched->mod_matrix[i];
+        post("  [%d] %s -> %s depth %.4f%s", i,
+             mod_source_to_name(c->source), mod_dest_to_name(c->dest),
+             c->depth, c->enabled ? "" : " (disabled)");
+    }
+}
+
+// "env_follow_ms <ms>" — set the envelope follower's release time (one-pole coeff at the
+// current samplerate). 0 = instant follow. Default ~30 ms (set in scheduler_create).
+static void ligase_env_follow_ms(ligase_t *x, t_floatarg ms) {
+    if (!x->scheduler) return;
+    if (!isfinite(ms) || ms < 0.0f || ms > 60000.0f) {
+        pd_error(x, "ligase~: env_follow_ms must be 0-60000 ms");
+        return;
+    }
+    perlin_state_t *ps = &x->scheduler->perlin_state;
+    float sr = (x->sample_rate > 0) ? (float)x->sample_rate : 48000.0f;
+    ps->env_follow_ms = ms;
+    ps->env_follow_coeff = (ms > 0.0f) ? expf(-1.0f / (ms * 0.001f * sr)) : 0.0f;
+    post("ligase~: env_follow release %.1f ms (coeff %.6f)", ms, ps->env_follow_coeff);
+}
+
+// @endregion:ligase_pd.pd_external.methods.mod_matrix
 
 // Set parameter base_value for PERLIN_2D: "param_base_value modout1 0.3"
 static void ligase_param_base_value(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
@@ -4744,10 +5719,56 @@ static void ligase_pitch_scale(ligase_t *x, t_symbol *s, int argc, t_atom *argv)
     post("ligase~: pitch scale set with %d notes", argc);
 }
 
+// --- CHORDAL POLY voice-pool helpers (control thread only; read lock-free by perform) ---
+
+// Append or refresh a note in the voice pool. Ordering is audio-thread-safe: a NEW slot's note and
+// age are written BEFORE voice_count is bumped, so a perform-thread reader that snapshots voice_count
+// never sees a count covering an unwritten slot. Full pool -> steal the OLDEST note (min voice_age).
+static void voice_pool_add(scheduler_t *sch, int note) {
+    // Already present? refresh its age (re-trigger, don't duplicate).
+    for (int i = 0; i < sch->voice_count; i++) {
+        if (sch->voice_note[i] == note) {
+            sch->voice_age[i] = sch->voice_next_age++;
+            return;
+        }
+    }
+    if (sch->voice_count < MAX_VOICES) {
+        int slot = sch->voice_count;
+        sch->voice_note[slot] = note;
+        sch->voice_age[slot]  = sch->voice_next_age++;
+        sch->voice_count = slot + 1;    // publish the slot only after it is fully written
+    } else {
+        // Pool full -> steal the OLDEST note (minimum voice_age); count unchanged.
+        int oldest = 0;
+        for (int i = 1; i < MAX_VOICES; i++) {
+            if (sch->voice_age[i] < sch->voice_age[oldest]) oldest = i;
+        }
+        sch->voice_note[oldest] = note;
+        sch->voice_age[oldest]  = sch->voice_next_age++;
+    }
+}
+
+// Remove a note (note-off). Swap the last active slot down into the vacated slot, THEN decrement
+// count (surviving slot is in place before the count shrinks, so the reader never indexes stale data).
+static void voice_pool_remove(scheduler_t *sch, int note) {
+    for (int i = 0; i < sch->voice_count; i++) {
+        if (sch->voice_note[i] == note) {
+            int last = sch->voice_count - 1;
+            if (i != last) {
+                sch->voice_note[i] = sch->voice_note[last];
+                sch->voice_age[i]  = sch->voice_age[last];
+            }
+            sch->voice_count = last;
+            return;
+        }
+    }
+}
+
 // --- P2: channel-aware MIDI ingress + dual-destination routing ---
 
 // midi <note> [vel] [channel] : fed from Pd [notein] (note/vel/channel). Routes by channel to the two
-// pitch destinations. Same channel for both => unison; different => separate. Velocity accepted, unused.
+// pitch destinations. Same channel for both => unison; different => separate. In POLY mode the grain
+// destination appends/removes voices (vel 0 = note-off); the SMEAR dest stays mono (last-note-wins).
 static void ligase_midi(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     (void)s;
     if (argc < 1 || argv[0].a_type != A_FLOAT) {
@@ -4755,6 +5776,7 @@ static void ligase_midi(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
         return;
     }
     int note    = (int)argv[0].a_w.w_float;
+    int vel     = (argc >= 2 && argv[1].a_type == A_FLOAT) ? (int)argv[1].a_w.w_float : -1;
     int channel = (argc >= 3 && argv[2].a_type == A_FLOAT) ? (int)argv[2].a_w.w_float : 1;
     if (note < 1 || note > 127) {
         pd_error(x, "ligase~: midi note %d out of range (1-127)", note);
@@ -4767,10 +5789,22 @@ static void ligase_midi(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     scheduler_t *sch = x->scheduler;
     // Route to GRAIN destination (independent test => same channel = unison, different = separate).
     if (channel == sch->grain_midi_channel) {
-        sch->pitch_control.midi_note    = note;
-        sch->pitch_control.midi_enabled = 1;
-        x->midi_msg_active = 1;              // message owns the grain dest; inlet-19 write suppressed
-        // prev_midi_note is owned by the outlet-3 detector in perform; do not touch it here.
+        if (sch->poly_enabled) {
+            // CHORDAL POLY: a note enters/leaves the voice pool. vel 0 = note-off. The scalar
+            // (midi_note / midi_msg_active) is deliberately NOT written here — it is the mono path.
+            if (vel == 0) {
+                voice_pool_remove(sch, note);
+            } else {
+                voice_pool_add(sch, note);
+            }
+            sch->pitch_control.midi_enabled = 1;
+        } else {
+            // MONO (default): unchanged last-note-wins scalar write (byte-identical to pre-POLY).
+            sch->pitch_control.midi_note    = note;
+            sch->pitch_control.midi_enabled = 1;
+            x->midi_msg_active = 1;          // message owns the grain dest; inlet-19 write suppressed
+            // prev_midi_note is owned by the outlet-3 detector in perform; do not touch it here.
+        }
     }
     // Route to SMEAR destination.
     if (channel == sch->smear_midi_channel) {
@@ -4791,6 +5825,34 @@ static void ligase_midi_channel(ligase_t *x, t_floatarg g, t_floatarg sm) {
     x->scheduler->grain_midi_channel = gi;
     x->scheduler->smear_midi_channel = si;
     post("ligase~: MIDI routing grain<-ch%d, smear<-ch%d (%s)", gi, si, (gi == si) ? "UNISON" : "separate");
+}
+
+// poly <0|1> : enable/disable CHORDAL POLY (N-transposition chord from the one shared playhead).
+// Default 0 (mono) -> the grain-trigger sites take the single-call scalar path, bit-identical to today.
+static void ligase_poly(ligase_t *x, t_floatarg f) {
+    x->scheduler->poly_enabled = (f != 0.0f) ? 1 : 0;
+    post("ligase~: poly %s", x->scheduler->poly_enabled ? "ON (chordal)" : "OFF (mono)");
+}
+
+// chord <n1> [n2] ... : set the entire voice pool at once (clears, then appends each note, capped at
+// MAX_VOICES with oldest-note stealing). Empty list clears the pool (silence). Requires poly 1 to sound.
+static void ligase_chord(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    scheduler_t *sch = x->scheduler;
+    // Validate first so a bad note doesn't half-apply the chord.
+    for (int i = 0; i < argc; i++) {
+        if (argv[i].a_type != A_FLOAT) {
+            pd_error(x, "ligase~: chord requires MIDI note numbers");
+            return;
+        }
+    }
+    sch->voice_count = 0;                 // shrink first: a torn reader never indexes a stale slot
+    for (int i = 0; i < argc; i++) {
+        int note = (int)argv[i].a_w.w_float;
+        if (note < 1 || note > 127) continue;   // skip out-of-range, keep the rest of the chord
+        voice_pool_add(sch, note);
+    }
+    sch->pitch_control.midi_enabled = 1;
 }
 
 static void ligase_pitch_channel(ligase_t *x, t_floatarg ch) {
@@ -5265,6 +6327,7 @@ static void ligase_get_state(ligase_t *x) {
 
 static void ligase_free(ligase_t *x) {
     if (x->smear) grain_smear_destroy(x->smear);
+    if (x->smear_bank) grain_smear_bank_destroy(x->smear_bank);
     if (x->moogladder) grain_moogladder_destroy(x->moogladder);
     if (x->grain_delay) grain_delay_destroy(x->grain_delay);
     if (x->delay_bencina) grain_delay_bencina_destroy(x->delay_bencina);
@@ -5334,11 +6397,13 @@ static void *ligase_new(void) {
     x->delay_bencina = grain_delay_bencina_create(x->envelope, 48000);
     x->moogladder = grain_moogladder_create(48000);
     x->smear = grain_smear_create(48000);    // allpass smear effect
+    x->smear_bank = grain_smear_bank_create(48000, GRAIN_SMEAR_BANK_MAX_VOICES);  // resonator bank (eager: no hot-path NULL branch)
+    x->smear_mode = SMEAR_MODE_SINGLE;       // default: identical single-smear path
 
     // Check for allocation failures
     if (!x->reel || !x->envelope || !x->scheduler || !x->recorder ||
         !x->grain_delay || !x->delay_stut || !x->delay_bencina ||
-        !x->moogladder || !x->smear) {
+        !x->moogladder || !x->smear || !x->smear_bank) {
         pd_error(x, "ligase~: failed to allocate memory for components");
         ligase_free(x);
         return NULL;
@@ -5347,6 +6412,10 @@ static void *ligase_new(void) {
     // Morph / Metasurface layer (optional; every use is guarded by `if (x->morph)`)
     x->morph = (morph_state_t *)getbytes(sizeof(morph_state_t));
     if (x->morph) morph_state_init(x->morph);
+
+    // Snapshot Expander edit buffer starts empty
+    memset(&x->snapbuf, 0, sizeof(x->snapbuf));
+    x->snapbuf_has = 0;
 
     // FX shadow seeded to the FX-object defaults (so a capture before any FX setter is accurate)
     x->fx_shadow.moog_cutoff = 1000.0f; x->fx_shadow.moog_resonance = 0.0f; x->fx_shadow.moog_mix = 0.0f;
@@ -5491,6 +6560,13 @@ static void *ligase_new(void) {
     x->modout4_range.rand_instance = 0;
 
     x->sample_rate = 48000;
+
+    // MOD MATRIX: base-tracking arrays start neutral (only read when a connection targets a
+    // dest whose range is disabled; mod_track_base adopts the live field value on first use).
+    for (int i = 0; i < MOD_DEST_COUNT; i++) {
+        x->mod_base[i] = 0.0f;
+        x->mod_last_out[i] = 0.0f;
+    }
 
     return (void *)x;
 }
@@ -5677,6 +6753,92 @@ static void morph_restore_scales(ligase_t *x, const morph_snapshot_t *snap) {
     memcpy(ss->semitones, snap->smear_pitch_scale, sizeof(ss->semitones));
 }
 
+// ── Generator ("sources") params — schema v3 ────────────────────────────────
+// The modulation SOURCES' own params join the snapshot (GATE A.7, owner-approved):
+// motion character travels with the voice. Layout: appended after the v2-used
+// slots inside scalars[]/discretes[], so every v2 index (and every exported
+// selection-tree index) is unchanged. `morph_exclude sources` restores the old
+// global-weather behavior.
+#define MORPH_GEN_SCALAR_BASE   MORPH_SCALAR_USED_V2     /* 32 */
+#define MORPH_GEN_DISCRETE_BASE MORPH_DISCRETE_USED_V2   /* 30 */
+enum {                              // scalar offsets from MORPH_GEN_SCALAR_BASE
+    MGS_NOISE_FREQ        = 0,      // noise_freq_1..4 (per-instance rate scales)
+    MGS_ENV_FOLLOW_MS     = 4,      // envelope-follower release time
+    MGS_SPHERE_DAMPING    = 5,      // sphere_damping_1..4
+    MGS_SPHERE_ELASTICITY = 9,      // sphere_elasticity_1..4
+    MGS_NBODY_G           = 13,     // nbody_G_1..4
+    MGS_NBODY_DAMPING     = 17,     // nbody_damping_1..4
+    MGS_NBODY_EPSILON     = 21,     // nbody_epsilon_1..4
+    MGS_NBODY_PUMP        = 25,     // nbody_pump_1..4 (pump amount)
+    MGS_COUNT             = 29
+};
+enum {                              // discrete offsets from MORPH_GEN_DISCRETE_BASE
+    MGD_NBODY_PUMP_INTERVAL = 0,    // nbody_pump_interval_1..4
+    MGD_NBODY_MODE          = 4,    // nbody_mode_1..4 (output mode 0-10)
+    MGD_SPHERE_MODE         = 8,    // sphere_mode_1..4 (output mode 0-6)
+    MGD_COUNT               = 12
+};
+
+static void morph_capture_generators(ligase_t *x, morph_snapshot_t *snap) {
+    if (!x->scheduler) return;
+    perlin_state_t *ps = &x->scheduler->perlin_state;
+    float *g = &snap->scalars[MORPH_GEN_SCALAR_BASE];
+    int   *d = &snap->discretes[MORPH_GEN_DISCRETE_BASE];
+    for (int i = 0; i < 4; i++) {
+        g[MGS_NOISE_FREQ + i]          = ps->noise_frequency_scale[i];
+        g[MGS_SPHERE_DAMPING + i]      = ps->sphere[i].damping_factor;
+        g[MGS_SPHERE_ELASTICITY + i]   = ps->sphere[i].elasticity;
+        g[MGS_NBODY_G + i]             = ps->nbody[i].G;
+        g[MGS_NBODY_DAMPING + i]       = ps->nbody[i].damping;
+        g[MGS_NBODY_EPSILON + i]       = ps->nbody[i].epsilon;
+        g[MGS_NBODY_PUMP + i]          = ps->nbody[i].pump_amount;
+        d[MGD_NBODY_PUMP_INTERVAL + i] = ps->nbody[i].pump_interval;
+        d[MGD_NBODY_MODE + i]          = ps->nbody_output_mode[i];
+        d[MGD_SPHERE_MODE + i]         = ps->sphere_output_mode[i];
+    }
+    g[MGS_ENV_FOLLOW_MS] = ps->env_follow_ms;
+}
+
+// Restore writes back through the SAME limits the message setters enforce (sphere
+// setters clamp internally; nbody/noise limits mirrored here; env_follow_ms
+// recomputes the one-pole coeff exactly like ligase_env_follow_ms). No post()s —
+// this runs per block during a route.
+static void morph_restore_generators(ligase_t *x, const morph_snapshot_t *snap) {
+    if (!x->scheduler) return;
+    perlin_state_t *ps = &x->scheduler->perlin_state;
+    const float *g = &snap->scalars[MORPH_GEN_SCALAR_BASE];
+    const int   *d = &snap->discretes[MORPH_GEN_DISCRETE_BASE];
+    for (int i = 0; i < 4; i++) {
+        if (g[MGS_NOISE_FREQ + i] > 0.0f)               // setter refuses <= 0
+            ps->noise_frequency_scale[i] = g[MGS_NOISE_FREQ + i];
+        sphere_set_damping(&ps->sphere[i], g[MGS_SPHERE_DAMPING + i]);        // clamps 0..1
+        sphere_set_elasticity(&ps->sphere[i], g[MGS_SPHERE_ELASTICITY + i]);  // clamps 0..1
+        ps->nbody[i].G = g[MGS_NBODY_G + i];            // setter is unclamped
+        float dv = g[MGS_NBODY_DAMPING + i];
+        if (dv < 0.0f) dv = 0.0f; else if (dv > 1.0f) dv = 1.0f;
+        ps->nbody[i].damping = dv;
+        float ev = g[MGS_NBODY_EPSILON + i];
+        ps->nbody[i].epsilon = (ev < 0.0f) ? 0.0f : ev;
+        float pv = g[MGS_NBODY_PUMP + i];
+        ps->nbody[i].pump_amount = (pv < 0.0f) ? 0.0f : pv;
+        int iv = d[MGD_NBODY_PUMP_INTERVAL + i];
+        ps->nbody[i].pump_interval = (iv < 1) ? 1 : iv;
+        int nm = d[MGD_NBODY_MODE + i];
+        if (nm < 0) nm = 0; else if (nm > 10) nm = 10;
+        ps->nbody_output_mode[i] = nm;
+        int sm = d[MGD_SPHERE_MODE + i];
+        if (sm < 0) sm = 0; else if (sm > 6) sm = 6;
+        ps->sphere_output_mode[i] = sm;
+    }
+    float ms = g[MGS_ENV_FOLLOW_MS];
+    if (isfinite(ms)) {
+        if (ms < 0.0f) ms = 0.0f; else if (ms > 60000.0f) ms = 60000.0f;
+        float sr = (x->sample_rate > 0) ? (float)x->sample_rate : 48000.0f;
+        ps->env_follow_ms = ms;
+        ps->env_follow_coeff = (ms > 0.0f) ? expf(-1.0f / (ms * 0.001f * sr)) : 0.0f;
+    }
+}
+
 // Full snapshot capture: bands + scalar bases + discretes + scale lists.
 // (FX-shadow scalars are added in step 2b-2.)
 static void morph_capture(ligase_t *x, morph_snapshot_t *snap) {
@@ -5684,6 +6846,29 @@ static void morph_capture(ligase_t *x, morph_snapshot_t *snap) {
     float *fp[MORPH_SCALAR_COUNT];
     int fn = morph_collect_scalars(x, fp);
     for (int i = 0; i < fn; i++) snap->scalars[i] = *fp[i];
+    // R3 (v1.5) CAPTURE TRANSPARENCY for the self-read transport params. Of the five
+    // (scanrate/organize/sos/iot/env_skew), scanrate is the only captured scalar whose live
+    // field the matrix apply writes back (x->scan_rate): capture the matrix's tracked base
+    // instead of the field, so SNAP mid-wobble records the knob value, never base+offset.
+    // organize (x->organize_cv), sos (x->sos_value) and iot (sched->iot) capture message-stored
+    // bases the matrix never writes; env_skew's live field (envelope->skew) is not captured at
+    // all — those four are transparent already. Per-grain dests (R1) never dirty any field.
+    // The guard mirrors the apply site: mod_base is tracked only on the matrix-only path
+    // (range disabled); with the range enabled the band itself is captured and regenerates.
+    if (x->scheduler && matrix_dest_active(x->scheduler, MOD_DEST_SCANRATE) &&
+        !x->scheduler->scanrate_range.enabled) {
+        for (int i = 0; i < fn; i++) {
+            if (fp[i] == &x->scan_rate) {
+                // Non-mutating mod_track_base read: field != our last matrix output means an
+                // inlet/message wrote it since (the field IS the base); equal means the field
+                // holds base+offset — capture the tracked base.
+                snap->scalars[i] = (x->scan_rate != x->mod_last_out[MOD_DEST_SCANRATE])
+                                 ? x->scan_rate
+                                 : x->mod_base[MOD_DEST_SCANRATE];
+                break;
+            }
+        }
+    }
     // FX-shadow scalar bases at scalars[fn .. fn+MORPH_FX_SCALARS-1]
     const morph_fx_shadow_t *fx = &x->fx_shadow;
     snap->scalars[fn+0]=fx->moog_cutoff;    snap->scalars[fn+1]=fx->moog_resonance; snap->scalars[fn+2]=fx->moog_mix;
@@ -5696,6 +6881,7 @@ static void morph_capture(ligase_t *x, morph_snapshot_t *snap) {
     for (int i = 0; i < in; i++) snap->discretes[i] = *ip[i];
     snap->discretes[in]     = (int)x->playhead_mode;
     snap->discretes[in + 1] = (int)x->scheduler->pitch_control.mode;
+    morph_capture_generators(x, snap);   // schema v3: sources/weather params
     morph_capture_scales(x, snap);
 }
 
@@ -5727,7 +6913,201 @@ static void morph_restore(ligase_t *x, const morph_snapshot_t *snap) {
     for (int i = 0; i < in; i++) *ip[i] = snap->discretes[i];
     x->playhead_mode                 = (playhead_mode_t)snap->discretes[in];
     x->scheduler->pitch_control.mode = (pitch_mode_t)snap->discretes[in + 1];
+    morph_restore_generators(x, snap);   // schema v3: sources/weather params
     morph_restore_scales(x, snap);
+}
+
+// included[] index layout: ranges [0..44], scalars [45..45+63], discretes [45+64..].
+#define MORPH_INC_SCALAR(i)   (MORPH_RANGE_COUNT + (i))
+#define MORPH_INC_DISCRETE(i) (MORPH_RANGE_COUNT + MORPH_SCALAR_COUNT + (i))
+
+static int morph_any_excluded(const morph_state_t *m) {
+    for (int i = 0; i < MORPH_INCLUDE_COUNT; i++) if (!m->included[i]) return 1;
+    return 0;
+}
+
+// Selection tree mask: for any EXCLUDED field, overwrite the snapshot's value in *b with
+// the CURRENT live value, so restoring b is a no-op for it — the morph leaves it to
+// manual/modulation/inlet control. (Scales follow their pitch / smear-pitch group's
+// discrete-mode flag.) Shared by the blend (morph_apply_at), snapshot_recall, and the
+// expander's snapbuf_apply — the tree is the single ownership boundary on every restore path.
+static void morph_mask_excluded(ligase_t *x, morph_snapshot_t *b) {
+    morph_state_t *m = x->morph;
+    if (!m || !morph_any_excluded(m)) return;
+    morph_snapshot_t cur;
+    memset(&cur, 0, sizeof(cur));
+    morph_capture(x, &cur);
+    int *inc = m->included;
+    for (int r = 0; r < MORPH_RANGE_COUNT; r++)
+        if (!inc[r]) b->ranges[r] = cur.ranges[r];
+    for (int s = 0; s < MORPH_SCALAR_COUNT; s++)
+        if (!inc[MORPH_INC_SCALAR(s)]) b->scalars[s] = cur.scalars[s];
+    for (int d = 0; d < MORPH_DISCRETE_COUNT; d++)
+        if (!inc[MORPH_INC_DISCRETE(d)]) b->discretes[d] = cur.discretes[d];
+    if (!inc[MORPH_INC_DISCRETE(29)]) {   // pitch mode -> keep the grain pitch scale
+        b->pitch_scale_count = cur.pitch_scale_count;
+        memcpy(b->pitch_scale, cur.pitch_scale, sizeof(b->pitch_scale));
+    }
+    if (!inc[MORPH_INC_DISCRETE(23)]) {   // smear source -> keep the smear pitch scale
+        b->smear_pitch_scale_count = cur.smear_pitch_scale_count;
+        memcpy(b->smear_pitch_scale, cur.smear_pitch_scale, sizeof(b->smear_pitch_scale));
+    }
+}
+
+// ── The shared field walker — ONE logical-name enumeration of every capturable field ──
+// The text export/import (morph_write_snap / morph_read_snap) and the Snapshot Expander
+// (snapbuf_set / snapbuf_get / snapbuf_dump) all iterate THIS table, so the text schema
+// and the expander vocabulary cannot diverge (the plan's no-schema-duplication rule).
+// TABLE ORDER == FILE ORDER: the v1/v2 fields first, in their original file order, then
+// the schema-v3 generator fields appended at the end (`since` = 3). Importing an old file
+// skips fields newer than the file's version — they keep their pre-filled current values.
+enum { MF_RANGE, MF_SCALAR, MF_DISCRETE, MF_SCALE };
+typedef struct {
+    const char   *name;    // logical field name (the snapbuf_set/get vocabulary)
+    unsigned char kind;    // MF_*
+    unsigned char idx;     // ranges[idx] / scalars[idx] / discretes[idx]; MF_SCALE: 0=pitch 1=smear
+    unsigned char since;   // text schema version that introduced this field
+} morph_field_t;
+
+#define MR(nm, i)    { nm, MF_RANGE,    (i), 1 }
+#define MS(nm, i)    { nm, MF_SCALAR,   (i), 1 }
+#define MD(nm, i)    { nm, MF_DISCRETE, (i), 1 }
+#define MS3(nm, off) { nm, MF_SCALAR,   MORPH_GEN_SCALAR_BASE + (off), 3 }
+#define MD3(nm, off) { nm, MF_DISCRETE, MORPH_GEN_DISCRETE_BASE + (off), 3 }
+static const morph_field_t morph_fields[] = {
+    // (a) the 45 modulation bands — morph_collect_ranges order; names = the
+    //     get_param_range_by_name vocabulary + "_range"
+    MR("speed_range", 0),  MR("scanrate_range", 1),  MR("organize_range", 2),
+    MR("sos_range", 3),    MR("iot_range", 4),       MR("maxgrains_range", 5),
+    MR("grainsize_range", 6), MR("grainstart_range", 7), MR("env_skew_range", 8),
+    MR("saw_cycles_range", 9), MR("saw_depth_range", 10),
+    MR("gdelay_range", 11), MR("gdelay_feed_range", 12), MR("gdelay_tone_range", 13),
+    MR("gdelay_mix_range", 14), MR("distortion_range", 15),
+    MR("amplitude_range", 16), MR("pan_range", 17),
+    MR("moog_cutoff_range", 18), MR("moog_resonance_range", 19), MR("moog_mix_range", 20),
+    MR("dist_emphasis_freq_range", 21), MR("dist_pregain_range", 22),
+    MR("dist_curve_blend_range", 23), MR("dist_drive_pos_range", 24),
+    MR("dist_drive_neg_range", 25), MR("dist_poly_c1_range", 26),
+    MR("dist_poly_c2_range", 27), MR("dist_poly_c3_range", 28),
+    MR("stut_reps_range", 29), MR("bencina_iot_range", 30),
+    MR("bencina_grainsize_range", 31), MR("bencina_pan_range", 32),
+    MR("smear_frequency_range", 33), MR("smear_resonance_range", 34),
+    MR("smear_stages_range", 35), MR("smear_feedback_range", 36),
+    MR("smear_pitch_fine_range", 37), MR("pitch_semitones_range", 38),
+    MR("pitch_fine_range", 39), MR("smear_pitch_semitones_range", 40),
+    MR("modout1_range", 41), MR("modout2_range", 42),
+    MR("modout3_range", 43), MR("modout4_range", 44),
+    // (b) continuous scalar bases — morph_collect_scalars order + the 11 FX shadows
+    MS("grainsize", 0),  MS("grainstart", 1), MS("speed", 2),   MS("organize", 3),
+    MS("amplitude", 4),  MS("pan", 5),        MS("saw_cycles", 6), MS("saw_depth", 7),
+    MS("scanrate", 8),   MS("sos", 9),        MS("iot", 10),    MS("quant", 11),
+    MS("gs_quant", 12),  MS("delay_quant", 13), MS("stut_length", 14),
+    MS("stut_length_quant", 15), MS("pitch_semitones", 16), MS("pitch_fine", 17),
+    MS("smear_pitch_semitones", 18), MS("smear_pitch_ref_hz", 19), MS("smear_pitch_fine", 20),
+    MS("moog_cutoff", 21), MS("moog_resonance", 22), MS("moog_mix", 23),
+    MS("smear_frequency", 24), MS("smear_resonance", 25), MS("smear_stages", 26),
+    MS("smear_feedback", 27), MS("gdelay_time", 28), MS("gdelay_feed", 29),
+    MS("gdelay_tone", 30), MS("gdelay_mix", 31),
+    // (c) discretes — morph_collect_discretes order + the 2 by-value enums
+    MD("clock_advance_quant", 0), MD("sos_mode", 1), MD("headless", 2),
+    MD("outlet3_mode", 3), MD("grain_bang_rate", 4), MD("quantize", 5),
+    MD("timesig_num", 6), MD("timesig_den", 7), MD("gs_quantize", 8),
+    MD("gs_timesig_num", 9), MD("gs_timesig_den", 10), MD("delay_quantize", 11),
+    MD("delay_timesig_num", 12), MD("delay_timesig_den", 13), MD("stut_length_mode", 14),
+    MD("stut_length_quantize", 15), MD("maxgrains", 16), MD("pan_mode", 17),
+    MD("grain_midi_channel", 18), MD("smear_midi_channel", 19), MD("pitch_midi_note", 20),
+    MD("pitch_pattern_slot", 21), MD("smear_pitch_enabled", 22), MD("smear_pitch_source", 23),
+    MD("smear_note", 24), MD("smear_ref_note", 25), MD("smear_pitch_pattern_slot", 26),
+    MD("smear_pitch_channel", 27), MD("playhead", 28), MD("pitch_mode", 29),
+    // (d) the two scale lists
+    { "pitch_scale",       MF_SCALE, 0, 1 },
+    { "smear_pitch_scale", MF_SCALE, 1, 1 },
+    // (e) schema v3 — generator ("sources") params, appended
+    MS3("noise_freq_1", MGS_NOISE_FREQ + 0), MS3("noise_freq_2", MGS_NOISE_FREQ + 1),
+    MS3("noise_freq_3", MGS_NOISE_FREQ + 2), MS3("noise_freq_4", MGS_NOISE_FREQ + 3),
+    MS3("env_follow_ms", MGS_ENV_FOLLOW_MS),
+    MS3("sphere_damping_1", MGS_SPHERE_DAMPING + 0), MS3("sphere_damping_2", MGS_SPHERE_DAMPING + 1),
+    MS3("sphere_damping_3", MGS_SPHERE_DAMPING + 2), MS3("sphere_damping_4", MGS_SPHERE_DAMPING + 3),
+    MS3("sphere_elasticity_1", MGS_SPHERE_ELASTICITY + 0), MS3("sphere_elasticity_2", MGS_SPHERE_ELASTICITY + 1),
+    MS3("sphere_elasticity_3", MGS_SPHERE_ELASTICITY + 2), MS3("sphere_elasticity_4", MGS_SPHERE_ELASTICITY + 3),
+    MS3("nbody_G_1", MGS_NBODY_G + 0), MS3("nbody_G_2", MGS_NBODY_G + 1),
+    MS3("nbody_G_3", MGS_NBODY_G + 2), MS3("nbody_G_4", MGS_NBODY_G + 3),
+    MS3("nbody_damping_1", MGS_NBODY_DAMPING + 0), MS3("nbody_damping_2", MGS_NBODY_DAMPING + 1),
+    MS3("nbody_damping_3", MGS_NBODY_DAMPING + 2), MS3("nbody_damping_4", MGS_NBODY_DAMPING + 3),
+    MS3("nbody_epsilon_1", MGS_NBODY_EPSILON + 0), MS3("nbody_epsilon_2", MGS_NBODY_EPSILON + 1),
+    MS3("nbody_epsilon_3", MGS_NBODY_EPSILON + 2), MS3("nbody_epsilon_4", MGS_NBODY_EPSILON + 3),
+    MS3("nbody_pump_1", MGS_NBODY_PUMP + 0), MS3("nbody_pump_2", MGS_NBODY_PUMP + 1),
+    MS3("nbody_pump_3", MGS_NBODY_PUMP + 2), MS3("nbody_pump_4", MGS_NBODY_PUMP + 3),
+    MD3("nbody_pump_interval_1", MGD_NBODY_PUMP_INTERVAL + 0), MD3("nbody_pump_interval_2", MGD_NBODY_PUMP_INTERVAL + 1),
+    MD3("nbody_pump_interval_3", MGD_NBODY_PUMP_INTERVAL + 2), MD3("nbody_pump_interval_4", MGD_NBODY_PUMP_INTERVAL + 3),
+    MD3("nbody_mode_1", MGD_NBODY_MODE + 0), MD3("nbody_mode_2", MGD_NBODY_MODE + 1),
+    MD3("nbody_mode_3", MGD_NBODY_MODE + 2), MD3("nbody_mode_4", MGD_NBODY_MODE + 3),
+    MD3("sphere_mode_1", MGD_SPHERE_MODE + 0), MD3("sphere_mode_2", MGD_SPHERE_MODE + 1),
+    MD3("sphere_mode_3", MGD_SPHERE_MODE + 2), MD3("sphere_mode_4", MGD_SPHERE_MODE + 3),
+};
+#undef MR
+#undef MS
+#undef MD
+#undef MS3
+#undef MD3
+#define MORPH_FIELD_COUNT ((int)(sizeof(morph_fields) / sizeof(morph_fields[0])))
+
+// The walker IS the schema: its field count must equal the morph.h schema counts
+// (45 ranges + 61 scalars + 42 discretes + 2 scale lists). Fails the build if the
+// table and the header drift apart.
+_Static_assert(sizeof(morph_fields) / sizeof(morph_fields[0]) ==
+               MORPH_RANGE_COUNT + MORPH_SCALAR_USED + MORPH_DISCRETE_USED + 2,
+               "morph_fields[] disagrees with the morph.h schema counts");
+
+// Band subfield order == the export column order.
+static const char *const morph_range_subs[8] =
+    { "min", "max", "enabled", "rand_type", "rand_instance", "base_value", "slew", "invert" };
+static const unsigned char morph_range_sub_is_int[8] = { 0, 0, 1, 1, 1, 0, 0, 1 };
+
+static float morph_range_get_sub(const morph_range_slot_t *r, int sub) {
+    switch (sub) {
+        case 0:  return r->min;
+        case 1:  return r->max;
+        case 2:  return (float)r->enabled;
+        case 3:  return (float)r->rand_type;
+        case 4:  return (float)r->rand_instance;
+        case 5:  return r->base_value;
+        case 6:  return r->slew;
+        default: return (float)r->invert;
+    }
+}
+
+static void morph_range_set_sub(morph_range_slot_t *r, int sub, float v) {
+    switch (sub) {
+        case 0:  r->min = v; break;
+        case 1:  r->max = v; break;
+        case 2:  r->enabled = (int)v; break;
+        case 3:  r->rand_type = (int)v; break;
+        case 4:  r->rand_instance = (int)v; break;
+        case 5:  r->base_value = v; break;
+        case 6:  r->slew = v; break;
+        default: r->invert = (int)v; break;
+    }
+}
+
+static const morph_field_t *morph_field_by_name(const char *nm) {
+    for (int i = 0; i < MORPH_FIELD_COUNT; i++)
+        if (strcmp(morph_fields[i].name, nm) == 0) return &morph_fields[i];
+    return NULL;
+}
+
+static int morph_range_sub_by_name(const char *nm) {
+    for (int k = 0; k < 8; k++)
+        if (strcmp(morph_range_subs[k], nm) == 0) return k;
+    if (strcmp(nm, "base") == 0) return 5;   // accept "base" for base_value
+    return -1;
+}
+
+// Scale-list access by walker idx (0 = grain pitch scale, 1 = smear pitch scale).
+static float *morph_snap_scale(morph_snapshot_t *s, int which, int **count) {
+    if (which == 0) { *count = &s->pitch_scale_count; return s->pitch_scale; }
+    *count = &s->smear_pitch_scale_count;
+    return s->smear_pitch_scale;
 }
 
 static int morph_snap_id(ligase_t *x, const char *who, int argc, t_atom *argv) {
@@ -5759,7 +7139,11 @@ static void ligase_snapshot_recall(ligase_t *x, t_symbol *s, int argc, t_atom *a
         pd_error(x, "ligase~: snapshot %d is empty", id);
         return;
     }
-    morph_restore(x, &x->morph->snaps[id]);
+    // Recall honors the selection tree (like the blend and snapbuf_apply): excluded
+    // fields — e.g. `morph_exclude sources` for global-weather rates — stay live.
+    morph_snapshot_t b = x->morph->snaps[id];
+    morph_mask_excluded(x, &b);
+    morph_restore(x, &b);
     post("ligase~: snapshot %d recalled", id);
 }
 
@@ -5770,15 +7154,6 @@ static void ligase_snapshot_clear(ligase_t *x, t_symbol *s, int argc, t_atom *ar
     if (id < 0) return;
     x->morph->snaps[id].in_use = 0;
     post("ligase~: snapshot %d cleared", id);
-}
-
-// included[] index layout: ranges [0..44], scalars [45..45+63], discretes [45+64..].
-#define MORPH_INC_SCALAR(i)   (MORPH_RANGE_COUNT + (i))
-#define MORPH_INC_DISCRETE(i) (MORPH_RANGE_COUNT + MORPH_SCALAR_COUNT + (i))
-
-static int morph_any_excluded(const morph_state_t *m) {
-    for (int i = 0; i < MORPH_INCLUDE_COUNT; i++) if (!m->included[i]) return 1;
-    return 0;
 }
 
 // ── The blend: apply the interpolated patch at cursor (cx,cy) ────────────────
@@ -5835,28 +7210,8 @@ static void morph_apply_at(ligase_t *x, float cx, float cy) {
         memcpy(b.smear_pitch_scale, as->smear_pitch_scale, sizeof(b.smear_pitch_scale));
     }
 
-    // Selection tree: for any EXCLUDED field, overwrite the blended value with the CURRENT live
-    // value, so applying b is a no-op for it — the morph leaves it to manual/modulation/inlet
-    // control. (Scales follow their pitch / smear-pitch group's discrete-mode flag.)
-    if (morph_any_excluded(m)) {
-        morph_snapshot_t cur;
-        morph_capture(x, &cur);
-        int *inc = m->included;
-        for (int r = 0; r < MORPH_RANGE_COUNT; r++)
-            if (!inc[r]) b.ranges[r] = cur.ranges[r];
-        for (int s = 0; s < MORPH_SCALAR_COUNT; s++)
-            if (!inc[MORPH_INC_SCALAR(s)]) b.scalars[s] = cur.scalars[s];
-        for (int d = 0; d < MORPH_DISCRETE_COUNT; d++)
-            if (!inc[MORPH_INC_DISCRETE(d)]) b.discretes[d] = cur.discretes[d];
-        if (!inc[MORPH_INC_DISCRETE(29)]) {   // pitch mode -> keep the grain pitch scale
-            b.pitch_scale_count = cur.pitch_scale_count;
-            memcpy(b.pitch_scale, cur.pitch_scale, sizeof(b.pitch_scale));
-        }
-        if (!inc[MORPH_INC_DISCRETE(23)]) {   // smear source -> keep the smear pitch scale
-            b.smear_pitch_scale_count = cur.smear_pitch_scale_count;
-            memcpy(b.smear_pitch_scale, cur.smear_pitch_scale, sizeof(b.smear_pitch_scale));
-        }
-    }
+    // Selection tree: excluded fields keep their current live values (shared mask helper).
+    morph_mask_excluded(x, &b);
 
     morph_restore(x, &b);
 }
@@ -5989,6 +7344,13 @@ static int morph_set_included(ligase_t *x, const char *name, int on) {
         for (unsigned i = 0; i < sizeof(rs)/sizeof(rs[0]); i++) R(rs[i]);
         for (int i = 21; i <= 31; i++) S(i);   // the FX scalar bases
         return 1; }
+    if (!strcmp(name, "sources")) {       // generator/weather params (schema v3):
+        // noise_freq_1..4, env_follow_ms, sphere damping/elasticity, nbody G/damping/
+        // epsilon/pump(+interval), nbody/sphere output modes. `morph_exclude sources`
+        // restores the pre-v3 global-weather behavior (rates stay live across recalls).
+        for (int i = 0; i < MGS_COUNT; i++) S(MORPH_GEN_SCALAR_BASE + i);
+        for (int i = 0; i < MGD_COUNT; i++) D(MORPH_GEN_DISCRETE_BASE + i);
+        return 1; }
     #undef R
     #undef S
     #undef D
@@ -6107,7 +7469,9 @@ static void morph_step(ligase_t *x, int n) {
 // surface (points + cursor + route). A magic+version+size header rejects incompatible files
 // (a struct-layout change bumps sizeof, so old files are refused rather than read as garbage).
 #define MORPH_FILE_MAGIC   0x4D4F5250u   /* 'MORP' */
-#define MORPH_FILE_VERSION 1u
+#define MORPH_FILE_VERSION 2u   /* v2: morph_state_t grew for schema v3 (generator params +
+                                   MORPH_DISCRETE_COUNT 32->48); v1 files are refused with a
+                                   clear error — re-export as text from the writing build. */
 
 static void ligase_morph_save(ligase_t *x, t_symbol *s) {
     if (!x->morph) return;
@@ -6145,7 +7509,13 @@ static void ligase_morph_load(ligase_t *x, t_symbol *s) {
     if (fread(hdr, sizeof(hdr), 1, f) != 1) { fclose(f); pd_error(x, "ligase~: morph_load — short read: %s", path); return; }
     if (hdr[0] != MORPH_FILE_MAGIC) { fclose(f); pd_error(x, "ligase~: morph_load — not a morph file: %s", path); return; }
     if (hdr[1] != MORPH_FILE_VERSION || hdr[2] != (uint32_t)sizeof(morph_state_t)) {
-        fclose(f); pd_error(x, "ligase~: morph_load — incompatible morph file (version/layout): %s", path); return;
+        fclose(f);
+        pd_error(x, "ligase~: morph_load — incompatible morph file %s: file is binary v%u (%u-byte state), "
+                    "this build needs v%u (%u bytes). Re-export it as text (morph_export) from the build "
+                    "that wrote it, then morph_import here.",
+                 path, (unsigned)hdr[1], (unsigned)hdr[2],
+                 (unsigned)MORPH_FILE_VERSION, (unsigned)sizeof(morph_state_t));
+        return;
     }
     morph_state_t tmp;
     if (fread(&tmp, sizeof(morph_state_t), 1, f) != 1) { fclose(f); pd_error(x, "ligase~: morph_load — short read: %s", path); return; }
@@ -6212,43 +7582,76 @@ static void ligase_morph_state(ligase_t *x) {
 // One snap line carries a full snapshot body (ranges + scalars + discretes + both scale lists,
 // each scale fixed at MAX_SCALE_NOTES wide for boundary-free token parsing).
 
+// Both directions iterate the shared field walker (morph_fields[]) — one enumeration,
+// two serializers, zero schema duplication with the Snapshot Expander.
 static void morph_write_snap(FILE *f, int id, const morph_snapshot_t *s) {
     fprintf(f, "snap %d", id);
-    for (int r = 0; r < MORPH_RANGE_COUNT; r++) {
-        const morph_range_slot_t *q = &s->ranges[r];
-        fprintf(f, " %.9g %.9g %d %d %d %.9g %.9g %d",
-                q->min, q->max, q->enabled, q->rand_type, q->rand_instance, q->base_value, q->slew, q->invert);
+    for (int i = 0; i < MORPH_FIELD_COUNT; i++) {
+        const morph_field_t *fd = &morph_fields[i];
+        switch (fd->kind) {
+            case MF_RANGE: {
+                const morph_range_slot_t *q = &s->ranges[fd->idx];
+                for (int k = 0; k < 8; k++) {
+                    if (morph_range_sub_is_int[k]) fprintf(f, " %d", (int)morph_range_get_sub(q, k));
+                    else                           fprintf(f, " %.9g", morph_range_get_sub(q, k));
+                }
+                break;
+            }
+            case MF_SCALAR:   fprintf(f, " %.9g", s->scalars[fd->idx]); break;
+            case MF_DISCRETE: fprintf(f, " %d", s->discretes[fd->idx]); break;
+            case MF_SCALE: {
+                int *cnt;
+                const float *sc = morph_snap_scale((morph_snapshot_t *)s, fd->idx, &cnt);
+                fprintf(f, " %d", *cnt);   // fixed at MAX_SCALE_NOTES wide: boundary-free token parsing
+                for (int k = 0; k < MAX_SCALE_NOTES; k++) fprintf(f, " %.9g", sc[k]);
+                break;
+            }
+        }
     }
-    for (int i = 0; i < MORPH_SCALAR_USED; i++)   fprintf(f, " %.9g", s->scalars[i]);
-    for (int i = 0; i < MORPH_DISCRETE_USED; i++) fprintf(f, " %d", s->discretes[i]);
-    fprintf(f, " %d", s->pitch_scale_count);
-    for (int i = 0; i < MAX_SCALE_NOTES; i++) fprintf(f, " %.9g", s->pitch_scale[i]);
-    fprintf(f, " %d", s->smear_pitch_scale_count);
-    for (int i = 0; i < MAX_SCALE_NOTES; i++) fprintf(f, " %.9g", s->smear_pitch_scale[i]);
     fprintf(f, "\n");
 }
 
-// Reads the snap body (the caller has consumed 'snap' + id). Returns 1 on success.
-static int morph_read_snap(FILE *f, morph_snapshot_t *s) {
-    memset(s, 0, sizeof(*s));
-    for (int r = 0; r < MORPH_RANGE_COUNT; r++) {
-        morph_range_slot_t *q = &s->ranges[r];
-        float mn, mx, bv, sl; int en, rt, ri, iv;
-        if (fscanf(f, "%g %g %d %d %d %g %g %d", &mn, &mx, &en, &rt, &ri, &bv, &sl, &iv) != 8) return 0;
-        q->min = mn; q->max = mx; q->enabled = en; q->rand_type = rt;
-        q->rand_instance = ri; q->base_value = bv; q->slew = sl; q->invert = iv;
+// Reads the snap body (the caller has consumed 'snap' + id) written by text schema
+// version `ver`; fields newer than `ver` are skipped and keep the values the caller
+// pre-filled *s with (v1/v2 compat: missing generator fields keep the current voice's).
+// Returns 1 on success.
+static int morph_read_snap(FILE *f, morph_snapshot_t *s, int ver) {
+    for (int i = 0; i < MORPH_FIELD_COUNT; i++) {
+        const morph_field_t *fd = &morph_fields[i];
+        if (fd->since > ver) continue;
+        switch (fd->kind) {
+            case MF_RANGE: {
+                morph_range_slot_t *q = &s->ranges[fd->idx];
+                for (int k = 0; k < 8; k++) {
+                    if (morph_range_sub_is_int[k]) {
+                        int v; if (fscanf(f, "%d", &v) != 1) return 0;
+                        morph_range_set_sub(q, k, (float)v);
+                    } else {
+                        float v; if (fscanf(f, "%g", &v) != 1) return 0;
+                        morph_range_set_sub(q, k, v);
+                    }
+                }
+                break;
+            }
+            case MF_SCALAR:
+                if (fscanf(f, "%g", &s->scalars[fd->idx]) != 1) return 0;
+                break;
+            case MF_DISCRETE:
+                if (fscanf(f, "%d", &s->discretes[fd->idx]) != 1) return 0;
+                break;
+            case MF_SCALE: {
+                int *cnt;
+                float *sc = morph_snap_scale(s, fd->idx, &cnt);
+                if (fscanf(f, "%d", cnt) != 1) return 0;
+                for (int k = 0; k < MAX_SCALE_NOTES; k++)
+                    if (fscanf(f, "%g", &sc[k]) != 1) return 0;
+                // clamp defensively (a corrupt file must not let the blend over-read the arrays)
+                if (*cnt < 0) *cnt = 0;
+                if (*cnt > MAX_SCALE_NOTES) *cnt = MAX_SCALE_NOTES;
+                break;
+            }
+        }
     }
-    for (int i = 0; i < MORPH_SCALAR_USED; i++)   if (fscanf(f, "%g", &s->scalars[i]) != 1) return 0;
-    for (int i = 0; i < MORPH_DISCRETE_USED; i++) if (fscanf(f, "%d", &s->discretes[i]) != 1) return 0;
-    if (fscanf(f, "%d", &s->pitch_scale_count) != 1) return 0;
-    for (int i = 0; i < MAX_SCALE_NOTES; i++) if (fscanf(f, "%g", &s->pitch_scale[i]) != 1) return 0;
-    if (fscanf(f, "%d", &s->smear_pitch_scale_count) != 1) return 0;
-    for (int i = 0; i < MAX_SCALE_NOTES; i++) if (fscanf(f, "%g", &s->smear_pitch_scale[i]) != 1) return 0;
-    // clamp counts defensively (a corrupt file must not let the blend over-read the scale arrays)
-    if (s->pitch_scale_count < 0) s->pitch_scale_count = 0;
-    if (s->pitch_scale_count > MAX_SCALE_NOTES) s->pitch_scale_count = MAX_SCALE_NOTES;
-    if (s->smear_pitch_scale_count < 0) s->smear_pitch_scale_count = 0;
-    if (s->smear_pitch_scale_count > MAX_SCALE_NOTES) s->smear_pitch_scale_count = MAX_SCALE_NOTES;
     return 1;
 }
 
@@ -6313,12 +7716,19 @@ static void ligase_morph_import(ligase_t *x, t_symbol *s) {
     m->point_count = 0; m->route_len = 0; m->route_active = 0;
     for (int i = 0; i < MORPH_INCLUDE_COUNT; i++) m->included[i] = 1;
 
+    // Snap-body template: pre-v3 files carry no generator ("sources") fields, so those
+    // keep the CURRENT values — captured once here and pre-filled into every snap read.
+    morph_snapshot_t tmpl;
+    memset(&tmpl, 0, sizeof(tmpl));
+    if (ver < MORPH_TEXT_VERSION) morph_capture(x, &tmpl);
+
     int snaps = 0, pts = 0, rts = 0, bad = 0;
     while (fscanf(f, "%63s", tok) == 1) {
         if (strcmp(tok, "snap") == 0) {
             int id;
             if (fscanf(f, "%d", &id) != 1 || id < 0 || id >= MORPH_MAX_SNAPSHOTS) { bad = 1; break; }
-            if (!morph_read_snap(f, &m->snaps[id])) { bad = 1; break; }
+            m->snaps[id] = tmpl;
+            if (!morph_read_snap(f, &m->snaps[id], ver)) { bad = 1; break; }
             m->snaps[id].in_use = 1; snaps++;
         } else if (strcmp(tok, "point") == 0) {
             int id; float px, py;
@@ -6347,6 +7757,275 @@ static void ligase_morph_import(ligase_t *x, t_symbol *s) {
     if (bad) { pd_error(x, "ligase~: morph_import — parse error in %s (loaded %d snapshots so far)", path, snaps); return; }
     post("ligase~: morph imported from %s (%d snapshots, %d points, %d waypoints)", path, snaps, pts, rts);
     if (m->point_count > 0) morph_apply_at(x, m->cursor_x, m->cursor_y);
+}
+
+// ═════ Snapshot Expander — the edit buffer (Plans/snapshot_expander.md) ═════
+// x->snapbuf is patch memory's classic EDIT BUFFER: a workbench for stored snapshots,
+// owned by the message thread and NEVER read in ligase_perform. All edits are COLD —
+// the live engine changes on exactly two deliberate acts:
+//   snapbuf_apply       buffer -> live (via morph_restore; honors the selection tree)
+//   snapbuf_store <id>  buffer -> slot (a slot placed on the surface KEEPS its placement,
+//                       so an active blend reshapes on the next block — deliberate)
+// Field addressing reuses the shared walker (morph_fields[]) — the text schema and the
+// expander vocabulary are the same enumeration by construction.
+
+static void ligase_snapbuf_load(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    int id = morph_snap_id(x, "snapbuf_load", argc, argv);
+    if (id < 0) return;
+    if (!x->morph->snaps[id].in_use) {
+        pd_error(x, "ligase~: snapbuf_load — snapshot %d is empty", id);
+        return;
+    }
+    x->snapbuf = x->morph->snaps[id];
+    x->snapbuf_has = 1;
+    post("ligase~: snapbuf loaded from slot %d (edits are cold until snapbuf_apply/snapbuf_store)", id);
+}
+
+static void ligase_snapbuf_from_live(ligase_t *x) {
+    memset(&x->snapbuf, 0, sizeof(x->snapbuf));
+    morph_capture(x, &x->snapbuf);   // v1.5 capture transparency: bases, never the wobble
+    x->snapbuf.in_use = 1;
+    x->snapbuf_has = 1;
+    post("ligase~: snapbuf captured from the live voice");
+}
+
+static void ligase_snapbuf_store(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    if (!x->snapbuf_has) {
+        pd_error(x, "ligase~: snapbuf_store — edit buffer is empty (snapbuf_load / snapbuf_from_live first)");
+        return;
+    }
+    int id = morph_snap_id(x, "snapbuf_store", argc, argv);
+    if (id < 0) return;
+    x->morph->snaps[id] = x->snapbuf;
+    x->morph->snaps[id].in_use = 1;
+    int placed = 0;
+    for (int i = 0; i < x->morph->point_count; i++)
+        if (x->morph->points[i].snap_id == id) { placed = 1; break; }
+    post("ligase~: snapbuf stored to slot %d%s", id,
+         placed ? " (slot is placed — the surface reshapes next block)" : "");
+}
+
+static void ligase_snapbuf_apply(ligase_t *x) {
+    if (!x->snapbuf_has) {
+        pd_error(x, "ligase~: snapbuf_apply — edit buffer is empty (snapbuf_load / snapbuf_from_live first)");
+        return;
+    }
+    // The ONLY buffer->realtime touchpoint. Identical to a snapshot recall: through
+    // morph_restore, masked by the selection tree, never touching matrix pins.
+    morph_snapshot_t b = x->snapbuf;
+    morph_mask_excluded(x, &b);
+    morph_restore(x, &b);
+    // Applying while auditioning COMMITS: the buffer's voice is now the real live voice,
+    // so the audition latch (and its revert snapshot) is discarded.
+    if (x->snapbuf_audition) {
+        x->snapbuf_audition = 0;
+        post("ligase~: snapbuf applied to the live engine (audition committed)");
+    } else {
+        post("ligase~: snapbuf applied to the live engine");
+    }
+}
+
+// snapbuf_audition <0|1> — v1.1: TEMPORARILY hear the buffer. 1 = capture the current live
+// voice into the revert slot, then apply the buffer (masked by the selection tree, like any
+// restore); 0 = restore the pre-audition voice (same masked path — excluded fields stayed
+// live throughout, so the round-trip is exact). Buffer edits made WHILE auditioning stay
+// cold (toggle off/on to hear them). Wire a panel button's press/release to 1/0 for the
+// momentary hardware gesture.
+static void ligase_snapbuf_audition(ligase_t *x, t_floatarg f) {
+    int on = (f != 0.0f) ? 1 : 0;
+    if (on && !x->snapbuf_audition) {
+        if (!x->snapbuf_has) {
+            pd_error(x, "ligase~: snapbuf_audition — edit buffer is empty (snapbuf_load / snapbuf_from_live first)");
+            return;
+        }
+        memset(&x->snapbuf_revert, 0, sizeof(x->snapbuf_revert));
+        morph_capture(x, &x->snapbuf_revert);   // modulation-transparent (v1.5 R3)
+        morph_snapshot_t b = x->snapbuf;
+        morph_mask_excluded(x, &b);
+        morph_restore(x, &b);
+        x->snapbuf_audition = 1;
+        post("ligase~: audition ON (buffer voice live; snapbuf_audition 0 reverts)");
+    } else if (!on && x->snapbuf_audition) {
+        morph_snapshot_t b = x->snapbuf_revert;
+        morph_mask_excluded(x, &b);
+        morph_restore(x, &b);
+        x->snapbuf_audition = 0;
+        post("ligase~: audition OFF (pre-audition voice restored)");
+    }
+    // repeated 1s / 0s are no-ops (idempotent latch)
+}
+
+// snapbuf_compare — v1.1: A/B toggle over the audition latch (A = live voice, B = buffer).
+static void ligase_snapbuf_compare(ligase_t *x) {
+    ligase_snapbuf_audition(x, x->snapbuf_audition ? 0.0f : 1.0f);
+}
+
+static void ligase_snapbuf_clear(ligase_t *x) {
+    memset(&x->snapbuf, 0, sizeof(x->snapbuf));
+    x->snapbuf_has = 0;
+    post("ligase~: snapbuf cleared");
+}
+
+// snapbuf_set <field> <value...>            whole field (bands: the 8 export-order values;
+//                                           scales: the whole semitone list)
+// snapbuf_set <band> <subfield> <value>     per-subfield band edit (min/max/enabled/rand_type/
+//                                           rand_instance/base_value/slew/invert)
+// Invalid field/subfield/args -> pd_error, buffer untouched (validated before any write).
+static void ligase_snapbuf_set(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 2 || argv[0].a_type != A_SYMBOL) {
+        pd_error(x, "ligase~: snapbuf_set needs <field> [subfield] <value...>");
+        return;
+    }
+    const char *nm = argv[0].a_w.w_symbol->s_name;
+    const morph_field_t *fd = morph_field_by_name(nm);
+    if (!fd) {
+        pd_error(x, "ligase~: snapbuf_set — unknown field '%s' (see snapbuf_dump for the vocabulary)", nm);
+        return;
+    }
+    switch (fd->kind) {
+        case MF_SCALAR:
+        case MF_DISCRETE: {
+            if (argv[1].a_type != A_FLOAT) {
+                pd_error(x, "ligase~: snapbuf_set %s needs one number", nm);
+                return;
+            }
+            float v = atom_getfloat(&argv[1]);
+            if (fd->kind == MF_SCALAR) x->snapbuf.scalars[fd->idx] = v;
+            else                       x->snapbuf.discretes[fd->idx] = (int)v;
+            break;
+        }
+        case MF_RANGE: {
+            morph_range_slot_t *q = &x->snapbuf.ranges[fd->idx];
+            if (argv[1].a_type == A_SYMBOL) {              // per-subfield form
+                int sub = morph_range_sub_by_name(argv[1].a_w.w_symbol->s_name);
+                if (sub < 0) {
+                    pd_error(x, "ligase~: snapbuf_set %s — unknown subfield '%s' "
+                                "(min max enabled rand_type rand_instance base_value slew invert)",
+                             nm, argv[1].a_w.w_symbol->s_name);
+                    return;
+                }
+                if (argc < 3 || argv[2].a_type != A_FLOAT) {
+                    pd_error(x, "ligase~: snapbuf_set %s %s needs one number", nm, morph_range_subs[sub]);
+                    return;
+                }
+                morph_range_set_sub(q, sub, atom_getfloat(&argv[2]));
+            } else {                                       // whole-band import-grammar form
+                if (argc < 9) {
+                    pd_error(x, "ligase~: snapbuf_set %s needs 8 values "
+                                "(min max enabled rand_type rand_instance base_value slew invert) "
+                                "or <subfield> <value>", nm);
+                    return;
+                }
+                for (int k = 0; k < 8; k++)
+                    if (argv[1 + k].a_type != A_FLOAT) {
+                        pd_error(x, "ligase~: snapbuf_set %s — value %d is not a number (buffer untouched)", nm, k + 1);
+                        return;
+                    }
+                for (int k = 0; k < 8; k++)
+                    morph_range_set_sub(q, k, atom_getfloat(&argv[1 + k]));
+            }
+            break;
+        }
+        case MF_SCALE: {                                   // whole-list set (GATE A.2)
+            int cnt = argc - 1;
+            if (cnt > MAX_SCALE_NOTES) cnt = MAX_SCALE_NOTES;
+            for (int k = 0; k < cnt; k++)
+                if (argv[1 + k].a_type != A_FLOAT) {
+                    pd_error(x, "ligase~: snapbuf_set %s — value %d is not a number (buffer untouched)", nm, k + 1);
+                    return;
+                }
+            int *pc;
+            float *sc = morph_snap_scale(&x->snapbuf, fd->idx, &pc);
+            *pc = cnt;
+            for (int k = 0; k < cnt; k++) sc[k] = atom_getfloat(&argv[1 + k]);
+            for (int k = cnt; k < MAX_SCALE_NOTES; k++) sc[k] = 0.0f;
+            break;
+        }
+    }
+    x->snapbuf_has = 1;   // an edited buffer is a voice-in-progress
+}
+
+// snapbuf_get <field> [subfield] — ONE report on the state outlet (outlet 9),
+// selector "snapbuf": e.g. `snapbuf amplitude_range min 0.2`.
+static void ligase_snapbuf_get(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 1 || argv[0].a_type != A_SYMBOL) {
+        pd_error(x, "ligase~: snapbuf_get needs <field> [subfield]");
+        return;
+    }
+    const char *nm = argv[0].a_w.w_symbol->s_name;
+    const morph_field_t *fd = morph_field_by_name(nm);
+    if (!fd) {
+        pd_error(x, "ligase~: snapbuf_get — unknown field '%s'", nm);
+        return;
+    }
+    t_atom a[MAX_SCALE_NOTES + 2];
+    SETSYMBOL(&a[0], gensym(fd->name));
+    int n = 1;
+    switch (fd->kind) {
+        case MF_SCALAR:   SETFLOAT(&a[n], x->snapbuf.scalars[fd->idx]); n++; break;
+        case MF_DISCRETE: SETFLOAT(&a[n], (t_float)x->snapbuf.discretes[fd->idx]); n++; break;
+        case MF_RANGE: {
+            const morph_range_slot_t *q = &x->snapbuf.ranges[fd->idx];
+            if (argc >= 2 && argv[1].a_type == A_SYMBOL) {   // one subfield
+                int sub = morph_range_sub_by_name(argv[1].a_w.w_symbol->s_name);
+                if (sub < 0) {
+                    pd_error(x, "ligase~: snapbuf_get %s — unknown subfield '%s'",
+                             nm, argv[1].a_w.w_symbol->s_name);
+                    return;
+                }
+                SETSYMBOL(&a[n], gensym(morph_range_subs[sub])); n++;
+                SETFLOAT(&a[n], morph_range_get_sub(q, sub)); n++;
+            } else {                                          // whole band, export order
+                for (int k = 0; k < 8; k++) { SETFLOAT(&a[n], morph_range_get_sub(q, k)); n++; }
+            }
+            break;
+        }
+        case MF_SCALE: {
+            int *pc;
+            const float *sc = morph_snap_scale(&x->snapbuf, fd->idx, &pc);
+            for (int k = 0; k < *pc && k < MAX_SCALE_NOTES; k++) { SETFLOAT(&a[n], sc[k]); n++; }
+            break;
+        }
+    }
+    outlet_anything(x->x_state_out, gensym("snapbuf"), n, a);
+}
+
+// snapbuf_dump — the WHOLE buffer as re-sendable `snapbuf_set` lines on outlet 9
+// (the morph_state idiom): a panel populates every display/knob from one dump, and
+// replaying the dump reconstructs the buffer field-for-field.
+static void ligase_snapbuf_dump(ligase_t *x) {
+    t_atom a[MAX_SCALE_NOTES + 2];
+    t_symbol *sel = gensym("snapbuf_set");
+    for (int i = 0; i < MORPH_FIELD_COUNT; i++) {
+        const morph_field_t *fd = &morph_fields[i];
+        SETSYMBOL(&a[0], gensym(fd->name));
+        int n = 1;
+        switch (fd->kind) {
+            case MF_SCALAR:   SETFLOAT(&a[n], x->snapbuf.scalars[fd->idx]); n++; break;
+            case MF_DISCRETE: SETFLOAT(&a[n], (t_float)x->snapbuf.discretes[fd->idx]); n++; break;
+            case MF_RANGE: {
+                const morph_range_slot_t *q = &x->snapbuf.ranges[fd->idx];
+                for (int k = 0; k < 8; k++) { SETFLOAT(&a[n], morph_range_get_sub(q, k)); n++; }
+                break;
+            }
+            case MF_SCALE: {
+                int *pc;
+                const float *sc = morph_snap_scale(&x->snapbuf, fd->idx, &pc);
+                for (int k = 0; k < *pc && k < MAX_SCALE_NOTES; k++) { SETFLOAT(&a[n], sc[k]); n++; }
+                if (n == 1) continue;   // empty scale list: nothing re-sendable to emit
+                break;
+            }
+        }
+        outlet_anything(x->x_state_out, sel, n, a);
+    }
+    post("ligase~: snapbuf dumped (%d fields%s)", MORPH_FIELD_COUNT,
+         x->snapbuf_has ? "" : "; buffer is empty/default");
 }
 
 // @region:ligase_pd.pd_external.setup Setup Function
@@ -6398,6 +8077,10 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_amplitude, gensym("amplitude"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pan, gensym("pan"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pan_mode, gensym("pan_mode"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_spatial, gensym("spatial"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_spatial_width, gensym("spatial_width"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_spatial_depth, gensym("spatial_depth"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_spatial_tilt, gensym("spatial_tilt"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_saw_cycles, gensym("saw_cycles"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_saw_depth, gensym("saw_depth"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_grainsize, gensym("grainsize"), A_DEFFLOAT, 0);
@@ -6460,6 +8143,12 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_smear_pitch_rand_type, gensym("smear_pitch_rand_type"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_smear_pitch_debug, gensym("smear_pitch_debug"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_smear_pitch_fine, gensym("smear_pitch_fine"), A_DEFFLOAT, 0);
+    // Resonator bank (smear_mode 1): bank of tuned smear voices excited by the granular bus.
+    class_addmethod(ligase_class, (t_method)ligase_smear_mode, gensym("smear_mode"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_bank_resonance, gensym("smear_bank_resonance"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_bank_stages, gensym("smear_bank_stages"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_bank_feedback, gensym("smear_bank_feedback"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_bank_mix, gensym("smear_bank_mix"), A_DEFFLOAT, 0);
 
     class_addmethod(ligase_class, (t_method)ligase_distortion_enable, gensym("distortion_enable"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_distortion_intensity, gensym("distortion"), A_DEFFLOAT, 0);
@@ -6492,6 +8181,12 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_moog_fb_saturation, gensym("moog_fb_saturation"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_moog_enable, gensym("moog_enable"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_param_range, gensym("param_range"), A_GIMME, 0);
+    // Modulation matrix (N->M routing overlay) + envelope-follower input source
+    class_addmethod(ligase_class, (t_method)ligase_matrix_connect,    gensym("matrix_connect"),    A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_matrix_disconnect, gensym("matrix_disconnect"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_matrix_clear,      gensym("matrix_clear"),      A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_matrix_dump,       gensym("matrix_dump"),       A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_env_follow_ms,     gensym("env_follow_ms"),     A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_param_base_value, gensym("param_base_value"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_param_slew, gensym("param_slew"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_param_invert, gensym("param_invert"), A_GIMME, 0);
@@ -6524,6 +8219,8 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_pitch_rand_type, gensym("pitch_rand_type"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_scale, gensym("pitch_scale"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_midi, gensym("midi"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_poly, gensym("poly"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_chord, gensym("chord"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_midi_channel, gensym("midi_channel"), A_DEFFLOAT, A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_channel, gensym("pitch_channel"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_smear_pitch_channel, gensym("smear_pitch_channel"), A_DEFFLOAT, 0);
@@ -6567,6 +8264,17 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_morph_state, gensym("morph_state"), 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_export, gensym("morph_export"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_import, gensym("morph_import"), A_DEFSYMBOL, 0);
+    // Snapshot Expander — the cold edit buffer (snapbuf_*)
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_load,      gensym("snapbuf_load"),      A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_from_live, gensym("snapbuf_from_live"), 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_set,       gensym("snapbuf_set"),       A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_get,       gensym("snapbuf_get"),       A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_dump,      gensym("snapbuf_dump"),      0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_store,     gensym("snapbuf_store"),     A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_apply,     gensym("snapbuf_apply"),     0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_clear,     gensym("snapbuf_clear"),     0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_audition,  gensym("snapbuf_audition"),  A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_compare,   gensym("snapbuf_compare"),   0);
 }
 
 // @endregion:ligase_pd.pd_external.setup

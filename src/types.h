@@ -35,6 +35,15 @@ typedef enum {
     DELAY_MODE_STUT      // Mode 2: Stut quantized rhythmic delay
 } grain_delay_mode_t;
 
+// Smear processing mode (mirrors the delay-mode selector pattern above).
+// SINGLE (default) runs the identical single grain_smear voice path as always;
+// BANK runs a bank of N tuned smear voices excited by the granular+delay bus
+// (grains = exciter, resonator bank = instrument). Selected by `smear_mode 0|1`.
+typedef enum {
+    SMEAR_MODE_SINGLE,   // Mode 0: single resonator voice (default)
+    SMEAR_MODE_BANK      // Mode 1: bank of tuned voices excited by the granular bus
+} smear_mode_t;
+
 typedef struct {
     float *buffer_left;        // Left channel delay buffer
     float *buffer_right;       // Right channel delay buffer
@@ -292,6 +301,12 @@ typedef struct grain {
     float increment;          // Read increment (speed)
     float amplitude;          // Current amplitude
     float pan;                // Stereo pan (0=left, 0.5=center, 1=right)
+    // --- spatial (pan_mode 2): frozen 3D position, snapshotted at trigger, read every sample ---
+    float pos_x;              // normalized to [-1,1] via the sim's bounds (L .. R azimuth axis)
+    float pos_y;              // normalized to [-1,1]  (down .. up — elevation)
+    float pos_z;              // normalized to [-1,1]  (back .. front — depth)
+    float spatial_left_gain;  // precomputed at trigger (constant-power L gain, constant for grain life)
+    float spatial_right_gain; // precomputed at trigger (constant-power R gain) — keeps atan2/sqrt off the per-sample loop
     int envelope_phase;       // Current envelope index
     int grain_length;         // Grain duration in samples (stored at trigger time)
     int active;               // Is grain active
@@ -396,6 +411,97 @@ typedef struct {
 
 // @endregion:ligase_pd.core.types.param_range
 
+// @region:ligase_pd.core.types.mod_matrix Modulation Matrix (N->M routing overlay)
+
+// Matrix SOURCE ids — a SEPARATE namespace from rand_type_t so the per-range source binding
+// (rand_type/rand_instance) is untouched (load-bearing for backward compat: the ~45 ranges,
+// the get_param_range_by_name registry, state dump, and the RAND_TYPE_PATTERN slot overload
+// all keep their existing vocabulary). Generator instances are enumerated explicitly so one
+// connection picks one concrete source; mod_source_value() (grain.c) maps ids to [0,1].
+typedef enum {
+    MOD_SRC_NONE = 0,
+    // --- waveform LFO instances (read waveform_phase[0..3]; same phase, three shapes) ---
+    MOD_SRC_SINE1, MOD_SRC_SINE2, MOD_SRC_SINE3, MOD_SRC_SINE4,       // "lfoN" aliases to sineN
+    MOD_SRC_SAW1, MOD_SRC_SAW2, MOD_SRC_SAW3, MOD_SRC_SAW4,
+    MOD_SRC_SQUARE1, MOD_SRC_SQUARE2, MOD_SRC_SQUARE3, MOD_SRC_SQUARE4,
+    // --- stochastic / chaotic generator instances (mirror perlin_state's 4-instance arrays) ---
+    MOD_SRC_PERLIN1, MOD_SRC_PERLIN2, MOD_SRC_PERLIN3, MOD_SRC_PERLIN4,   // 1D Perlin
+    MOD_SRC_LORENZ1, MOD_SRC_LORENZ2, MOD_SRC_LORENZ3, MOD_SRC_LORENZ4,
+    MOD_SRC_NBODY1, MOD_SRC_NBODY2, MOD_SRC_NBODY3, MOD_SRC_NBODY4,
+    MOD_SRC_SPHERE1, MOD_SRC_SPHERE2, MOD_SRC_SPHERE3, MOD_SRC_SPHERE4,
+    MOD_SRC_RAND1, MOD_SRC_RAND2, MOD_SRC_RAND3, MOD_SRC_RAND4,
+    // --- pattern slots (PATTERN_SLOTS == 8) ---
+    MOD_SRC_PATTERN0, MOD_SRC_PATTERN1, MOD_SRC_PATTERN2, MOD_SRC_PATTERN3,
+    MOD_SRC_PATTERN4, MOD_SRC_PATTERN5, MOD_SRC_PATTERN6, MOD_SRC_PATTERN7,
+    // --- input-LISTENING sources (envelope follower over the live input; v1) ---
+    MOD_SRC_ENV_L,     // follower, left input
+    MOD_SRC_ENV_R,     // follower, right input
+    MOD_SRC_ENV_MONO,  // follower, 0.5*(L+R) mix
+    // MOD_SRC_ONSET / MOD_SRC_PITCH: v2, deferred (own GATE A)
+    MOD_SRC_COUNT
+} mod_source_t;
+
+// Matrix DESTINATION ids — two apply tiers. The PER-BLOCK tier (effect/playback params) is
+// applied once per DSP block in ligase_update_inlets, plus the modout outlets. The PER-GRAIN
+// tier (v1.5: speed/grainsize/grain_start/amplitude/pan/pitch_fine) is applied FUNCTIONALLY
+// at grain trigger in scheduler_trigger_grain: sums are cached once per block
+// (matrix_cache_grain_sums) and added to each grain's sampled value after param_range
+// sampling and before the existing in-place clamps — the shared fields (x->grain_size,
+// x->speed, ...) are never written back (capture stays clean by construction).
+// Names in the connect message reuse the get_param_range_by_name vocabulary verbatim.
+// NOTE: the six per-grain ids must stay CONTIGUOUS starting at MOD_DEST_SPEED — the
+// mod_grain_sum[] cache indexes by (dest - MOD_DEST_SPEED).
+typedef enum {
+    MOD_DEST_NONE = 0,
+    MOD_DEST_GDELAY,           // "gdelay"        delay time (s)
+    MOD_DEST_GDELAY_FEED,      // "gdelay_feed"   feedback 0-1 (stut: reduction, same 0-1 units)
+    MOD_DEST_GDELAY_TONE,      // "gdelay_tone"   tone 0-1 (stut mode: NOT applied — spacing is ms)
+    MOD_DEST_GDELAY_MIX,       // "gdelay_mix"    mix 0-1
+    MOD_DEST_MOOG_CUTOFF,      // "moog_cutoff"   Hz
+    MOD_DEST_MOOG_RESONANCE,   // "moog_resonance" 0-4
+    MOD_DEST_MOOG_MIX,         // "moog_mix"      0-1
+    MOD_DEST_SMEAR_FREQUENCY,  // "smear_frequency" Hz (bypassed while smear_pitch owns freq)
+    MOD_DEST_SMEAR_RESONANCE,  // "smear_resonance" 0-0.999
+    MOD_DEST_SMEAR_STAGES,     // "smear_stages"  0-48
+    MOD_DEST_SMEAR_FEEDBACK,   // "smear_feedback" -0.99..0.99
+    MOD_DEST_SCANRATE,         // "scanrate"
+    MOD_DEST_ORGANIZE,         // "organize"      0-1
+    MOD_DEST_SOS,              // "sos"           0-1
+    MOD_DEST_IOT,              // "iot"           seconds
+    MOD_DEST_ENV_SKEW,         // "env_skew"      0-1
+    MOD_DEST_MODOUT1,          // "modout1"       patched out; UNCLAMPED (see modout apply site)
+    MOD_DEST_MODOUT2,          // "modout2"
+    MOD_DEST_MODOUT3,          // "modout3"
+    MOD_DEST_MODOUT4,          // "modout4"
+    // --- v1.5 PER-GRAIN tier (applied at grain trigger; contiguous — see note above) ---
+    MOD_DEST_SPEED,            // "speed"         offset on final pitch-derived speed, ±4 clamp
+    MOD_DEST_GRAINSIZE,        // "grainsize"     seconds, [0.01, 2]
+    MOD_DEST_GRAIN_START,      // "grain_start"   normalized splice offset [0, 1] ("grainstart" alias)
+    MOD_DEST_AMPLITUDE,        // "amplitude"     [0, 2]
+    MOD_DEST_PAN,              // "pan"           [0, 1]
+    MOD_DEST_PITCH_FINE,       // "pitch_fine"    semitones [-0.5, 0.5] (±50 cents)
+    MOD_DEST_COUNT
+} mod_dest_t;
+
+// Per-grain destination indexing helpers (cache slot / active bit for MOD_DEST_SPEED..PITCH_FINE)
+#define MOD_GRAIN_DEST_COUNT  6
+#define MOD_GRAIN_IDX(dest)   ((dest) - MOD_DEST_SPEED)
+#define MOD_GRAIN_BIT(dest)   (1 << MOD_GRAIN_IDX(dest))
+
+#define MOD_MATRIX_MAX 32   // fixed capacity -> no audio-thread allocation
+
+// One sparse routing connection. Depth is SIGNED (bipolar), in the DESTINATION's own units;
+// contribution = depth * (source01 - 0.5) * 2, summed per destination on top of the existing
+// param_range base. enabled=0 keeps the slot but makes it inert (disconnect-without-remove).
+typedef struct {
+    int   source;    // mod_source_t
+    int   dest;      // mod_dest_t
+    float depth;     // signed, destination units
+    int   enabled;   // 0 = inert
+} mod_conn_t;
+
+// @endregion:ligase_pd.core.types.mod_matrix
+
 // @region:ligase_pd.core.pitch.types Pitch Control Data Types
 
 typedef enum {
@@ -464,6 +570,7 @@ typedef struct {
 #define PATTERN_MAX_DEPTH  8     // recursive-descent open-group stack cap
 #define PATTERN_SLOTS      8     // independent pattern slots (>4 generator instances => per-target independence)
 #define PATTERN_MAX_SEGS   16    // pattern_cycle segment-list cap
+#define PATTERN_EVENT_MAX_BURST 16  // grain-burst event cap per step (pool NULL-on-full is the hard ceiling)
 
 // One compiled flat leaf (runtime representation, produced by flattening the parse tree)
 typedef struct {
@@ -489,6 +596,20 @@ typedef struct {
     int   last_step_index;     // for change detection
     long  last_alt_cycle;      // cycle index of last alt reselection (skip recompute when unchanged)
 } pattern_table_t;
+
+// What a pattern slot DRIVES. Default 0 = VALUE preserves every current pattern (param/pitch read
+// cached_value pull-style). EVENT_* slots instead FIRE a discrete action on the evaluator's
+// changed edge (one action per non-rest step entry, quantized to the cycle clock). The tag lives
+// in a parallel per-slot array on perlin_state_t (NOT inside pattern_table_t) so the commit-time
+// memcpy of the scratch table can never carry a stale kind.
+typedef enum {
+    PATTERN_KIND_VALUE = 0,   // 0 — continuous value (param via RAND_TYPE_PATTERN, or pitch). DEFAULT.
+    PATTERN_KIND_EVENT_GRAIN, // fire cached_value grains (a burst) on each step edge
+    PATTERN_KIND_EVENT_SPLICE,// write cached_value -> splice_behavior.pending_splice (jump at next wrap)
+    PATTERN_KIND_EVENT_RETRIG,// retrigger playback from splice start (mirror ligase_trigger)
+    PATTERN_KIND_EVENT_GATE,  // set transport: cached_value != 0 -> play, == 0 -> stop (grains finish)
+    PATTERN_KIND_EVENT_BANG   // outlet_bang(x_grain_bang_out)
+} pattern_target_kind_t;
 
 // Parse-time ONLY (function-local automatic array inside ligase_pattern; never in perform state)
 typedef enum { PN_LEAF, PN_SEQ, PN_ALT } pattern_node_kind_t;
@@ -597,6 +718,24 @@ typedef struct {
     pattern_table_t pattern[PATTERN_SLOTS];
     float           pattern_phase[PATTERN_SLOTS];        // free-running 0..1 cycle phase per slot
     long            pattern_cycle_index[PATTERN_SLOTS];  // integer cycle counter per slot (<> alternation)
+    // pattern_target_kind_t per slot; 0 = VALUE (default). Covered by the same scheduler_create
+    // memset as the arrays above, so every slot is a VALUE slot on construction — bit-identical
+    // behavior until 'pattern event <action> ...' explicitly tags a slot EVENT_*. Publish
+    // discipline: written on the message thread BEFORE step_count (the commit barrier), reset to
+    // VALUE on non-event commits and on pattern_clear (pooled-slot reuse must not mis-fire).
+    int             pattern_target_kind[PATTERN_SLOTS];
+
+    // Input envelope follower — per-block input-LISTENING source for the modulation matrix.
+    // Mirrors the pattern cache discipline: written once per block in ligase_perform (sole
+    // writer), read by mod_source_value; no malloc, no locks. Rectified-PEAK one-pole: rises
+    // instantly toward a new peak, decays at env_follow_coeff (release, default ~30 ms —
+    // 'env_follow_ms' message). Output is NOT hard-capped: input is typically <=1.0, and the
+    // per-destination clamp at the matrix apply site catches any overshoot (hot input + high
+    // depth saturates the destination at its clamp — documented, intended).
+    float env_follow_state[2];   // one-pole rectified state per channel (L, R); leaky -> denormal-safe
+    float env_follow_value[3];   // CACHED block output: [0]=L, [1]=R, [2]=0.5*(L+R) mono mix
+    float env_follow_coeff;      // one-pole release coeff = exp(-1/(ms*0.001*sr)); 0 = instant
+    float env_follow_ms;         // release time in ms (kept so a samplerate change recomputes coeff)
 } perlin_state_t;
 
 // @endregion:ligase_pd.core.types.perlin_state
@@ -606,6 +745,7 @@ typedef struct {
 
 #define DEFAULT_MAX_GRAINS 200
 #define MAX_POOL_SIZE 2000  // Absolute maximum for safety
+#define MAX_VOICES 8        // CHORDAL POLY: chord cap (triads/7ths/9ths); budget ceiling is pool_size
 
 typedef struct scheduler {
     grain_t *grain_pool;       // Dynamic pool allocated at initialization
@@ -683,12 +823,54 @@ typedef struct scheduler {
     int grain_midi_channel;   // P2: MIDI channel routed to the GRAIN pitch destination (default 1)
     int smear_midi_channel;   // P2: MIDI channel routed to the SMEAR pitch destination (default 2)
 
-    // Pan mode (0 = constant-power mono panning, 1 = stereo balance)
+    // CHORDAL POLY voice pool. WRITTEN by ligase_midi / ligase_chord (control thread), READ by the
+    // three trigger loops in ligase_process_grains (perform thread). POD + single-writer/single-reader;
+    // no locks. Default poly_enabled=0 / voice_count=0 => the mono scalar path is bit-identical to today.
+    // Budget note: N voices share the soft cap max_grains (default 4). POLY patches should raise
+    // max_grains (via ligase.conf / message) so a chord isn't starved; the hard ceiling is pool_size.
+    int poly_enabled;              // 0 = mono (default) -> trigger sites take the single-call path
+    int voice_note[MAX_VOICES];    // active MIDI notes (each transposed vs 60 at spawn)
+    int voice_age[MAX_VOICES];     // monotonic insert order, for oldest-note stealing
+    int voice_count;               // number of active voices; 0 = mono path
+    int voice_next_age;            // monotonic counter handed to each new voice
+
+    // Pan mode (0 = constant-power mono panning, 1 = stereo balance, 2 = spatial 3D)
     int pan_mode;
+
+    // SPATIAL granulation (pan_mode == 2): which physics generator drives per-grain 3D placement.
+    // Read at grain trigger (perform thread), written by the `spatial`/`spatial_*` messages (control
+    // thread). POD single-writer/single-reader, no locks. Only consulted when pan_mode == 2, so with
+    // pan_mode 0/1 the entire scalar pan path is bit-identical to today.
+    int spatial_source;       // RAND_TYPE_SPHERE or RAND_TYPE_NBODY (reuse the rand_type_t vocabulary)
+    int spatial_instance;     // which of the 4 sim instances (0-3)
+    int spatial_nbody_body;   // for nbody: which of the 3 bodies (0-2) supplies the position
+    float spatial_width;      // azimuth scaling 0..1 (0 = collapse to center, 1 = full L/R)
+    float spatial_depth_amt;  // 0..1 how much pos_z (distance) attenuates level (default 0 = off in lean v1)
+    float spatial_tilt_amt;   // 0..1 how much pos_y (elevation) tilts tone/level (default 0 = off in lean v1)
 
     // Delay mode structures (for bencina and stut modes)
     grain_delay_stut_t *delay_stut;      // Stut mode state (NULL if not allocated)
     grain_delay_bencina_t *delay_bencina; // Bencina mode state (NULL if not allocated)
+
+    // MODULATION MATRIX — sparse N->M routing overlay, additive on top of the per-destination
+    // param_range base. WRITTEN by the matrix_* messages (control thread) with fields-first,
+    // count-last publish ordering (same barrier as pattern_table_t.step_count); READ by the
+    // per-block apply sites (perform thread). Covered by the scheduler_create memset, so
+    // mod_conn_count == 0 on construction -> matrix inert -> bit-identical to the pre-matrix
+    // engine (backward compat is load-bearing).
+    mod_conn_t mod_matrix[MOD_MATRIX_MAX];
+    int        mod_conn_count;           // 0 => matrix inert (publish barrier; incremented LAST)
+
+    // v1.5 PER-GRAIN destination tier: signed sums for the six per-grain destinations, cached
+    // ONCE PER BLOCK by matrix_cache_grain_sums() in ligase_perform (sources are per-block
+    // values — mirrors the env-follower cache discipline, and keeps MOD_SRC_RANDn's LCG at one
+    // advance per connection per block instead of per grain). READ at grain trigger in
+    // scheduler_trigger_grain, where each sum is added to the grain's sampled value BEFORE the
+    // existing in-place clamps — never written back to the shared fields. mod_grain_mask bit
+    // MOD_GRAIN_IDX(dest) set <=> that dest has an enabled connection; mask == 0 keeps the
+    // trigger path at ~one branch per apply site (R5). Covered by the scheduler_create memset.
+    float mod_grain_sum[MOD_GRAIN_DEST_COUNT];   // indexed by MOD_GRAIN_IDX(dest)
+    int   mod_grain_mask;                        // 0 => per-grain tier inert
 
 } scheduler_t;
 
