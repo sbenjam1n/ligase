@@ -3203,6 +3203,17 @@ cold; the live engine changes on exactly two deliberate acts:
   point — reshape a corner of the surface mid-set — and it is safe because it only ever happens on the
   explicit STORE, never as a knob side-effect. Storing to an unplaced slot changes nothing live.
 
+**Audition / compare (v1.1 — the explicit opt-in).** `snapbuf_audition 1` TEMPORARILY applies the
+buffer so you can hear it: the current live voice is captured to a revert slot first (modulation-
+transparent, like any capture), then the buffer lands through the usual masked-restore path.
+`snapbuf_audition 0` restores the pre-audition voice exactly. `snapbuf_compare` is an A/B toggle
+over the same latch (A = your live voice, B = the buffer). Wire a panel button's press/release to
+`snapbuf_audition 1`/`0` for the momentary hardware gesture. Rules: buffer edits made WHILE
+auditioning stay cold (toggle off/on to hear them); `snapbuf_apply` during an audition COMMITS —
+the buffer becomes the real live voice and the revert is discarded; knob/message moves you make
+during an audition are overwritten by the revert (the latch owns the live voice while held);
+excluded fields (`morph_exclude`) stay live through both directions of the round-trip.
+
 ## Messages
 
   snapbuf_load <id>          copy stored snapshot -> buffer
@@ -3215,7 +3226,10 @@ cold; the live engine changes on exactly two deliberate acts:
                              (a panel populates every display from one dump; replaying the
                              dump reconstructs the buffer)
   snapbuf_store <id>         buffer -> slot (keeps the slot's surface placement; see above)
-  snapbuf_apply              buffer -> live engine (the ONLY realtime touchpoint)
+  snapbuf_apply              buffer -> live engine (the ONLY committing touchpoint;
+                             during an audition it COMMITS and discards the revert)
+  snapbuf_audition <0|1>     v1.1: temporarily hear the buffer (1) / exact revert (0)
+  snapbuf_compare            v1.1: A/B toggle over the audition latch
   snapbuf_clear              re-init the buffer to empty
 
 ## Field addressing (the export-schema vocabulary)

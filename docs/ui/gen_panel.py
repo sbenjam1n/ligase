@@ -413,13 +413,17 @@ switch(XL+136, xy+120, 210, ["OFF","PERL","LRNZ","NBDY","SPHR","RAND","PAT"], 1,
 switch(XL+296, xy+120, 64, ["1","2","3","4"], 0, "INST")
 
 xy += 168 + 12
-strip(XL+24, xy, XW-48, 100, "COMMIT", "red")
+strip(XL+24, xy, XW-48, 100, "COMMIT / AUDITION", "red")
 cky = xy + 38
-button(XL+108, cky, "STORE", 76)
-button(XL+228, cky, "ASSIGN", 76, lit=True)
-text(XL+108, cky+22, "snapbuf_store <id>", 6.5, MUTED)
-text(XL+228, cky+22, "snapbuf_apply", 6.5, MUTED)
-text(XC, cky+42, "edits are COLD — the live engine is untouched until ASSIGN", 7.5, "#d9c48a", weight="bold")
+button(XL+72, cky, "STORE", 62)
+button(XL+150, cky, "ASSIGN", 62, lit=True)
+button(XL+232, cky, "AUDITION", 66)
+button(XL+308, cky, "A/B", 40)
+text(XL+72, cky+22, "snapbuf_store", 6.5, MUTED)
+text(XL+150, cky+22, "snapbuf_apply", 6.5, MUTED)
+text(XL+232, cky+22, "hold = momentary", 6.5, MUTED)
+text(XL+308, cky+22, "compare", 6.5, MUTED)
+text(XC, cky+42, "edits are COLD — ASSIGN commits; AUDITION borrows the live voice and reverts exactly", 7.2, "#d9c48a", weight="bold")
 
 xy += 100 + 18
 text(XL+38, xy, "MESSAGES", 8, MUTED, "start", "bold", ls="1.5")
@@ -428,11 +432,11 @@ for i, ln in enumerate([
     "snapbuf_set <field> [sub] <v> · snapbuf_get <field> [sub]",
     "snapbuf_dump  (re-sendable lines → outlet 9)",
     "snapbuf_store <id>   (reshapes the surface if slot is placed)",
-    "snapbuf_apply        (the ONLY realtime touchpoint)",
+    "snapbuf_apply (commits; ends an audition) · snapbuf_audition <0|1> · snapbuf_compare",
 ]):
     text(XL+38, xy+14+i*11, ln, 7, MUTED, "start")
 text(XL+38, xy+14+5*11+8, "STORE to a placed slot reshapes the morph field next block —", 6.8, MUTED, "start")
-text(XL+38, xy+14+5*11+18, "deliberate act, never a knob side-effect. AUDITION / COMPARE = v1.1 (GATE A).", 6.8, MUTED, "start")
+text(XL+38, xy+14+5*11+18, "deliberate act, never a knob side-effect. AUDITION reverts exact; ASSIGN mid-audition commits.", 6.8, MUTED, "start")
 text(XL+38, xy+14+5*11+38, "Pd prototype: own canvas · speaks only snapbuf_* · parses outlet 9.", 6.8, "#d9c48a", "start")
 text(XL+XW-24, H-58, "Plans/snapshot_expander.md", 7, MUTED, "end")
 
@@ -441,7 +445,7 @@ fy = H - 44
 parts.append(f'<line x1="40" y1="{fy-14}" x2="{W-40}" y2="{fy-14}" stroke="{LINE}" stroke-width="0.8"/>')
 text(46, fy, "Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save", size=8, fill=MUTED, anchor="start")
 text(46, fy+14, "BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix & param_range)", size=8, fill=MUTED, anchor="start")
-text(MAINW-46, fy+14, "ligase~ — QUEUE Seq 64 feature set", size=8, fill=MUTED, anchor="end")
+text(MAINW-46, fy+14, "ligase~ — QUEUE Seq 68 feature set", size=8, fill=MUTED, anchor="end")
 
 svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">\n' + "\n".join(p for p in parts if p) + "\n</svg>\n"
 import os

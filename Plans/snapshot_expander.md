@@ -2,7 +2,7 @@
 
 **Owner:** SLB
 **Date:** 2026-07-05
-**Status:** ✅ **DONE + headless-verified (2026-07-05, commit 2644a57).** All Steps 1–4 shipped on the fully-cleared GATE A; every acceptance criterion measured (AC6 owner-workflow feel remains an owner item). See QUEUE §6 Seq 67.
+**Status:** ✅ **DONE + headless-verified (2026-07-05, commit 2644a57), incl. v1.1 audition/compare** (`snapbuf_audition <0|1>` + `snapbuf_compare`, Seq 68): the GATE A.1/A.3 deferred pair, shipped as the explicit opt-in — capture-to-revert then masked apply; exact revert; apply mid-audition commits. AC6 owner-workflow feel remains an owner item. See QUEUE §6 Seq 67–68.
 **Tracked in:** `QUEUE.md` §4a
 **Related:** `docs/modulation_layers.md` (the layer contract this slots into),
 `Plans/morph_metasurface.md` (the snapshot/surface system being exposed),

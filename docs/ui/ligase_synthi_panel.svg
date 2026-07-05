@@ -1289,28 +1289,34 @@
 <text x="1854.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">4</text>
 <text x="1830" y="550" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#e9e5d9" text-anchor="middle" font-weight="bold">INST</text>
 <rect x="1558" y="622" width="318" height="100" rx="6" fill="none" stroke="#5c6167" stroke-width="1"/>
-<rect x="1570" y="615" width="48" height="14" fill="#26292e"/>
+<rect x="1570" y="615" width="119" height="14" fill="#26292e"/>
 <circle cx="1577" cy="622" r="3" fill="#b8493f"/>
-<text x="1585" y="625.5" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#e9e5d9" text-anchor="start" font-weight="bold" letter-spacing="1.5">COMMIT</text>
-<rect x="1604.0" y="651" width="76" height="18" rx="4" fill="#1a1c1f" stroke="#5c6167" stroke-width="1.2"/>
-<text x="1642" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#e9e5d9" text-anchor="middle" font-weight="bold">STORE</text>
-<rect x="1724.0" y="651" width="76" height="18" rx="4" fill="#43321f" stroke="#5c6167" stroke-width="1.2"/>
-<text x="1762" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#e9e5d9" text-anchor="middle" font-weight="bold">ASSIGN</text>
-<text x="1642" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#9aa0a6" text-anchor="middle">snapbuf_store &lt;id&gt;</text>
-<text x="1762" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#9aa0a6" text-anchor="middle">snapbuf_apply</text>
-<text x="1717.0" y="702" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#d9c48a" text-anchor="middle" font-weight="bold">edits are COLD — the live engine is untouched until ASSIGN</text>
+<text x="1585" y="625.5" font-family="Helvetica, Arial, sans-serif" font-size="9" fill="#e9e5d9" text-anchor="start" font-weight="bold" letter-spacing="1.5">COMMIT / AUDITION</text>
+<rect x="1575.0" y="651" width="62" height="18" rx="4" fill="#1a1c1f" stroke="#5c6167" stroke-width="1.2"/>
+<text x="1606" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#e9e5d9" text-anchor="middle" font-weight="bold">STORE</text>
+<rect x="1653.0" y="651" width="62" height="18" rx="4" fill="#43321f" stroke="#5c6167" stroke-width="1.2"/>
+<text x="1684" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#e9e5d9" text-anchor="middle" font-weight="bold">ASSIGN</text>
+<rect x="1733.0" y="651" width="66" height="18" rx="4" fill="#1a1c1f" stroke="#5c6167" stroke-width="1.2"/>
+<text x="1766" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#e9e5d9" text-anchor="middle" font-weight="bold">AUDITION</text>
+<rect x="1822.0" y="651" width="40" height="18" rx="4" fill="#1a1c1f" stroke="#5c6167" stroke-width="1.2"/>
+<text x="1842" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#e9e5d9" text-anchor="middle" font-weight="bold">A/B</text>
+<text x="1606" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#9aa0a6" text-anchor="middle">snapbuf_store</text>
+<text x="1684" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#9aa0a6" text-anchor="middle">snapbuf_apply</text>
+<text x="1766" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#9aa0a6" text-anchor="middle">hold = momentary</text>
+<text x="1842" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#9aa0a6" text-anchor="middle">compare</text>
+<text x="1717.0" y="702" font-family="Helvetica, Arial, sans-serif" font-size="7.2" fill="#d9c48a" text-anchor="middle" font-weight="bold">edits are COLD — ASSIGN commits; AUDITION borrows the live voice and reverts exactly</text>
 <text x="1572" y="740" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="start" font-weight="bold" letter-spacing="1.5">MESSAGES</text>
 <text x="1572" y="754" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#9aa0a6" text-anchor="start">snapbuf_load &lt;id&gt; · snapbuf_from_live · snapbuf_clear</text>
 <text x="1572" y="765" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#9aa0a6" text-anchor="start">snapbuf_set &lt;field&gt; [sub] &lt;v&gt; · snapbuf_get &lt;field&gt; [sub]</text>
 <text x="1572" y="776" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#9aa0a6" text-anchor="start">snapbuf_dump  (re-sendable lines → outlet 9)</text>
 <text x="1572" y="787" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#9aa0a6" text-anchor="start">snapbuf_store &lt;id&gt;   (reshapes the surface if slot is placed)</text>
-<text x="1572" y="798" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#9aa0a6" text-anchor="start">snapbuf_apply        (the ONLY realtime touchpoint)</text>
+<text x="1572" y="798" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#9aa0a6" text-anchor="start">snapbuf_apply (commits; ends an audition) · snapbuf_audition &lt;0|1&gt; · snapbuf_compare</text>
 <text x="1572" y="817" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="start">STORE to a placed slot reshapes the morph field next block —</text>
-<text x="1572" y="827" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="start">deliberate act, never a knob side-effect. AUDITION / COMPARE = v1.1 (GATE A).</text>
+<text x="1572" y="827" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="start">deliberate act, never a knob side-effect. AUDITION reverts exact; ASSIGN mid-audition commits.</text>
 <text x="1572" y="847" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#d9c48a" text-anchor="start">Pd prototype: own canvas · speaks only snapbuf_* · parses outlet 9.</text>
 <text x="1876" y="1038" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#9aa0a6" text-anchor="end">Plans/snapshot_expander.md</text>
 <line x1="40" y1="1038" x2="1874" y2="1038" stroke="#5c6167" stroke-width="0.8"/>
 <text x="46" y="1052" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="start">Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save</text>
 <text x="46" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="start">BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix &amp; param_range)</text>
-<text x="1474" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="end">ligase~ — QUEUE Seq 64 feature set</text>
+<text x="1474" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="end">ligase~ — QUEUE Seq 68 feature set</text>
 </svg>

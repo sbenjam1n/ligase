@@ -3,7 +3,7 @@
 _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md` (§6);
 this is the "where we are / how to continue" digest._
 
-## Where we are (2026-07-05, Queue Seq 67)
+## Where we are (2026-07-05, Queue Seq 68)
 
 - **Branch state:** all new work is on **`claude/queue-execution-plans-8snsz1`** (pushed to
   origin), ~14 commits ahead of `main`. `main` still ends at the morph completion (Seq 60).
@@ -42,7 +42,9 @@ this is the "where we are / how to continue" digest._
   global weather. `snapbuf_apply` is the only realtime touchpoint; STORE to a placed slot
   reshapes the blend next block. Deliberate alignment: `snapshot_recall` now honors the
   selection tree (shared `morph_mask_excluded()`; no-op when nothing is excluded). Cold-edit
-  byte-identity proven (25 edits during recording, WAV md5 unchanged).
+  byte-identity proven (25 edits during recording, WAV md5 unchanged). **v1.1 audition/compare
+  shipped** (Seq 68): `snapbuf_audition <0|1>` (capture-to-revert, masked apply, EXACT revert;
+  apply mid-audition commits) + `snapbuf_compare` A/B toggle.
 - **Panel UI mockup** — `docs/ui/ligase_synthi_panel.svg`, regenerated deterministically by
   `docs/ui/gen_panel.py` (edit the script, run it, screenshot via the pre-installed headless
   chromium to review). EMS-Synthi idiom: every signal inlet badged `IN n`, message/preset
@@ -109,9 +111,8 @@ this is the "where we are / how to continue" digest._
   PATTERNS section. Pattern tests: `tests/pattern/`; morph: `tests/morph/`.)
 
 ## Immediate next steps
-1. Offer the owner a PR / merge of `claude/queue-execution-plans-8snsz1` → `main`.
-2. Owner ear-test round on the new features (list above) + the expander workflow feel (AC6)
-   — file findings as new B-items.
+1. Owner ear-test round on the new features (list above) + the expander workflow feel (AC6)
+   — file findings as new B-items. (Branch was PR'd → `main` and merged at Seq 68.)
 4. Parked ideas: source-rates-as-matrix-destinations (matrix-on-matrix; matrix plan's domain);
    expander v1.1 = audition + A/B compare pair; morph FX bases completeness; §4 build-naming
    cleanup (only when cutting a release); `make manual` when the owner asks (much accumulated).

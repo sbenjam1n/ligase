@@ -222,6 +222,11 @@ struct _ligase {
     // construction; the live engine changes only on snapbuf_apply / snapbuf_store.
     morph_snapshot_t snapbuf;
     int snapbuf_has;        // buffer holds a voice (snapbuf_load / _from_live / _set)
+    // v1.1 AUDITION latch (the GATE A.1/A.3 pair): while latched, the buffer's voice is
+    // temporarily applied and the pre-audition live voice is held in snapbuf_revert for
+    // the release. COMPARE is a toggle over the same latch.
+    morph_snapshot_t snapbuf_revert;
+    int snapbuf_audition;   // 1 = auditioning (live currently carries the buffer's voice)
 
     // Parameters
     float grain_size;
@@ -7814,7 +7819,49 @@ static void ligase_snapbuf_apply(ligase_t *x) {
     morph_snapshot_t b = x->snapbuf;
     morph_mask_excluded(x, &b);
     morph_restore(x, &b);
-    post("ligase~: snapbuf applied to the live engine");
+    // Applying while auditioning COMMITS: the buffer's voice is now the real live voice,
+    // so the audition latch (and its revert snapshot) is discarded.
+    if (x->snapbuf_audition) {
+        x->snapbuf_audition = 0;
+        post("ligase~: snapbuf applied to the live engine (audition committed)");
+    } else {
+        post("ligase~: snapbuf applied to the live engine");
+    }
+}
+
+// snapbuf_audition <0|1> — v1.1: TEMPORARILY hear the buffer. 1 = capture the current live
+// voice into the revert slot, then apply the buffer (masked by the selection tree, like any
+// restore); 0 = restore the pre-audition voice (same masked path — excluded fields stayed
+// live throughout, so the round-trip is exact). Buffer edits made WHILE auditioning stay
+// cold (toggle off/on to hear them). Wire a panel button's press/release to 1/0 for the
+// momentary hardware gesture.
+static void ligase_snapbuf_audition(ligase_t *x, t_floatarg f) {
+    int on = (f != 0.0f) ? 1 : 0;
+    if (on && !x->snapbuf_audition) {
+        if (!x->snapbuf_has) {
+            pd_error(x, "ligase~: snapbuf_audition — edit buffer is empty (snapbuf_load / snapbuf_from_live first)");
+            return;
+        }
+        memset(&x->snapbuf_revert, 0, sizeof(x->snapbuf_revert));
+        morph_capture(x, &x->snapbuf_revert);   // modulation-transparent (v1.5 R3)
+        morph_snapshot_t b = x->snapbuf;
+        morph_mask_excluded(x, &b);
+        morph_restore(x, &b);
+        x->snapbuf_audition = 1;
+        post("ligase~: audition ON (buffer voice live; snapbuf_audition 0 reverts)");
+    } else if (!on && x->snapbuf_audition) {
+        morph_snapshot_t b = x->snapbuf_revert;
+        morph_mask_excluded(x, &b);
+        morph_restore(x, &b);
+        x->snapbuf_audition = 0;
+        post("ligase~: audition OFF (pre-audition voice restored)");
+    }
+    // repeated 1s / 0s are no-ops (idempotent latch)
+}
+
+// snapbuf_compare — v1.1: A/B toggle over the audition latch (A = live voice, B = buffer).
+static void ligase_snapbuf_compare(ligase_t *x) {
+    ligase_snapbuf_audition(x, x->snapbuf_audition ? 0.0f : 1.0f);
 }
 
 static void ligase_snapbuf_clear(ligase_t *x) {
@@ -8226,6 +8273,8 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_snapbuf_store,     gensym("snapbuf_store"),     A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_snapbuf_apply,     gensym("snapbuf_apply"),     0);
     class_addmethod(ligase_class, (t_method)ligase_snapbuf_clear,     gensym("snapbuf_clear"),     0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_audition,  gensym("snapbuf_audition"),  A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_compare,   gensym("snapbuf_compare"),   0);
 }
 
 // @endregion:ligase_pd.pd_external.setup
