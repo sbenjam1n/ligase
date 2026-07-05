@@ -152,6 +152,11 @@ float sphere_get_velocity_z(const sphere_state_t *sphere);
 // Mode 0-6: Pos X, Pos Y, Pos Z, Vel X, Vel Y, Vel Z, Velocity Magnitude
 float sphere_get_normalized(const sphere_state_t *sphere, int mode);
 
+// Get all three position axes normalized to [-1,1] via the boundary box, in one call.
+// Single point of truth for "sphere 3D -> normalized" used by spatial granulation (pan_mode 2).
+// out[0]=x (L..R), out[1]=y (down..up), out[2]=z (back..front); centered so 0 = box center.
+void sphere_get_normalized_vec3(const sphere_state_t *sphere, float out[3]);
+
 // @endregion:ligase_pd.utils.random.sphere.output
 
 #endif // SPHERE_H

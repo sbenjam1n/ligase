@@ -587,6 +587,17 @@ float nbody_get_normalized(nbody_state_t *state, int mode) {
     return value;
 }
 
+// One chosen body's position, all three axes normalized to [-1,1] via pos_min/pos_max.
+// Mirrors nbody_get_normalized modes 0/1/2 but centers on 0 (box center) and keeps all axes.
+// Read-only (const-correct); binds fine to a non-const lvalue.
+void nbody_get_normalized_vec3(const nbody_state_t *state, int body, float out[3]) {
+    if (body < 0 || body >= NBODY_COUNT) body = 0;   // NBODY_COUNT == 3
+    float range = state->pos_max - state->pos_min;   // default 20 (±10)
+    if (range < 1e-6f) range = 1.0f;
+    for (int a = 0; a < 3; a++)
+        out[a] = 2.0f * (state->pos[body][a] - state->pos_min) / range - 1.0f;
+}
+
 // @endregion:ligase_pd.utils.random.nbody.output
 
 // @endregion:ligase_pd.utils.random.nbody

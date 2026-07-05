@@ -2660,11 +2660,63 @@ static void ligase_saw_depth(ligase_t *x, t_floatarg depth) {
 static void ligase_pan_mode(ligase_t *x, t_floatarg mode) {
     int m = (int)mode;
     if (m < 0) m = 0;
-    if (m > 1) m = 1;
+    if (m > 2) m = 2;
     x->scheduler->pan_mode = m;
     post("ligase~: pan mode set to %d (%s)",
          m,
-         m == 0 ? "constant-power mono panning" : "stereo balance");
+         m == 0 ? "constant-power mono panning" :
+         m == 1 ? "stereo balance" : "spatial 3D (physics-driven)");
+}
+
+// spatial <source> [instance] [body]   e.g.  "spatial sphere 0"  |  "spatial nbody 2 1"
+// Selects which physics generator drives per-grain 3D placement (pan_mode 2 engages it).
+static void ligase_spatial(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 1 || argv[0].a_type != A_SYMBOL) {
+        pd_error(x, "ligase~: spatial <sphere|nbody> [instance 0-3] [body 0-2]");
+        return;
+    }
+    const char *src = argv[0].a_w.w_symbol->s_name;
+    if (strcmp(src, "sphere") == 0) {
+        x->scheduler->spatial_source = RAND_TYPE_SPHERE;
+    } else if (strcmp(src, "nbody") == 0) {
+        x->scheduler->spatial_source = RAND_TYPE_NBODY;
+    } else {
+        pd_error(x, "ligase~: spatial source must be 'sphere' or 'nbody'");
+        return;
+    }
+    if (argc >= 2 && argv[1].a_type == A_FLOAT) {
+        int i = (int)argv[1].a_w.w_float;
+        x->scheduler->spatial_instance = (i < 0) ? 0 : (i > 3) ? 3 : i;
+    }
+    if (argc >= 3 && argv[2].a_type == A_FLOAT) {
+        int b = (int)argv[2].a_w.w_float;
+        x->scheduler->spatial_nbody_body = (b < 0) ? 0 : (b > 2) ? 2 : b;
+    }
+    post("ligase~: spatial source = %s instance %d (nbody body %d); send 'pan_mode 2' to engage",
+         (x->scheduler->spatial_source == RAND_TYPE_SPHERE) ? "sphere" : "nbody",
+         x->scheduler->spatial_instance, x->scheduler->spatial_nbody_body);
+}
+
+static void ligase_spatial_width(ligase_t *x, t_floatarg w) {
+    if (w < 0.0f) w = 0.0f;
+    if (w > 1.0f) w = 1.0f;
+    x->scheduler->spatial_width = w;
+    post("ligase~: spatial_width = %.3f", w);
+}
+
+static void ligase_spatial_depth(ligase_t *x, t_floatarg d) {
+    if (d < 0.0f) d = 0.0f;
+    if (d > 1.0f) d = 1.0f;
+    x->scheduler->spatial_depth_amt = d;
+    post("ligase~: spatial_depth = %.3f", d);
+}
+
+static void ligase_spatial_tilt(ligase_t *x, t_floatarg t) {
+    if (t < 0.0f) t = 0.0f;
+    if (t > 1.0f) t = 1.0f;
+    x->scheduler->spatial_tilt_amt = t;
+    post("ligase~: spatial_tilt = %.3f", t);
 }
 
 static void ligase_grainsize(ligase_t *x, t_floatarg grainsize) {
@@ -6510,6 +6562,10 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_amplitude, gensym("amplitude"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pan, gensym("pan"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pan_mode, gensym("pan_mode"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_spatial, gensym("spatial"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_spatial_width, gensym("spatial_width"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_spatial_depth, gensym("spatial_depth"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_spatial_tilt, gensym("spatial_tilt"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_saw_cycles, gensym("saw_cycles"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_saw_depth, gensym("saw_depth"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_grainsize, gensym("grainsize"), A_DEFFLOAT, 0);

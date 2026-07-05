@@ -169,7 +169,11 @@ iot <0.0005-2> - Interonset time in seconds
 maxgrains <1-pool_size> - Max concurrent grains
 amplitude <0-2> - Grain amplitude
 pan <0-1> - Stereo position (0=left, 0.5=center, 1=right)
-pan_mode <0|1> - Mono panning / Stereo balance
+pan_mode <0|1|2> - Mono panning / Stereo balance / Spatial 3D
+spatial <sphere|nbody> [inst 0-3] [body 0-2] - Physics source for pan_mode 2
+spatial_width <0-1> - Spatial stereo spread (0=center, 1=full)
+spatial_depth <0-1> - Distance-to-level amount (default 0 = off)
+spatial_tilt <0-1> - Elevation tilt amount (reserved; default 0 = off)
 saw_cycles <0-64> - Saw envelope modulation cycles
 saw_depth <0-1> - Saw envelope modulation depth
 envelope <0|1|2|3|4> - Parabolic/Trapezoidal/Cosine/Gaussian/Exponential
@@ -1183,11 +1187,19 @@ Maintains stereo image character while adjusting balance
 
 Ideal for stereo sources where width should be preserved
 
+Mode 2: Spatial 3D (physics-driven placement)
+
+Each grain freezes the 3D position of a physics simulation (the bouncing sphere or one n-body body) at the moment it is triggered, and is placed in the stereo field by that position for its whole life. Overlapping grains sit at different points of the trajectory, so the cloud spreads and moves through space as the simulation orbits.
+
+Select the driving simulation with spatial <sphere|nbody> [instance 0-3] [body 0-2] (default: sphere instance 0; for nbody, body 1 — the orbiting body), then engage with pan_mode 2. The grain is treated as a mono point source (like mode 0) and placed by a front-biased azimuth derived from the sim's horizontal plane (x = left/right, z = depth), so the whole orbit stays in the frontal arc — a stereo field cannot render "behind you." Constant-power law throughout.
+
+spatial_width <0-1> scales the spread: 0 collapses every grain to center, 1 is full left/right. spatial_depth <0-1> optionally makes far (back) positions quieter — default 0 (off). spatial_tilt is reserved for elevation and currently inert.
+
 Default: 0 (constant-power mono panning)
 
 Pan Law
 
-Both modes use constant-power panning to maintain consistent perceived loudness:
+All modes use constant-power panning to maintain consistent perceived loudness:
 
 pan_angle = pan * (π/2)
 

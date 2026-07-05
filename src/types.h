@@ -292,6 +292,12 @@ typedef struct grain {
     float increment;          // Read increment (speed)
     float amplitude;          // Current amplitude
     float pan;                // Stereo pan (0=left, 0.5=center, 1=right)
+    // --- spatial (pan_mode 2): frozen 3D position, snapshotted at trigger, read every sample ---
+    float pos_x;              // normalized to [-1,1] via the sim's bounds (L .. R azimuth axis)
+    float pos_y;              // normalized to [-1,1]  (down .. up — elevation)
+    float pos_z;              // normalized to [-1,1]  (back .. front — depth)
+    float spatial_left_gain;  // precomputed at trigger (constant-power L gain, constant for grain life)
+    float spatial_right_gain; // precomputed at trigger (constant-power R gain) — keeps atan2/sqrt off the per-sample loop
     int envelope_phase;       // Current envelope index
     int grain_length;         // Grain duration in samples (stored at trigger time)
     int active;               // Is grain active
@@ -695,8 +701,19 @@ typedef struct scheduler {
     int voice_count;               // number of active voices; 0 = mono path
     int voice_next_age;            // monotonic counter handed to each new voice
 
-    // Pan mode (0 = constant-power mono panning, 1 = stereo balance)
+    // Pan mode (0 = constant-power mono panning, 1 = stereo balance, 2 = spatial 3D)
     int pan_mode;
+
+    // SPATIAL granulation (pan_mode == 2): which physics generator drives per-grain 3D placement.
+    // Read at grain trigger (perform thread), written by the `spatial`/`spatial_*` messages (control
+    // thread). POD single-writer/single-reader, no locks. Only consulted when pan_mode == 2, so with
+    // pan_mode 0/1 the entire scalar pan path is bit-identical to today.
+    int spatial_source;       // RAND_TYPE_SPHERE or RAND_TYPE_NBODY (reuse the rand_type_t vocabulary)
+    int spatial_instance;     // which of the 4 sim instances (0-3)
+    int spatial_nbody_body;   // for nbody: which of the 3 bodies (0-2) supplies the position
+    float spatial_width;      // azimuth scaling 0..1 (0 = collapse to center, 1 = full L/R)
+    float spatial_depth_amt;  // 0..1 how much pos_z (distance) attenuates level (default 0 = off in lean v1)
+    float spatial_tilt_amt;   // 0..1 how much pos_y (elevation) tilts tone/level (default 0 = off in lean v1)
 
     // Delay mode structures (for bencina and stut modes)
     grain_delay_stut_t *delay_stut;      // Stut mode state (NULL if not allocated)

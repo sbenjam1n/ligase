@@ -307,6 +307,17 @@ float sphere_get_normalized(const sphere_state_t *sphere, int mode) {
     return value;
 }
 
+// All three position axes normalized to [-1,1] via the boundary box, in one call.
+// Mirrors sphere_get_normalized modes 0/1/2 but centers on 0 (box center) and keeps all axes.
+void sphere_get_normalized_vec3(const sphere_state_t *sphere, float out[3]) {
+    float rx = sphere->boundary_max_x - sphere->boundary_min_x;   // default 20 (±10)
+    float ry = sphere->boundary_max_y - sphere->boundary_min_y;
+    float rz = sphere->boundary_max_z - sphere->boundary_min_z;
+    out[0] = (rx > 1e-6f) ? 2.0f * (sphere->position.x - sphere->boundary_min_x) / rx - 1.0f : 0.0f;
+    out[1] = (ry > 1e-6f) ? 2.0f * (sphere->position.y - sphere->boundary_min_y) / ry - 1.0f : 0.0f;
+    out[2] = (rz > 1e-6f) ? 2.0f * (sphere->position.z - sphere->boundary_min_z) / rz - 1.0f : 0.0f;
+}
+
 // @endregion:ligase_pd.utils.random.sphere.output
 
 // @endregion:ligase_pd.utils.random.sphere

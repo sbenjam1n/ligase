@@ -596,6 +596,16 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     // Initialize pan mode (default: constant-power mono panning)
     sched->pan_mode = 0;
 
+    // SPATIAL granulation defaults (pan_mode 2). memset already zeroed these, but 0 is a valid
+    // instance and RAND_TYPE_NONE == 0, so set explicit musical defaults. Lean v1 = azimuth-only:
+    // width live, depth/tilt off.
+    sched->spatial_source     = RAND_TYPE_SPHERE;  // default driver = bouncing sphere instance 0
+    sched->spatial_instance   = 0;
+    sched->spatial_nbody_body = 1;                 // body 1 = the orbiting body (most musical motion)
+    sched->spatial_width      = 1.0f;              // full L/R spread
+    sched->spatial_depth_amt  = 0.0f;              // lean v1: distance->level OFF
+    sched->spatial_tilt_amt   = 0.0f;              // lean v1: elevation tilt OFF
+
     // Initialize Perlin noise state
     // Initialize all 4 per-instance frequency scales to 1.0 (normal speed)
     for (int i = 0; i < 4; i++) {
@@ -1053,6 +1063,47 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
 
     grain->splice_start = splice_start;
     grain->splice_end = splice_end;
+
+    // --- SPATIAL snapshot (pan_mode 2): freeze the driving sim's 3D position onto the grain ---
+    // Gated on the mode so the scalar pan path (pan_mode 0/1) is untouched. All the trig lives here
+    // (trigger thread, once per grain), never in the per-sample render loop.
+    if (sched->pan_mode == 2) {
+        float v[3] = {0.0f, 0.0f, 0.0f};
+        if (sched->spatial_source == RAND_TYPE_SPHERE) {
+            sphere_get_normalized_vec3(&sched->perlin_state.sphere[sched->spatial_instance], v);
+        } else if (sched->spatial_source == RAND_TYPE_NBODY) {
+            nbody_get_normalized_vec3(&sched->perlin_state.nbody[sched->spatial_instance],
+                                      sched->spatial_nbody_body, v);
+        }
+        grain->pos_x = v[0];   // [-1,1]  L .. R
+        grain->pos_y = v[1];   // [-1,1]  down .. up (elevation)
+        grain->pos_z = v[2];   // [-1,1]  back .. front (depth)
+
+        // Front-biased azimuth from the horizontal plane (x,z): the whole orbit stays in the frontal
+        // arc so a 2-speaker field only varies L/R (no front/back collapse). fmaxf guard keeps the
+        // second arg off the atan2 (0,0) singularity.
+        float azimuth = atan2f(grain->pos_x, fmaxf(grain->pos_z + 1.0f, 1e-6f));
+        azimuth *= sched->spatial_width;   // 0 = collapse to center, 1 = full spread
+        // Map azimuth (~[-pi/2, pi/2]) to the pan angle [0, pi/2] the cos/sin law expects.
+        float pan01 = 0.5f + 0.5f * (azimuth / 1.5707963267948966f);
+        if (pan01 < 0.0f) pan01 = 0.0f;
+        if (pan01 > 1.0f) pan01 = 1.0f;
+        float pan_angle = pan01 * 1.5707963267948966f;
+        float lg = cosf(pan_angle);   // SAME constant-power law as the pan_mode 0/1 branches
+        float rg = sinf(pan_angle);
+
+        // Optional distance->level (lean v1 leaves spatial_depth_amt == 0 == off):
+        // pos_z in [-1,1]: front(+1)=near=louder, back(-1)=far=quieter.
+        if (sched->spatial_depth_amt > 0.0f) {
+            float dist_gain = 1.0f - sched->spatial_depth_amt * (1.0f - (grain->pos_z * 0.5f + 0.5f));
+            lg *= dist_gain;
+            rg *= dist_gain;
+        }
+        // (elevation tilt from pos_y: spatial_tilt_amt reserved for fast-follow; inert in lean v1.)
+
+        grain->spatial_left_gain  = lg;
+        grain->spatial_right_gain = rg;
+    }
 }
 
 void scheduler_set_grain_size(scheduler_t *sched, float grain_size) {
@@ -1247,7 +1298,7 @@ void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float 
                 // Output panned mono signal to both channels
                 target_left[i] += mono_sample * left_gain;
                 target_right[i] += mono_sample * right_gain;
-            } else {
+            } else if (sched->pan_mode == 1) {
                 // Mode 1: Stereo balance (preserve stereo width)
                 // Apply envelope and amplitude to both channels independently
                 sample_left *= env_val * grain->amplitude;
@@ -1262,6 +1313,15 @@ void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float 
                 // Output balanced stereo signal
                 target_left[i] += sample_left * left_gain;
                 target_right[i] += sample_right * right_gain;
+            } else {
+                // Mode 2: Spatial 3D (physics-driven binaural placement)
+                // Mono point source placed by the frozen 3D azimuth. The constant-power L/R gains
+                // were precomputed at trigger (spatial_left_gain/right_gain), so the per-sample cost
+                // is two multiplies + two adds — cheaper than mode 0/1 (no per-sample cos/sin).
+                float mono_sample = (sample_left + sample_right) * 0.5f;
+                mono_sample *= env_val * grain->amplitude;
+                target_left[i]  += mono_sample * grain->spatial_left_gain;
+                target_right[i] += mono_sample * grain->spatial_right_gain;
             }
 
             // Advance grain position
