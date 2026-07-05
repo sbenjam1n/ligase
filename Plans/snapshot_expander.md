@@ -2,7 +2,7 @@
 
 **Owner:** SLB
 **Date:** 2026-07-05
-**Status:** PLANNED (GATE A — owner decisions below; recommendations flagged [R])
+**Status:** PLANNED (GATE A — decisions 1–6 open, recommendations flagged [R]; **decision 7 OWNER-APPROVED 2026-07-05**)
 **Tracked in:** `QUEUE.md` §4a
 **Related:** `docs/modulation_layers.md` (the layer contract this slots into),
 `Plans/morph_metasurface.md` (the snapshot/surface system being exposed),
@@ -144,7 +144,12 @@ parsing outlet 9 — it validates the API with zero engine coupling beyond the m
    an explicit re-place (safer, but breaks the "reshape the field mid-set" workflow).
 6. **Buffer count.** **[R] one buffer.** N buffers add addressing for marginal value
    (the slots themselves are the storage; the buffer is a workbench). Confirm.
-7. **Generator params in snapshots (schema v3)?** The modulation *sources* have their own
+7. ✅ **OWNER-APPROVED (2026-07-05): YES — capture generator params (schema v3).**
+   Owner: "I thought they were [captured]; it makes the most sense — params are weather
+   control." Each voice carries its own weather; the global-weather behavior remains
+   available via `morph_exclude` on the sources group. Folded into Step 1's walker
+   unification as decided below. Original question for the record:
+   **Generator params in snapshots (schema v3)?** The modulation *sources* have their own
    message-only params — `noise_freq_1..4` (the per-instance rate scales; note the rate is
    `IOT × scale`, so sources breathe with grain density, and instance *n* drives
    SIN/SAW/SQR/PERL *n* together), `env_follow_ms`, and the physics params
@@ -162,11 +167,19 @@ parsing outlet 9 — it validates the API with zero engine coupling beyond the m
 
 ## Steps (after GATE A)
 
-1. **Field walker unification.** Factor the export/import per-field table into a shared
-   iterator (`morph_field_iter` or equivalent); `morph_export`/`morph_import` re-route
-   through it. **GATE:** `make clean && make` warning-free; export→import round-trip
-   byte-identical to pre-refactor on a populated surface (regression fixture); text
-   schema version unchanged.
+1. **Field walker unification + schema v3 (GATE A.7 approved).** Factor the
+   export/import per-field table into a shared iterator (`morph_field_iter` or
+   equivalent); `morph_export`/`morph_import` re-route through it. In the same pass,
+   ADD the generator params to `morph_snapshot_t`, capture/restore, and the walker:
+   `noise_freq_1..4`, `env_follow_ms`, `sphere_damping`/`_elasticity`,
+   `nbody_G`/`_damping`/`_epsilon`/`_pump` (+ the mode discretes if trivially
+   capturable) — schema version 2 → 3; import must still accept v2 files (missing
+   generator fields = keep current/global values). Register the sources group in the
+   morph selection tree so `morph_exclude sources` restores global-weather behavior.
+   **GATE:** `make clean && make` warning-free; v2 export files import cleanly
+   (backward compat); v3 export→import round-trip exact; capture→recall reproduces a
+   changed `noise_freq_2` (motion character travels with the voice); with
+   `morph_exclude sources`, recall leaves live rates untouched.
 2. **Buffer + load/from_live/store/clear/apply.** Add the buffer + the five whole-buffer
    verbs. `snapbuf_apply` routes through `morph_restore` (selection tree honored).
    **GATE:** load→apply ≡ `snapshot_recall` (identical engine state, verified via the
