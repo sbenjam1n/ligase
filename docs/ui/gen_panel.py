@@ -2,7 +2,7 @@
 # Generate the ligase~ Synthi-style control-surface mockup (SVG).
 import math
 
-W, H = 1520, 1010
+W, H = 1520, 1096
 parts = []
 
 # ---------- palette (EMS-ish: charcoal panel, warm legends, colored caps) ----------
@@ -104,6 +104,20 @@ def strip(x, y, w, h, title, color):
     parts.append(f'<circle cx="{x+19}" cy="{y}" r="3" fill="{CAP[color]}"/>')
     text(x + 27, y + 3.5, title, size=9, anchor="start", weight="bold", ls="1.5")
 
+def led_display(x, y, digits, label=None, w=64, h=32):
+    """Amber LED numeric display (segment-ghost style), centered at x,y."""
+    parts.append(f'<rect x="{x-w/2}" y="{y-h/2}" width="{w}" height="{h}" rx="4" fill="#0a0705" stroke="#4a4038" stroke-width="1.4"/>')
+    parts.append(f'<text x="{x}" y="{y+9}" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">88</text>')
+    parts.append(f'<text x="{x}" y="{y+9}" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">{esc(digits)}</text>')
+    if label:
+        text(x, y + h/2 + 11, label, size=7, fill=MUTED)
+
+def quant_group(x, y, title, badge_note, badge_amt, note_pos=0.55, amt_pos=0.6):
+    """The shared quantization control block (playhead & delay look identical)."""
+    text(x + 28, y - 30, title, size=8, weight="bold")
+    knob(x, y, "GRID", "1/1 – 1/128", badge_note, "grey", note_pos, small=True)
+    knob(x + 56, y, "AMOUNT", "0 – 1", badge_amt, "grey", amt_pos, small=True)
+
 def screw(x, y):
     parts.append(f'<circle cx="{x}" cy="{y}" r="6" fill="#33373c" stroke="#0e0f11" stroke-width="1"/>')
     parts.append(f'<line x1="{x-3.5}" y1="{y-3.5}" x2="{x+3.5}" y2="{y+3.5}" stroke="#0e0f11" stroke-width="1.6"/>')
@@ -140,29 +154,54 @@ knob(xs[5], ky, "LEVEL",      "0 – 2",        "IN 21", "white", 0.55)
 
 # ---------- B. TAPE / REEL ----------
 sy += sh + 12
-strip(LX, sy, LW, sh, "TAPE REEL / SPLICES", "green")
+strip(LX, sy, LW, sh, "TAPE REEL / RECORD", "green")
 ky = sy + 40
 knob(LX+70,  ky, "ORGANIZE",  "0 – 1",  "IN 6", "green", 0.4)
-knob(LX+188, ky, "SCAN RATE", "0 – 8",  "IN 7", "green", 0.45)
-knob(LX+306, ky, "S.O.S.",    "0 – 1",  "IN 8", "green", 0.7)
-switch(LX+436, ky-8, 96, ["INPUT", "SPLICE", "OVRDUB"], 1, "REC MODE")
-button(LX+540, ky-10, "RECORD", lit=True)
-button(LX+540, ky+14, "PLAY")
-toggle(LX+610, ky-8, "LOOP / 1-SHOT", on=True)
-button(LX+676, ky-10, "◀ SPL", 40)
-button(LX+676, ky+14, "SPL ▶", 40)
+knob(LX+188, ky, "S.O.S.",    "0 – 1",  "IN 8", "green", 0.7)
+switch(LX+316, ky-8, 96, ["INPUT", "SPLICE", "OVRDUB"], 1, "REC MODE")
+button(LX+418, ky-10, "RECORD", lit=True)
+button(LX+418, ky+14, "PLAY")
+toggle(LX+486, ky-8, "LOOP / 1-SHOT", on=True)
+button(LX+586, ky-10, "SELECT REEL", 84)
+button(LX+586, ky+14, "EXPORT REEL", 84)
+text(LX+662, ky-7, "load ←[openpanel]", 6.5, MUTED, "start")
+text(LX+662, ky+17, "save →[savepanel]", 6.5, MUTED, "start")
 
-# ---------- C. DELAY ----------
+# ---------- C. PLAYHEAD + SPLICE SELECT ----------
+sy += sh + 12
+strip(LX, sy, 452, sh, "PLAYHEAD", "green")
+ky = sy + 40
+switch(LX+82, ky-8, 118, ["STATIC", "SCAN", "CLOCK"], 1, "MODE · playhead 1/2/3")
+knob(LX+192, ky, "SCAN", "0 – 8", "IN 7", "green", 0.45)
+quant_group(LX+252, ky, "QUANTIZE", "MSG", "MSG")
+text(LX+280, ky+46, "quantize · quant", 6.5, MUTED)
+toggle(LX+382, ky-10, "CLK-ADV QUANT", on=False)
+text(LX+382, ky+26, "clock: EXTERNAL", 7, "#d9c48a", weight="bold")
+text(LX+382, ky+36, "bang → IN 1", 6.5, MUTED)
+
+SPX = LX + 466
+strip(SPX, sy, LW-466, sh, "SPLICE SELECT", "green")
+led_display(SPX+52, ky-4, "03", "current splice")
+knob(SPX+112, ky, "DATA", "0 – 63", "MSG", "grey", 0.2, small=True)
+button(SPX+170, ky-10, "ENTER", 46, lit=True)
+button(SPX+224, ky-10, "◀", 22)
+button(SPX+250, ky-10, "▶", 22)
+text(SPX+237, ky+12, "shift ±1", 6.5, MUTED)
+text(SPX+150, ky+46, "ENTER → splice_finish_nav <n>", 6.5, MUTED)
+
+# ---------- D. DELAY ----------
 sy += sh + 12
 strip(LX, sy, LW, sh, "GRAIN DELAY", "blue")
 ky = sy + 40
-switch(LX+82, ky-8, 108, ["DD-4", "BENCINA", "STUT"], 0, "MODE")
-knob(LX+210, ky, "TIME · REPS",   "0–10 s · 1–16",   "IN 11", "blue", 0.4)
-knob(LX+330, ky, "REGEN · DECAY", "0 – 1",           "IN 12", "blue", 0.5)
-knob(LX+450, ky, "TONE · SPACE",  "0–1 · 1–5000 ms", "IN 13", "blue", 0.6)
-knob(LX+570, ky, "MIX",           "0 – 1",           "IN 14", "blue", 0.35)
-button(LX+652, ky-10, "STUT !", 46, lit=True)
-knob(LX+652, ky+26, "GLIDE", "0–5000 ms", "MSG", "grey", 0.2, small=True)
+switch(LX+76, ky-8, 108, ["DD-4", "BENCINA", "STUT"], 0, "MODE")
+knob(LX+186, ky, "TIME · REPS",   "0–10 s · 1–16",   "IN 11", "blue", 0.4)
+knob(LX+290, ky, "REGEN · DECAY", "0 – 1",           "IN 12", "blue", 0.5)
+knob(LX+394, ky, "TONE · SPACE",  "0–1 · 1–5000 ms", "IN 13", "blue", 0.6)
+knob(LX+490, ky, "MIX",           "0 – 1",           "IN 14", "blue", 0.35)
+quant_group(LX+556, ky, "QUANTIZE", "MSG", "MSG")
+text(LX+584, ky+46, "delay_quantize · delay_quant", 6.5, MUTED)
+button(LX+678, ky-10, "STUT !", 42, lit=True)
+knob(LX+678, ky+26, "GLIDE", "0–5000 ms", "MSG", "grey", 0.2, small=True)
 
 # ---------- D. LADDER FILTER + E. SMEAR/RESONATOR ----------
 sy += sh + 12
@@ -261,7 +300,7 @@ text(gx + MW/2, gy + MHh + 20, "16 × 16 panel subset — full 44 sources × 20 
 text(gx + MW/2, gy + MHh + 31, "sources: LFO ×4 · perlin ×4 · lorenz ×4 · nbody ×4 · sphere ×4 · rand ×4 · pattern 0-7 · input env follower (env_follow_ms)", size=7, fill=MUTED)
 
 # ---------- RIGHT-BOTTOM: JOYSTICK (morph) ----------
-JX, JY, JS = 812, 700, 216
+JX, JY, JS = 812, 760, 216
 strip(JX-14, JY-36, JS+220, 268, "MORPH METASURFACE — JOYSTICK", "green")
 parts.append(f'<rect x="{JX}" y="{JY}" width="{JS}" height="{JS}" rx="6" fill="#1b1d21" stroke="{LINE}" stroke-width="1.2"/>')
 for f in (0.25, 0.5, 0.75):
@@ -288,7 +327,7 @@ knob(bx, JY+184, "POWER", "IDW sharp · MSG", None, "grey", 0.4, small=True)
 text(bx, JY+226, "morph_cursor 1 = CV", 6.8, MUTED)
 
 # ---------- RIGHT-BOTTOM: VU + master ----------
-VX, VY = 1220, 700
+VX, VY = 1220, 760
 strip(VX-14, VY-36, 270, 268, "MONITOR", "white")
 for ch, off in (("L", 0), ("R", 34)):
     parts.append(f'<rect x="{VX+off}" y="{VY}" width="20" height="170" rx="3" fill="#101114" stroke="{LINE}" stroke-width="1"/>')
@@ -313,7 +352,7 @@ text(VX+130, VY+198, "pattern event grain [ 1(3,8) ]", 7, "#d9c48a")
 # ---------- footer ----------
 fy = H - 44
 parts.append(f'<line x1="40" y1="{fy-14}" x2="{W-40}" y2="{fy-14}" stroke="{LINE}" stroke-width="0.8"/>')
-text(46, fy, "Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect messages  ·  joystick = [grid] or 2×[hsl] → inlets 23/24  ·  switch = [radio]  ·  button = [bng]", size=8, fill=MUTED, anchor="start")
+text(46, fy, "Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save", size=8, fill=MUTED, anchor="start")
 text(46, fy+14, "BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix & param_range)", size=8, fill=MUTED, anchor="start")
 text(W-46, fy+14, "ligase~ — QUEUE Seq 61 feature set", size=8, fill=MUTED, anchor="end")
 
