@@ -6,6 +6,7 @@
 #include "grain_distortion.h"
 #include "grain_moogladder.h"
 #include "grain_smear.h"
+#include "grain_smear_bank.h"
 #include "morph.h"
 #include <stdlib.h>
 #include <string.h>
@@ -209,6 +210,8 @@ struct _ligase {
     grain_delay_bencina_t *delay_bencina;  // Bencina mode processor
     grain_moogladder_t *moogladder;
     grain_smear_t *smear;   // allpass smear effect
+    grain_smear_bank_t *smear_bank;  // resonator bank (smear_mode 1); eager-created beside smear
+    int smear_mode;         // smear_mode_t: SMEAR_MODE_SINGLE (default) | SMEAR_MODE_BANK
 
     morph_state_t *morph;   // morph / Metasurface layer (snapshot interpolation)
     morph_fx_shadow_t fx_shadow;  // last-set opaque-FX scalar bases (for morph capture)
@@ -1192,6 +1195,24 @@ static void ligase_update_inlets(ligase_t *x,
                 }
             }
         }
+
+        // RESONATOR BANK tuning (smear_mode 1): the bank's per-voice pitches ARE the smear-pitch
+        // scale's degrees (loaded by smear_pitch_scale) via the SAME note->Hz formula as above —
+        // no second pitch path. N = scale.count (capped); reads sp->scale directly, independent
+        // of the sp->enabled single-voice resolver, so loading a chord and enabling the single
+        // voice's pitch source stay decoupled. Once per block; each voice's Hz routes through
+        // grain_smear_set_frequency -> smear_update_coeffs' [20, 0.45*sr] clamp (sole bounds owner).
+        if (x->smear_mode == SMEAR_MODE_BANK && x->smear_bank) {
+            smear_pitch_control_t *sp = &x->scheduler->smear_pitch_control;
+            int count = sp->scale.count;
+            if (count > GRAIN_SMEAR_BANK_MAX_VOICES) count = GRAIN_SMEAR_BANK_MAX_VOICES;
+            grain_smear_bank_set_count(x->smear_bank, count);
+            for (int vi = 0; vi < count; vi++) {
+                float semitone = sp->scale.semitones[vi] + sp->semitone_fine;   // P1 scale + P3 fine
+                float hz = sp->ref_hz * powf(2.0f, semitone / 12.0f);           // same formula as the resolver above
+                grain_smear_bank_set_voice_freq(x->smear_bank, vi, hz);
+            }
+        }
     }
 
     // Sample scanrate with range (if enabled)
@@ -1821,7 +1842,11 @@ static void ligase_process_effects(ligase_t *x,
 
     // Allpass smear (monitoring only, not recorded): a cascade of 2nd-order
     // allpass sections — cheap, stable, time-domain spectral smearing.
-    if (x->smear) {
+    // smear_mode BANK routes the granular+delay bus through the resonator bank instead
+    // (grains = exciter, bank = body); SINGLE (default) is the identical call as always.
+    if (x->smear_mode == SMEAR_MODE_BANK && x->smear_bank) {
+        grain_smear_bank_process(x->smear_bank, out_left, out_right, n);
+    } else if (x->smear) {
         grain_smear_process(x->smear, out_left, out_right, n);
     }
 
@@ -2222,6 +2247,7 @@ static void ligase_set_sample_rate(ligase_t *x, int sr) {
     if (x->moogladder) x->moogladder->sample_rate = sr;  // cutoff normalized per-block
     if (x->delay_stut) x->delay_stut->sample_rate = sr;  // stut spacing computed per-trigger
     if (x->smear)      grain_smear_set_sample_rate(x->smear, sr);
+    if (x->smear_bank) grain_smear_bank_set_sample_rate(x->smear_bank, sr);  // re-derives every voice's a1/a2
 
     // Envelope follower: keep the release TIME constant across a rate change (recompute coeff)
     if (x->scheduler) {
@@ -4390,6 +4416,37 @@ static void ligase_smear_pitch_rand_type(ligase_t *x, t_symbol *s) {
     x->scheduler->smear_pitch_control.semitone_range.rand_instance = inst;
     post("ligase~: smear pitch random type set to %s", t);
 }
+
+// smear_mode <0|1> : 0 = single resonator voice (default, identical path as always);
+// 1 = resonator bank excited by the granular bus (grains = exciter, bank = body).
+// Mirrors the delay_mode selector. Hard switch (no crossfade) — the exciter is continuous.
+static void ligase_smear_mode(ligase_t *x, t_floatarg mode) {
+    int m = (int)mode;
+    if (m >= 0 && m <= 1) {
+        x->smear_mode = m;
+        const char *mode_names[] = {"single (resonator)", "bank (excited body)"};
+        post("ligase~: smear mode set to %d (%s)", m, mode_names[m]);
+        if (m == SMEAR_MODE_BANK && x->scheduler->smear_pitch_control.scale.count == 0)
+            post("ligase~: bank mode: load a smear_pitch_scale to tune the voices (bank is dry until then)");
+    } else {
+        pd_error(x, "ligase~: invalid smear mode %d (use 0=single, 1=bank)", m);
+    }
+}
+
+// Bank controls (shared across voices in v1). Voice count is NOT a message — it is
+// driven by smear_pitch_scale's count (the chord defines the bank size).
+static void ligase_smear_bank_resonance(ligase_t *x, t_floatarg r) {
+    if (x->smear_bank) grain_smear_bank_set_resonance(x->smear_bank, r);
+}
+static void ligase_smear_bank_stages(ligase_t *x, t_floatarg stages) {
+    if (x->smear_bank) grain_smear_bank_set_stages(x->smear_bank, (int)stages);
+}
+static void ligase_smear_bank_feedback(ligase_t *x, t_floatarg fb) {
+    if (x->smear_bank) grain_smear_bank_set_feedback(x->smear_bank, fb);
+}
+static void ligase_smear_bank_mix(ligase_t *x, t_floatarg mix) {
+    if (x->smear_bank) grain_smear_bank_set_mix(x->smear_bank, mix);
+}
 // @endregion:ligase_pd.core.grain.smear.messages
 
 // @region:ligase_pd.core.grain.distortion Grain Distortion Methods
@@ -6228,6 +6285,7 @@ static void ligase_get_state(ligase_t *x) {
 
 static void ligase_free(ligase_t *x) {
     if (x->smear) grain_smear_destroy(x->smear);
+    if (x->smear_bank) grain_smear_bank_destroy(x->smear_bank);
     if (x->moogladder) grain_moogladder_destroy(x->moogladder);
     if (x->grain_delay) grain_delay_destroy(x->grain_delay);
     if (x->delay_bencina) grain_delay_bencina_destroy(x->delay_bencina);
@@ -6297,11 +6355,13 @@ static void *ligase_new(void) {
     x->delay_bencina = grain_delay_bencina_create(x->envelope, 48000);
     x->moogladder = grain_moogladder_create(48000);
     x->smear = grain_smear_create(48000);    // allpass smear effect
+    x->smear_bank = grain_smear_bank_create(48000, GRAIN_SMEAR_BANK_MAX_VOICES);  // resonator bank (eager: no hot-path NULL branch)
+    x->smear_mode = SMEAR_MODE_SINGLE;       // default: identical single-smear path
 
     // Check for allocation failures
     if (!x->reel || !x->envelope || !x->scheduler || !x->recorder ||
         !x->grain_delay || !x->delay_stut || !x->delay_bencina ||
-        !x->moogladder || !x->smear) {
+        !x->moogladder || !x->smear || !x->smear_bank) {
         pd_error(x, "ligase~: failed to allocate memory for components");
         ligase_free(x);
         return NULL;
@@ -7434,6 +7494,12 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_smear_pitch_rand_type, gensym("smear_pitch_rand_type"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_smear_pitch_debug, gensym("smear_pitch_debug"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_smear_pitch_fine, gensym("smear_pitch_fine"), A_DEFFLOAT, 0);
+    // Resonator bank (smear_mode 1): bank of tuned smear voices excited by the granular bus.
+    class_addmethod(ligase_class, (t_method)ligase_smear_mode, gensym("smear_mode"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_bank_resonance, gensym("smear_bank_resonance"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_bank_stages, gensym("smear_bank_stages"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_bank_feedback, gensym("smear_bank_feedback"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_bank_mix, gensym("smear_bank_mix"), A_DEFFLOAT, 0);
 
     class_addmethod(ligase_class, (t_method)ligase_distortion_enable, gensym("distortion_enable"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_distortion_intensity, gensym("distortion"), A_DEFFLOAT, 0);

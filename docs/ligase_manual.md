@@ -254,6 +254,15 @@ smear_pitch_rand_type <gen> - Stochastic generator for the smear SCALE source (r
 smear_pitch_fine <cents> - ±50-cent fine tune on the smear pitch (modulatable: param_range smear_pitch_fine)
 pattern smear_pitch <tokens...> - Mini-notation scale-degree pattern on the smear pitch (see PATTERNS)
 
+Resonator Bank (grains excite a bank of tuned smear voices — see SMEAR > Resonator Bank)
+
+smear_mode <0|1> - 0=single smear voice (default), 1=bank of tuned voices excited by the granular bus
+smear_bank_mix <0-1> - Bank dry/wet (independent of inlet 15's single-voice mix; default 0)
+smear_bank_feedback <-0.99 to 0.99> - Shared per-voice feedback (ring/sustain of the body)
+smear_bank_resonance <0-0.999> - Shared pole radius (high ≈0.995-0.999 = tight tuning)
+smear_bank_stages <0-48> - Shared allpass sections per voice (default 8)
+(voice tuning/count comes from smear_pitch_scale — each degree is one voice, max 16)
+
 Moogladder Filter
 
 moog_cutoff <20-20000> - Cutoff frequency (Hz)
@@ -454,6 +463,9 @@ smear_frequency: 800 Hz
 smear_resonance: 0.7
 smear_stages: 12
 smear_feedback: 0.0
+smear_mode: 0 (single voice)
+smear_bank_mix: 0.0 (bank dry)
+smear_bank_stages: 8 (per voice)
 gdelay_time: 0.0 (off)
 gdelay_feed: 0.0
 gdelay_tone: 0.5
@@ -2027,6 +2039,53 @@ Example — arpeggiate the resonator (root / fifth / octave, one per cycle):
   smear_feedback 0.85
   smear_pitch_scale 0 2 4 5 7 9 11
   pattern smear_pitch < 0 4 7 >
+
+Resonator Bank (smear_mode 1 — grains excite a tuned body)
+
+A distinct smear mode: instead of ONE resonator voice, a BANK of up to 16 tuned voices — each a full
+smear allpass cascade — is excited by the granular+delay output. The grains become the EXCITER
+(broadband dust, transients, clouds) and the bank becomes the INSTRUMENT: strike the body with grain
+dust and it rings a chord. Classic sympathetic-string / excited-physical-body topology.
+
+  smear_mode <0|1>   0 = single voice (default — the identical path described above); 1 = bank.
+                     Hard switch, no crossfade (the exciter is continuous, so the seam is small).
+
+Tuning — the chord IS the smear-pitch scale. The bank has no pitch path of its own: load
+smear_pitch_scale <semitones...> and each scale degree becomes one voice, tuned by the same
+hz = ref_hz * 2^(semitone/12) mapping as the single resonator (A440 reference by default;
+smear_pitch_fine detunes the whole body). Voice count = the scale's note count (capped at 16).
+Change the scale and the bank re-tunes on the next block. With no scale loaded the bank has zero
+voices and passes the signal through dry (the smear_mode message reminds you).
+
+  smear_pitch_scale 0 4 7 12   then   smear_mode 1
+  -> a 4-voice body ringing root / major 3rd / 5th / octave above 440 Hz.
+
+Bank controls (shared across all voices in v1):
+
+  smear_bank_mix <0-1>            Bank dry/wet. Independent of inlet 15 (which stays the SINGLE
+                                  voice's mix). 0 = dry bypass (default).
+  smear_bank_feedback <-0.99-0.99> Per-voice feedback — sustain/ring length of the body.
+  smear_bank_resonance <0-0.999>  Pole radius shared by all voices. For TIGHT tuning use a high
+                                  value (≈0.995-0.999): the closer to 1, the more exactly each
+                                  voice's ring lands on its note; lower values loosen the comb
+                                  around the tuned center (a broader, more dispersed body).
+  smear_bank_stages <0-48>        Allpass sections per voice (default 8 — lower than the single
+                                  voice's 12 to keep N*stages in CPU budget). More stages = denser
+                                  partial comb per voice, more CPU.
+
+Gain staging: each voice keeps the unity-gain cascade topology (|feedback| < 0.99 is unconditionally
+stable) and the voice sum is pre-scaled by 1/N, so a full chord never clips on correlated transients;
+the final output clamp remains the hard backstop. Like the single smear, the bank is a monitoring
+effect — never recorded into the reel — and sits at the same point in the chain (after delay, before
+distortion). smear_mode 0 returns to the single voice, bit-exact with the pre-bank behavior.
+
+Recipe — grain dust ringing a minor chord:
+
+  smear_pitch_scale 0 3 7
+  smear_mode 1
+  smear_bank_mix 0.7
+  smear_bank_feedback 0.92
+  smear_bank_resonance 0.998
 
 # DISTORTION
 

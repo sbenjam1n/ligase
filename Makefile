@@ -23,7 +23,7 @@ endif
 
 TARGET = ligase~.$(EXT)
 
-SOURCES = src/ligase~.c src/envelope.c src/grain.c src/grain_delay.c src/grain_delay_stut.c src/grain_delay_bencina.c src/grain_distortion.c src/grain_moogladder.c src/grain_smear.c src/reel.c src/splice.c src/perlin.c src/sphere.c src/morph.c
+SOURCES = src/ligase~.c src/envelope.c src/grain.c src/grain_delay.c src/grain_delay_stut.c src/grain_delay_bencina.c src/grain_distortion.c src/grain_moogladder.c src/grain_smear.c src/grain_smear_bank.c src/reel.c src/splice.c src/perlin.c src/sphere.c src/morph.c
 OBJECTS = $(SOURCES:.c=.o)
 DEPS = $(OBJECTS:.o=.d)
 

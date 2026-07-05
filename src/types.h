@@ -35,6 +35,15 @@ typedef enum {
     DELAY_MODE_STUT      // Mode 2: Stut quantized rhythmic delay
 } grain_delay_mode_t;
 
+// Smear processing mode (mirrors the delay-mode selector pattern above).
+// SINGLE (default) runs the identical single grain_smear voice path as always;
+// BANK runs a bank of N tuned smear voices excited by the granular+delay bus
+// (grains = exciter, resonator bank = instrument). Selected by `smear_mode 0|1`.
+typedef enum {
+    SMEAR_MODE_SINGLE,   // Mode 0: single resonator voice (default)
+    SMEAR_MODE_BANK      // Mode 1: bank of tuned voices excited by the granular bus
+} smear_mode_t;
+
 typedef struct {
     float *buffer_left;        // Left channel delay buffer
     float *buffer_right;       // Right channel delay buffer
