@@ -59,7 +59,7 @@ extern float envelope_sample(envelope_t *env, float phase);
 
 extern scheduler_t* scheduler_create(envelope_t *env, int sample_rate);
 extern void scheduler_destroy(scheduler_t *sched);
-extern void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, uint32_t splice_start, uint32_t splice_end, float amplitude, float pan, float saw_cycles, float saw_depth);
+extern void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, uint32_t splice_start, uint32_t splice_end, float amplitude, float pan, float saw_cycles, float saw_depth, int voice_note, int voice_active);
 extern void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float *out_right, int blocksize);
 extern float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, float base_value);
 extern void pattern_eval_slot(perlin_state_t *perlin_state, int slot);
@@ -1165,7 +1165,16 @@ static void ligase_process_grains(ligase_t *x,
                     // GrainStart parameter slides the playhead position through splice
                     float grain_pos = splice_start + (x->grain_start * splice_length);
 
-                    scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth);
+                    // CHORDAL POLY: snapshot voice_count once (tear-tolerant), spawn one grain per
+                    // active voice at that voice's note. Mono default -> single call, voice_active=0.
+                    int vc = x->scheduler->voice_count;
+                    if (x->scheduler->poly_enabled && vc > 0) {
+                        for (int v = 0; v < vc; v++) {
+                            scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, x->scheduler->voice_note[v], 1);
+                        }
+                    } else {
+                        scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, 0, 0);
+                    }
 
                     // Grain bang output: bang every x grains
                     if (x->grain_bang_rate > 0) {
@@ -1194,7 +1203,15 @@ static void ligase_process_grains(ligase_t *x,
                     // Wrap grain position within splice bounds (O(1), can't hang)
                     grain_pos = wrap_to_splice(grain_pos, (float)splice_start, splice_length);
 
-                    scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth);
+                    // CHORDAL POLY: one grain per active voice (see STATIC site for rationale).
+                    int vc = x->scheduler->voice_count;
+                    if (x->scheduler->poly_enabled && vc > 0) {
+                        for (int v = 0; v < vc; v++) {
+                            scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, x->scheduler->voice_note[v], 1);
+                        }
+                    } else {
+                        scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, 0, 0);
+                    }
 
                     // Grain bang output: bang every x grains
                     if (x->grain_bang_rate > 0) {
@@ -1315,7 +1332,15 @@ static void ligase_process_grains(ligase_t *x,
                     // Wrap grain position within splice bounds (O(1), can't hang)
                     grain_pos = wrap_to_splice(grain_pos, (float)splice_start, splice_length);
 
-                    scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth);
+                    // CHORDAL POLY: one grain per active voice (see STATIC site for rationale).
+                    int vc = x->scheduler->voice_count;
+                    if (x->scheduler->poly_enabled && vc > 0) {
+                        for (int v = 0; v < vc; v++) {
+                            scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, x->scheduler->voice_note[v], 1);
+                        }
+                    } else {
+                        scheduler_trigger_grain(x->scheduler, grain_pos, x->speed, splice_start, splice_end, x->amplitude, x->pan, x->saw_cycles, x->saw_depth, 0, 0);
+                    }
 
                     // Grain bang output: bang every x grains
                     if (x->grain_bang_rate > 0) {
@@ -4744,10 +4769,56 @@ static void ligase_pitch_scale(ligase_t *x, t_symbol *s, int argc, t_atom *argv)
     post("ligase~: pitch scale set with %d notes", argc);
 }
 
+// --- CHORDAL POLY voice-pool helpers (control thread only; read lock-free by perform) ---
+
+// Append or refresh a note in the voice pool. Ordering is audio-thread-safe: a NEW slot's note and
+// age are written BEFORE voice_count is bumped, so a perform-thread reader that snapshots voice_count
+// never sees a count covering an unwritten slot. Full pool -> steal the OLDEST note (min voice_age).
+static void voice_pool_add(scheduler_t *sch, int note) {
+    // Already present? refresh its age (re-trigger, don't duplicate).
+    for (int i = 0; i < sch->voice_count; i++) {
+        if (sch->voice_note[i] == note) {
+            sch->voice_age[i] = sch->voice_next_age++;
+            return;
+        }
+    }
+    if (sch->voice_count < MAX_VOICES) {
+        int slot = sch->voice_count;
+        sch->voice_note[slot] = note;
+        sch->voice_age[slot]  = sch->voice_next_age++;
+        sch->voice_count = slot + 1;    // publish the slot only after it is fully written
+    } else {
+        // Pool full -> steal the OLDEST note (minimum voice_age); count unchanged.
+        int oldest = 0;
+        for (int i = 1; i < MAX_VOICES; i++) {
+            if (sch->voice_age[i] < sch->voice_age[oldest]) oldest = i;
+        }
+        sch->voice_note[oldest] = note;
+        sch->voice_age[oldest]  = sch->voice_next_age++;
+    }
+}
+
+// Remove a note (note-off). Swap the last active slot down into the vacated slot, THEN decrement
+// count (surviving slot is in place before the count shrinks, so the reader never indexes stale data).
+static void voice_pool_remove(scheduler_t *sch, int note) {
+    for (int i = 0; i < sch->voice_count; i++) {
+        if (sch->voice_note[i] == note) {
+            int last = sch->voice_count - 1;
+            if (i != last) {
+                sch->voice_note[i] = sch->voice_note[last];
+                sch->voice_age[i]  = sch->voice_age[last];
+            }
+            sch->voice_count = last;
+            return;
+        }
+    }
+}
+
 // --- P2: channel-aware MIDI ingress + dual-destination routing ---
 
 // midi <note> [vel] [channel] : fed from Pd [notein] (note/vel/channel). Routes by channel to the two
-// pitch destinations. Same channel for both => unison; different => separate. Velocity accepted, unused.
+// pitch destinations. Same channel for both => unison; different => separate. In POLY mode the grain
+// destination appends/removes voices (vel 0 = note-off); the SMEAR dest stays mono (last-note-wins).
 static void ligase_midi(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     (void)s;
     if (argc < 1 || argv[0].a_type != A_FLOAT) {
@@ -4755,6 +4826,7 @@ static void ligase_midi(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
         return;
     }
     int note    = (int)argv[0].a_w.w_float;
+    int vel     = (argc >= 2 && argv[1].a_type == A_FLOAT) ? (int)argv[1].a_w.w_float : -1;
     int channel = (argc >= 3 && argv[2].a_type == A_FLOAT) ? (int)argv[2].a_w.w_float : 1;
     if (note < 1 || note > 127) {
         pd_error(x, "ligase~: midi note %d out of range (1-127)", note);
@@ -4767,10 +4839,22 @@ static void ligase_midi(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     scheduler_t *sch = x->scheduler;
     // Route to GRAIN destination (independent test => same channel = unison, different = separate).
     if (channel == sch->grain_midi_channel) {
-        sch->pitch_control.midi_note    = note;
-        sch->pitch_control.midi_enabled = 1;
-        x->midi_msg_active = 1;              // message owns the grain dest; inlet-19 write suppressed
-        // prev_midi_note is owned by the outlet-3 detector in perform; do not touch it here.
+        if (sch->poly_enabled) {
+            // CHORDAL POLY: a note enters/leaves the voice pool. vel 0 = note-off. The scalar
+            // (midi_note / midi_msg_active) is deliberately NOT written here — it is the mono path.
+            if (vel == 0) {
+                voice_pool_remove(sch, note);
+            } else {
+                voice_pool_add(sch, note);
+            }
+            sch->pitch_control.midi_enabled = 1;
+        } else {
+            // MONO (default): unchanged last-note-wins scalar write (byte-identical to pre-POLY).
+            sch->pitch_control.midi_note    = note;
+            sch->pitch_control.midi_enabled = 1;
+            x->midi_msg_active = 1;          // message owns the grain dest; inlet-19 write suppressed
+            // prev_midi_note is owned by the outlet-3 detector in perform; do not touch it here.
+        }
     }
     // Route to SMEAR destination.
     if (channel == sch->smear_midi_channel) {
@@ -4791,6 +4875,34 @@ static void ligase_midi_channel(ligase_t *x, t_floatarg g, t_floatarg sm) {
     x->scheduler->grain_midi_channel = gi;
     x->scheduler->smear_midi_channel = si;
     post("ligase~: MIDI routing grain<-ch%d, smear<-ch%d (%s)", gi, si, (gi == si) ? "UNISON" : "separate");
+}
+
+// poly <0|1> : enable/disable CHORDAL POLY (N-transposition chord from the one shared playhead).
+// Default 0 (mono) -> the grain-trigger sites take the single-call scalar path, bit-identical to today.
+static void ligase_poly(ligase_t *x, t_floatarg f) {
+    x->scheduler->poly_enabled = (f != 0.0f) ? 1 : 0;
+    post("ligase~: poly %s", x->scheduler->poly_enabled ? "ON (chordal)" : "OFF (mono)");
+}
+
+// chord <n1> [n2] ... : set the entire voice pool at once (clears, then appends each note, capped at
+// MAX_VOICES with oldest-note stealing). Empty list clears the pool (silence). Requires poly 1 to sound.
+static void ligase_chord(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    scheduler_t *sch = x->scheduler;
+    // Validate first so a bad note doesn't half-apply the chord.
+    for (int i = 0; i < argc; i++) {
+        if (argv[i].a_type != A_FLOAT) {
+            pd_error(x, "ligase~: chord requires MIDI note numbers");
+            return;
+        }
+    }
+    sch->voice_count = 0;                 // shrink first: a torn reader never indexes a stale slot
+    for (int i = 0; i < argc; i++) {
+        int note = (int)argv[i].a_w.w_float;
+        if (note < 1 || note > 127) continue;   // skip out-of-range, keep the rest of the chord
+        voice_pool_add(sch, note);
+    }
+    sch->pitch_control.midi_enabled = 1;
 }
 
 static void ligase_pitch_channel(ligase_t *x, t_floatarg ch) {
@@ -6524,6 +6636,8 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_pitch_rand_type, gensym("pitch_rand_type"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_scale, gensym("pitch_scale"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_midi, gensym("midi"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_poly, gensym("poly"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_chord, gensym("chord"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_midi_channel, gensym("midi_channel"), A_DEFFLOAT, A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_channel, gensym("pitch_channel"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_smear_pitch_channel, gensym("smear_pitch_channel"), A_DEFFLOAT, 0);

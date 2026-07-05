@@ -606,6 +606,7 @@ typedef struct {
 
 #define DEFAULT_MAX_GRAINS 200
 #define MAX_POOL_SIZE 2000  // Absolute maximum for safety
+#define MAX_VOICES 8        // CHORDAL POLY: chord cap (triads/7ths/9ths); budget ceiling is pool_size
 
 typedef struct scheduler {
     grain_t *grain_pool;       // Dynamic pool allocated at initialization
@@ -682,6 +683,17 @@ typedef struct scheduler {
     smear_pitch_control_t smear_pitch_control;  // SMEAR (resonator) pitch destination — independent of pitch_control
     int grain_midi_channel;   // P2: MIDI channel routed to the GRAIN pitch destination (default 1)
     int smear_midi_channel;   // P2: MIDI channel routed to the SMEAR pitch destination (default 2)
+
+    // CHORDAL POLY voice pool. WRITTEN by ligase_midi / ligase_chord (control thread), READ by the
+    // three trigger loops in ligase_process_grains (perform thread). POD + single-writer/single-reader;
+    // no locks. Default poly_enabled=0 / voice_count=0 => the mono scalar path is bit-identical to today.
+    // Budget note: N voices share the soft cap max_grains (default 4). POLY patches should raise
+    // max_grains (via ligase.conf / message) so a chord isn't starved; the hard ceiling is pool_size.
+    int poly_enabled;              // 0 = mono (default) -> trigger sites take the single-call path
+    int voice_note[MAX_VOICES];    // active MIDI notes (each transposed vs 60 at spawn)
+    int voice_age[MAX_VOICES];     // monotonic insert order, for oldest-note stealing
+    int voice_count;               // number of active voices; 0 = mono path
+    int voice_next_age;            // monotonic counter handed to each new voice
 
     // Pan mode (0 = constant-power mono panning, 1 = stereo balance)
     int pan_mode;

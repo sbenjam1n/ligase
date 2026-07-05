@@ -588,6 +588,11 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->grain_midi_channel = 1;
     sched->smear_midi_channel = 2;
 
+    // CHORDAL POLY voice pool defaults (memset already zeroed voice_note/voice_age). Explicit for clarity:
+    sched->poly_enabled   = 0;   // mono by default -> trigger sites take the single-call path
+    sched->voice_count    = 0;   // no active voices
+    sched->voice_next_age = 0;   // monotonic age counter for oldest-note stealing
+
     // Initialize pan mode (default: constant-power mono panning)
     sched->pan_mode = 0;
 
@@ -748,7 +753,7 @@ void scheduler_release_grain(scheduler_t *sched, grain_t *grain) {
     sched->free_list = grain;
 }
 
-void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, uint32_t splice_start, uint32_t splice_end, float amplitude, float pan, float saw_cycles, float saw_depth) {
+void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, uint32_t splice_start, uint32_t splice_end, float amplitude, float pan, float saw_cycles, float saw_depth, int voice_note, int voice_active) {
     if (!sched) return;
 
     //  Validate splice bounds
@@ -859,12 +864,17 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
             break;
 
         case PITCH_MODE_MIDI:
-            // Assumes sample at base speed is middle C (60), transpose by MIDI offset
-            if (sched->pitch_control.midi_enabled) {
-                current_semitone = sched->pitch_control.midi_note - 60;
-                final_speed = base_speed * semitones_to_speed(current_semitone);
+            // Assumes sample at base speed is middle C (60), transpose by MIDI offset.
+            // CHORDAL POLY: when voice_active, use this voice's note instead of the shared scalar,
+            // so each voice in a chord freezes its own transposition into grain->increment.
+            {
+                int note = voice_active ? voice_note : sched->pitch_control.midi_note;
+                if (voice_active || sched->pitch_control.midi_enabled) {
+                    current_semitone = note - 60;
+                    final_speed = base_speed * semitones_to_speed(current_semitone);
+                }
+                // else: use base_speed as-is (no MIDI input)
             }
-            // else: use base_speed as-is (no MIDI input)
             break;
     }
 

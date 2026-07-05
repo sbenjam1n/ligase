@@ -351,6 +351,18 @@ midi_channel <grain_ch> <smear_ch> - Set both routing channels (equal = unison);
 pitch_channel <ch> - MIDI channel routed to the GRAIN pitch destination
 smear_pitch_channel <ch> - MIDI channel routed to the SMEAR pitch destination
 
+CHORDAL POLY (N-transposition chord from the ONE shared playhead)
+
+poly <0|1> - Enable/disable POLY mode (default 0 = mono). Requires pitch_mode 4 (MIDI) to sound.
+chord <n1> [n2] ... - Set the whole voice pool at once (max 8 notes; empty list clears/silences)
+  In POLY mode each grain-trigger tick spawns one grain PER active voice, each transposed to that
+  voice's MIDI note vs middle C (60). The playhead/splice/SOS/recording are untouched. On the GRAIN
+  channel: `midi <note> [vel]` appends a voice (vel 0 = note-off, removes it); the pool holds up to 8
+  notes (MAX_VOICES) and steals the OLDEST note when a 9th distinct note arrives. The SMEAR pitch
+  destination stays MONO (last-note-wins). Default poly 0 is bit-identical to the mono scalar path.
+  BUDGET: all voices share the soft grain cap `max_grains` (default 4), so a chord can starve later
+  voices at default settings. Raise it for POLY (e.g. `maxgrains 32`); the hard ceiling is pool_size.
+
 Patterns (TidalCycles Mini-Notation)
 
 pattern <param|pitch|slot> <tokens...> - Step-sequence a parameter (or pitch) from a mini-notation pattern
@@ -1626,6 +1638,35 @@ Wire [notein] -> [pack f f f] (note, velocity, channel) -> a "midi $1 $2 $3" mes
 Backward compatibility: the inlet-19 signal MIDI (pitch_mode 4) keeps working exactly as before. The first
 time a `midi` message routes a note to the grain channel it takes over the grain destination (one source of
 truth) and the inlet is ignored; if you never send a `midi` message, nothing changes.
+
+Chordal Polyphony (POLY mode)
+
+POLY mode plays a CHORD as N simultaneous pitch transpositions of the SAME grain stream from the ONE shared
+playhead — not independent playheads. It is orthogonal to everything else: the playhead, splice, SOS, and
+recording paths are untouched; only the per-voice pitch of the grains changes. (For truly independent
+material/playheads per voice, instantiate parallel ligase~ objects.)
+
+  poly 1                                  enable POLY (default 0 = mono)
+  pitch_mode 4                            REQUIRED: POLY transpositions only apply in MIDI pitch mode
+  chord 60 64 67                          seat a C-major triad (root/third/fifth) in the voice pool
+  midi 60 100 1                           append note 60 (vel>0) to the grain-channel voice pool
+  midi 64 0 1                             note-off: velocity 0 removes note 64 from the pool
+
+When POLY is on, every grain-trigger tick spawns one grain per active voice, each at that voice's playback
+speed (2^((note-60)/12) x the base speed). Voices enter the pool via the channel-aware `midi` message on the
+grain channel (vel 0 = note-off) and/or the `chord` list (which replaces the whole pool at once). The pool
+holds up to 8 notes (MAX_VOICES); a 9th distinct note STEALS THE OLDEST note in the pool. Re-sending a note
+already in the pool just refreshes its age (no duplicate). The SMEAR/resonator pitch destination stays MONO
+(last-note-wins) — POLY only multiplies the grain pitch.
+
+Grain-pool budget (important): all voices share the soft grain cap `max_grains` (default 4). Because the
+per-voice loop fills grain slots in order, a chord at the default cap can starve its later voices (a triad may
+render as 1-2 notes). Raise the cap for POLY so every voice keeps density, e.g. `maxgrains 32`; the hard
+ceiling is pool_size (from ligase.conf). CPU scales with the live-grain count, i.e. roughly N x the mono cost
+for an N-note chord at the same per-voice density.
+
+Backward compatibility: with poly 0 (the default) the grain-trigger sites take the single-call scalar path and
+the `midi` grain-channel write is the unchanged last-note-wins scalar — bit-identical to the pre-POLY external.
 
 # DELAY
 
