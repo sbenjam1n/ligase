@@ -3,7 +3,7 @@
 _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md` (§6);
 this is the "where we are / how to continue" digest._
 
-## Where we are (2026-07-05, Queue Seq 66)
+## Where we are (2026-07-05, Queue Seq 67)
 
 - **Branch state:** all new work is on **`claude/queue-execution-plans-8snsz1`** (pushed to
   origin), ~14 commits ahead of `main`. `main` still ends at the morph completion (Seq 60).
@@ -34,15 +34,15 @@ this is the "where we are / how to continue" digest._
   transparency** (`morph_capture` reads `mod_base` under an active connection — SNAP records
   the base voice, never a wobble sample). Contract + as-built notes: **`docs/modulation_layers.md`**
   (the four-layer precedence/capture/ownership model — read it before touching modulation).
-- **Snapshot expander (edit buffer) — GATE A FULLY CLEARED, implementation IN FLIGHT**
-  (Seq 63–66; plan **`Plans/snapshot_expander.md`**). All 7 decisions owner-approved:
-  cold-only v1 (audition/compare = the v1.1 pair), scale lists message-edited, per-subfield
-  get/set + import-grammar lines, STORE keeps surface placement, one buffer, and **schema v3**
-  ("params are weather control"): `noise_freq_1..4` / `env_follow_ms` / sphere+nbody physics
-  join `morph_snapshot_t` + the export schema (v2 import compat; `morph_exclude sources`
-  restores global weather). **If the working tree has uncommitted `src/` changes, they are
-  this build** — verify against the plan's acceptance criteria (AC1–AC6) + the regression
-  gate before committing; do not rubber-stamp.
+- **Snapshot expander (edit buffer) is DONE** (`2644a57`, Seq 63–67; plan
+  `Plans/snapshot_expander.md`) — the cold-edit sidecar: `snapbuf_load/from_live/set/get/
+  dump/store/apply/clear` over ONE shared 150-entry field walker (also drives export/import;
+  `since`-versioned). **Schema v3**: the generator ("sources") params joined snapshots —
+  "params are weather control" — with v1/v2 file compat and `morph_exclude sources` for
+  global weather. `snapbuf_apply` is the only realtime touchpoint; STORE to a placed slot
+  reshapes the blend next block. Deliberate alignment: `snapshot_recall` now honors the
+  selection tree (shared `morph_mask_excluded()`; no-op when nothing is excluded). Cold-edit
+  byte-identity proven (25 edits during recording, WAV md5 unchanged).
 - **Panel UI mockup** — `docs/ui/ligase_synthi_panel.svg`, regenerated deterministically by
   `docs/ui/gen_panel.py` (edit the script, run it, screenshot via the pre-installed headless
   chromium to review). EMS-Synthi idiom: every signal inlet badged `IN n`, message/preset
@@ -102,18 +102,16 @@ this is the "where we are / how to continue" digest._
 - Events: `pattern event grain [ 1(3,8) ]`; actions grain/splice/retrig/gate/bang; `rev`.
 - Bank: `smear_pitch_scale 0 4 7` + `smear_mode 1` + `smear_bank_mix 0.5` (+ resonance ~0.998
   for tight tuning).
-- Expander (once the in-flight build lands): `snapbuf_load/from_live/set/get/dump/store/apply/clear`;
-  edits are COLD; `snapbuf_apply` is the only realtime touchpoint.
+- Expander: `snapbuf_load 2` → `snapbuf_get moog_cutoff` → `snapbuf_set moog_cutoff 620` →
+  `snapbuf_store 2` / `snapbuf_apply`; edits are COLD; get/dump report on the state outlet.
 - (Earlier arcs — patterns P1-P3, smear pitch, MIDI routing, fine tune, one-shot, morph — are
   documented in the manual and QUEUE §6; the pattern mini-notation digest lives in the manual's
   PATTERNS section. Pattern tests: `tests/pattern/`; morph: `tests/morph/`.)
 
 ## Immediate next steps
-1. **Land the expander build**: review diff vs `Plans/snapshot_expander.md` AC1–AC6, run the
-   regression gate, commit, push; update QUEUE (§4a row → DONE, §6 entry, Seq bump) and the
-   plan status; true up the XPNDR panel if the shipped selectors differ.
-2. Offer the owner a PR / merge of `claude/queue-execution-plans-8snsz1` → `main`.
-3. Owner ear-test round on the six new features (list above) — file findings as new B-items.
+1. Offer the owner a PR / merge of `claude/queue-execution-plans-8snsz1` → `main`.
+2. Owner ear-test round on the new features (list above) + the expander workflow feel (AC6)
+   — file findings as new B-items.
 4. Parked ideas: source-rates-as-matrix-destinations (matrix-on-matrix; matrix plan's domain);
    expander v1.1 = audition + A/B compare pair; morph FX bases completeness; §4 build-naming
    cleanup (only when cutting a release); `make manual` when the owner asks (much accumulated).
@@ -121,7 +119,7 @@ this is the "where we are / how to continue" digest._
 ## Pointers
 - `QUEUE.md` — full changelog (§4a plan coverage; §6 history to Seq 66).
 - `docs/modulation_layers.md` — the modulation-layer contract (precedence, capture, ownership).
-- `Plans/snapshot_expander.md` — the in-flight build's spec + acceptance criteria.
+- `Plans/snapshot_expander.md` — the expander's spec + measured acceptance criteria (DONE).
 - `docs/ui/gen_panel.py` → `docs/ui/ligase_synthi_panel.svg` — the control-surface mockup.
 - `tests/` — per-feature headless acceptance patches (`polyphony/ spatial/ modmatrix/
   pattern_events/ resonator/ pattern/ morph/ param_lock/`).

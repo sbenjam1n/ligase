@@ -2,7 +2,7 @@
 
 **Owner:** SLB
 **Date:** 2026-07-05
-**Status:** IN PROGRESS — **GATE A fully cleared 2026-07-05** (decisions 1–6 owner-approved at their [R] recommendations; decision 7 owner-approved: schema v3). Implementation running per Steps 1–4.
+**Status:** ✅ **DONE + headless-verified (2026-07-05, commit 2644a57).** All Steps 1–4 shipped on the fully-cleared GATE A; every acceptance criterion measured (AC6 owner-workflow feel remains an owner item). See QUEUE §6 Seq 67.
 **Tracked in:** `QUEUE.md` §4a
 **Related:** `docs/modulation_layers.md` (the layer contract this slots into),
 `Plans/morph_metasurface.md` (the snapshot/surface system being exposed),
