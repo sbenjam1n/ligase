@@ -1,126 +1,128 @@
 # RESUME.md — ligase~ session handoff
 
-_Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md`; this is the
-"where we are / how to continue" digest._
+_Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md` (§6);
+this is the "where we are / how to continue" digest._
 
-## Where we are (2026-06-24)
-- **All work merged into `main`.** `main` == `fix/audio-engine-and-manual` == `origin/main` ==
-  `origin/fix/...`; 0 commits unmerged; working tree clean.
-- Every reported bug/feature (B1–B35, M1) is **implemented and verified headless**.
-- **NEW — Morph / Metasurface is COMPLETE (v1 + v1.1 + persistence), headless-verified** (QUEUE Seq
-  59–60; plan `Plans/morph_metasurface.md`; first of the six "new directions" built). A 2D
-  snapshot-interpolation surface (Bencina Metasurface): `snapshot`/`snapshot_recall` capture the whole
-  patch (modulation bands + scalar bases + discretes + scale lists + playable-FX shadows),
-  `morph_point` places them, `morph <x> <y>` blends, `morph_route`/`morph_run` automate the cursor.
-  New module `src/morph.{c,h}` (pure kernel/curve/types) + x-coupled capture/blend/handlers in
-  `ligase~.c` (per-block stepper in `ligase_perform` before `update_inlets`). **Now also:**
-  - **Two kernels** — `morph_interp 0` IDW/Shepard (default), `1` natural-neighbour (mesh-free sampled
-    Sibson on a 48×48 grid; verified more *local* than IDW).
-  - **CV cursor** — `morph_cursor 1` hands the cursor to two signal inlets (Pd index 22/23), so a
-    joystick/CV drives the surface (added 2 signal inlets; bumped `dsp_add` 26→28 + the 4 perform
-    `return (w+29)` paths — a missed return was a crash, fixed).
-  - **Selection tree** — `morph_include`/`morph_exclude` (by param / group `pitch|smear_pitch|fx` /
-    raw index) gate what the blend APPLIES (capture stays full).
-  - **Three persistence routes, all carrying the selection tree:** `morph_save`/`morph_load` (binary
-    `.morph`, whole struct + version/size header), `morph_export`/`morph_import` (human-readable,
-    build-portable `.txt`, schema v2), `morph_state` (re-sendable message dump of the layout).
-  - Tests `tests/morph/MC1–10` + `MS*/MT*/EX*` (incl. a hand-authored "imagined" surface that imports).
-  - Remaining (minor completeness): FX scalar bases for distortion-enhancement/stut/bencina (their
-    modulation *bands* already morph).
-- **NEW — TidalCycles pattern subsystem (P1+P2+P3) is feature-complete + headless-verified**
-  (QUEUE Seq 47–49; plans `Plans/pattern_*.md`). Mini-notation step-sequencing of any param, a BPM
-  quantization cycle, and scale-degree pitch — all built on the existing modulation/BPM/scale engine.
-  See the pattern control-surface section below. The only remaining pattern work is the **owner
-  ear-test** (musical feel) — not code.
-- Remaining overall is **user hardware/ear sign-off** (not code) + a few stubs (below).
+## Where we are (2026-07-05, Queue Seq 66)
+
+- **Branch state:** all new work is on **`claude/queue-execution-plans-8snsz1`** (pushed to
+  origin), ~14 commits ahead of `main`. `main` still ends at the morph completion (Seq 60).
+  **Merging the branch to `main` is pending owner action** (PR or fast-forward).
+- **All five remaining direction plans are DONE + headless-verified** (Seq 61), each built on
+  its plan's recommended GATE-A options, one commit per feature, all gated on the automated
+  test procedure at the exact baseline:
+  - **Polyphony** (`7238cb9`) — 8-voice pool, `poly <0|1>` / `chord …` / vel-0 note-off via
+    channel-aware `midi`; steal-oldest; per-voice transposition through
+    `scheduler_trigger_grain(…, voice_note, voice_active)`. Needs `pitch_mode 4` to sound.
+  - **Spatial granulation** (`2b8df2c`) — `pan_mode 2` + `spatial <sphere|nbody> [inst] [body]`;
+    per-grain frozen 3D snapshot → front-biased azimuth → constant-power gains precomputed at
+    trigger. `spatial_width/depth/tilt` (lean v1: depth/tilt inert).
+  - **Modulation matrix v1** (`bc45503`) — `matrix_connect <src> <dest> <depth>` (+ disconnect/
+    clear/dump), 44 sources (gens ×4, pattern0-7, env_l/r/mono peak follower `env_follow_ms`),
+    20 per-block dests incl. modout1-4 (compound gate); bipolar depth in dest units;
+    apply-site clamps; `mod_track_base()` prevents offset integration on self-read dests.
+  - **Pattern events** (`fdc13b1`) — `pattern event|trigger grain/splice/retrig/gate/bang`,
+    Euclid `1(3,8)` (Bjorklund), `rev`; kind tag in a parallel per-slot array written before
+    the step_count publish barrier; free-scan `pattern_alloc_event_slot`.
+  - **Resonator bank** (`a737b30`) — `smear_mode 1`: new `src/grain_smear_bank.{c,h}`, up to 16
+    whole `grain_smear` voices verbatim (Shape A, 1/N pre-scale), tuned by `smear_pitch_scale`
+    through the P1 note→Hz per block; `smear_bank_mix/feedback/resonance/stages`.
+- **Modulation matrix v1.5 is DONE** (`30235fb`, Seq 62) — six per-grain dests
+  (`speed grainsize grain_start amplitude pan pitch_fine`, alias `grainstart`) applied
+  FUNCTIONALLY at grain trigger (never write the shared fields; bitmask-guarded), speed
+  composes with the pitch override (a pin = detune around the note), and **capture
+  transparency** (`morph_capture` reads `mod_base` under an active connection — SNAP records
+  the base voice, never a wobble sample). Contract + as-built notes: **`docs/modulation_layers.md`**
+  (the four-layer precedence/capture/ownership model — read it before touching modulation).
+- **Snapshot expander (edit buffer) — GATE A FULLY CLEARED, implementation IN FLIGHT**
+  (Seq 63–66; plan **`Plans/snapshot_expander.md`**). All 7 decisions owner-approved:
+  cold-only v1 (audition/compare = the v1.1 pair), scale lists message-edited, per-subfield
+  get/set + import-grammar lines, STORE keeps surface placement, one buffer, and **schema v3**
+  ("params are weather control"): `noise_freq_1..4` / `env_follow_ms` / sphere+nbody physics
+  join `morph_snapshot_t` + the export schema (v2 import compat; `morph_exclude sources`
+  restores global weather). **If the working tree has uncommitted `src/` changes, they are
+  this build** — verify against the plan's acceptance criteria (AC1–AC6) + the regression
+  gate before committing; do not rubber-stamp.
+- **Panel UI mockup** — `docs/ui/ligase_synthi_panel.svg`, regenerated deterministically by
+  `docs/ui/gen_panel.py` (edit the script, run it, screenshot via the pre-installed headless
+  chromium to review). EMS-Synthi idiom: every signal inlet badged `IN n`, message/preset
+  params badged `MSG`; Presto-Patch pin matrix = the modulation matrix (22×16 subset, per-grain
+  columns behind the dashed divider); joystick = morph CV cursor (IN 23/24); PLAYHEAD strip +
+  twin QUANTIZE groups (playhead + delay, identical); LED splice select (DATA + ENTER →
+  `splice_finish_nav`); SELECT/EXPORT REEL; MOD SOURCES strip (RATE 1-4 = `noise_freq_1..4`,
+  FOLLOW, sphere/nbody physics); **XPNDR sidecar** = the snapshot expander (cold-edit legend,
+  PAGE×PARAM cursor, band-edit cluster, STORE/ASSIGN).
+- Remaining overall: **owner hardware/ear sign-off** on the new features (chord balance vs
+  `maxgrains`, spatial orbit feel, matrix musicality, burst character, resonator-bank timbre —
+  the GATE A.7 input for the v2 Karplus-Strong decision) + the §4 build-naming backlog stub +
+  morph FX scalar bases for distortion-enhancement/stut/bencina (minor).
 
 ## What ligase~ is
 - Pure Data granular synth / sampler / looper / delay external. C, GPL-v2. Repo `sbenjam1n/ligase`.
-- **Hardware-synth PROTOTYPE** → design every parameter to be **signal/CV-driven via its inlet**,
-  not message-only. Run the hardware in **headless 0** (perfect-signal: honors a control sitting at 0).
-- Owner runs **plugdata 0.9.2 on an Intel Mac** + a Focusrite.
+- **Hardware-synth PROTOTYPE** → design every parameter to be **signal/CV-driven via its inlet**
+  where an inlet exists; message-only params should be modulation-matrix reachable.
+- Owner runs **plugdata 0.9.2 on an Intel Mac** + a Focusrite. Cloud sessions run Linux.
 
 ## Working conventions (carry these — they bit us when ignored)
-- **Commit + push as the owner:** `git -c user.name="sl" -c user.email="sbenja88@gmail.com" commit …`;
-  end commit messages with `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`. Push to `main`
-  (now primary; keep `fix/audio-engine-and-manual` and `main` in sync — they're identical now).
+- **This branch's commits** end with the `Co-Authored-By: Claude Fable 5` + session trailer
+  (cloud-session convention). Older `main` history used the owner-identity convention.
 - **Do NOT regenerate the PDF.** `docs/ligase_manual.md` is the source of truth; the PDF is
-  intentionally stale. Run `make manual` ONLY when the owner explicitly asks.
-- **No "fog" in new comments** — that effect was removed and replaced by the allpass **smear**.
-- **plugdata caches the external**: a new build needs a full plugdata quit+relaunch to load.
-- **After pulling, `make clean && make` once** — the Makefile now tracks header deps (`-MMD -MP`,
-  B26); without the clean baseline a header change could leave mismatched objects.
+  intentionally stale. `make manual` ONLY when the owner explicitly asks.
+- **No "fog" in new comments** — replaced by the allpass **smear**.
+- **plugdata caches the external**: a new build needs a full plugdata quit+relaunch.
+- **After pulling, `make clean && make` once** (header deps tracked via `-MMD -MP`, B26).
+- **Read `docs/modulation_layers.md` before changing modulation/capture/morph code** — it is
+  the precedence + capture-transparency contract; violating it reintroduces the v1 SNAP bug.
+- **QUEUE discipline:** bump Queue Seq + one-line §6 entry on any §1/§4a change; plans live in
+  `Plans/`, GATE-A style with [R] recommendations; the owner approves gates (sometimes
+  wholesale: "take the recommendations").
 
-## Build & headless-test recipe
-- Build: `make` (`gcc -Wall -O2 -fvisibility=hidden -MMD -MP`) → `ligase~.pd_darwin`.
-- Headless: `/Applications/Pd-0.51.1.app/Contents/Resources/bin/pd -nogui -nosound -r <SR> -lib ./ligase~ <patch.pd>`,
-  capture with `writesf~ 2`, analyze with `sox`/python.
-- Test-patch gotchas that cost time before:
-  - Wire `stop` → **writesf~** (not ligase~), or the WAV header is never finalized (sox reads 0 frames).
-  - To actually HEAR the delay wet: **`sos 0` + `gdelay_mix 1`** (default `sos 0.5` masks it with dry input).
-  - Headless 0 honors an unconnected inlet's literal 0 → it overwrites params; use headless 1 for
-    message-only tests, or drive the inlets.
-  - Pattern tests live in `tests/pattern/` (`P1*`/`P2*`/`P3*`). They drive the clock with two `bang`s
-    500 ms apart (→ 120 BPM), enable `pattern_debug 1`, and read step/semitone changes from stderr;
-    the pitch tests must `record` + `play 1` so grains actually trigger (pitch is applied per grain).
+## Build & headless-test recipe (Linux cloud session)
+- `sudo apt-get install -y puredata sox` (pd 0.54.1 works). Build: `make` → `ligase~.pd_linux`.
+- **Regression gate = `AUTOMATED_TEST_PROCEDURE.md`**, exact baselines:
+  `test_auto.pd` → RMS **0.372309** / max 0.608839; `test_playback.pd` → buffer check
+  **L=R=0.330109**; `test_delay.pd` clean. Any deviation from these exact numbers means a
+  default behavior changed — investigate before committing.
+- **pd hygiene (cost real time):** `pkill -9 pd` before runs; wrap in `timeout -s KILL <n>s`;
+  every test patch must self-quit (`[delay]` → `\; pd quit`) or pd hangs forever; loadbang
+  `\; pd dsp 1` (required under `-nosound`).
+- Capture audio with `writesf~ 2` (wire `stop` → writesf~, or the WAV header never finalizes);
+  float-extensible WAVs need `sox -b 16 -e signed` conversion before python's `wave` reads them.
+- To HEAR delay wet: `sos 0` + `gdelay_mix 1` (default sos masks it). Headless 0 honors an
+  unconnected inlet's literal 0 (it overwrites params) — use headless 1 for message-only tests.
+- Grain debug: the first 5 triggers + first 8 finals print to stderr
+  (`grain triggered #` / `grain final #`) — the finals show per-grain matrix offsets landing.
+- Owner-side (Mac): `ligase~.pd_darwin`, plugdata; test plans in `TEST_PLAN_MACOS.md`.
 
-## Control surface added/changed in the 2026-06-19→22 arc
-- **DD-4:** `delay_glide <ms>` (0–5000, default 20) — de-zippers delay-time changes (msg + CV on inlet 11).
-- **Stut:** signal-driven — inlets 11/12/13 MAP their delay-native range → reps 1-16 (lin) / reduction
-  0-1 (direct) / spacing 1-5000 ms (exp); messages set native units as the fallback. Layering voice
-  pool (up to 64). `stut_length` / `stut_length_mode` / `stut_length_quantize` / `stut_length_quant`.
-- **Bencina** (granular cloud, NO pitch — pitch is deliberately smear + morphagene tape speed):
-  - `bencina_spread <0-1>` — position scatter / graininess (default **1.0** = the grainy character).
-  - `bencina_edge <0-1>` — grain edge-round / de-click (default **0 = OFF**; preserves the skew-edge
-    clickiness, which the owner uses creatively).
-  - `bencina_level <gain>` — wet makeup driven into the tanh soft-limit (default **6.0**; tanh keeps
-    output ≤ ±1 so it can't clip).
-  - `bencina_pan` — per-grain random pan as a `param_range` modulation target (the range = stereo
-    width+skew; base = pan inlet 22). `bencina_iot` / `bencina_grainsize` / `bencina_wrap` / `bencina_clear`.
+## Control-surface quick map (what shipped this session)
+- Poly: `poly 1`, `chord 60 64 67`, `midi <n> <vel> <ch>` (vel 0 = off), needs `pitch_mode 4`.
+- Spatial: `spatial sphere 0` / `spatial nbody 2 1`, `pan_mode 2`, `spatial_width <0-1>`.
+- Matrix: `matrix_connect env_mono moog_cutoff 3000`; per-grain: `matrix_connect rand1 grainsize 0.5`;
+  `matrix_dump`, `env_follow_ms 300`. Full lists in the manual's MODULATION MATRIX section.
+- Events: `pattern event grain [ 1(3,8) ]`; actions grain/splice/retrig/gate/bang; `rev`.
+- Bank: `smear_pitch_scale 0 4 7` + `smear_mode 1` + `smear_bank_mix 0.5` (+ resonance ~0.998
+  for tight tuning).
+- Expander (once the in-flight build lands): `snapbuf_load/from_live/set/get/dump/store/apply/clear`;
+  edits are COLD; `snapbuf_apply` is the only realtime touchpoint.
+- (Earlier arcs — patterns P1-P3, smear pitch, MIDI routing, fine tune, one-shot, morph — are
+  documented in the manual and QUEUE §6; the pattern mini-notation digest lives in the manual's
+  PATTERNS section. Pattern tests: `tests/pattern/`; morph: `tests/morph/`.)
 
-## Pattern subsystem (TidalCycles mini-notation) — NEW (Seq 47–49), feature-complete + verified
-- **Canonical Tidal mini-notation, space-separated (NO commas — comma=stack is unsupported, and Pd's
-  binbuf eats `,` anyway).** `< >` alternation (one member per cycle), `[ ]` subdivision (nestable),
-  `@N` weight, `*N`/`!N`, `~` rest.
-- `pattern <param> <tokens…>` — step-sequence any `get_param_range_by_name` target (`moog_cutoff`,
-  `smear_frequency`, `amplitude`, `modout1`–`4`, …; **NOT** bare `smear`). Auto-allocates a slot +
-  attaches via the new `RAND_TYPE_PATTERN` source, reusing the existing invert/map/slew tail. Values
-  are 0..1, mapped to the param's `param_range` min/max. `pattern <N>` (numeric slot) loads WITHOUT
-  attaching (testing / two-step with `rand_type pattern_N <param>`).
-- `pattern pitch <tokens…>` — tokens are **scale degrees** (index into the loaded `pitch_scale`), with
-  octave wrap (degree == count → +12 semitones). Auto-sets `PITCH_MODE_PATTERN` (pitch mode 5). Load a
-  `pitch_scale` first or it plays unison.
-- `pattern_cycle <N/D> <N/D> …` — the quantization cycle as musical durations at the detected BPM
-  (`pattern_cycle 4/4 3/8` = 2.75 s @120). No `pattern_cycle` → default 1-bar cycle. Built from the SAME
-  `(60000/bpm)*4` grid math as the quant grids; it is a FIFTH free-running clock, independent of them.
-- `pattern_clear <param|pitch|N>` — restore the param's prior source / pitch → OFF / free a numeric slot.
-- `pattern_debug 1` — log step + applied-semitone changes to stderr (verification aid; off by default).
-- Internals: `PATTERN_SLOTS=8` (slot 7 reserved for pitch). Parse is message-thread only into a flat
-  weighted step table (validate-then-commit, `step_count` published LAST); the audio thread only READS
-  the per-block cache (`pattern_eval_slot` is its sole writer). BPM unset (≤1) → clock frozen at phase 0
-  (no NaN). Single-level alternation (ALT-inside-ALT is rejected); Euclid `(k,n)` + group-glued suffixes
-  not yet implemented (grammar reserves them).
-
-## Open / next
-- **Stubs (the only non-complete items):**
-  1. Build-naming / stale-artifact cleanup — `erosion` leftovers in the Makefile + `src/*.1` backups.
-     Cosmetic; do only when cutting a release.
-  2. `Plans/manual_content_edits.md` "stream 1" — TBD, awaiting the owner's incoming content edits.
-  3. Empty advisory lanes (FRIEND / AUDITOR) in QUEUE.
-- **Standing:** regenerate `ligase_manual.pdf` (`make manual`) when asked — many `.md` edits have
-  accumulated since the last PDF.
-- **Pending sign-off:** the "owner verify / ear-test pending" items across B6–B35 **and the new pattern
-  subsystem** — needs a hardware/ear pass in plugdata on the Focusrite. If something misbehaves there,
-  capture `get_inlets` / `get_state` from the bad state.
+## Immediate next steps
+1. **Land the expander build**: review diff vs `Plans/snapshot_expander.md` AC1–AC6, run the
+   regression gate, commit, push; update QUEUE (§4a row → DONE, §6 entry, Seq bump) and the
+   plan status; true up the XPNDR panel if the shipped selectors differ.
+2. Offer the owner a PR / merge of `claude/queue-execution-plans-8snsz1` → `main`.
+3. Owner ear-test round on the six new features (list above) — file findings as new B-items.
+4. Parked ideas: source-rates-as-matrix-destinations (matrix-on-matrix; matrix plan's domain);
+   expander v1.1 = audition + A/B compare pair; morph FX bases completeness; §4 build-naming
+   cleanup (only when cutting a release); `make manual` when the owner asks (much accumulated).
 
 ## Pointers
-- `QUEUE.md` — full changelog (§1 completed B/M table; §4a plan coverage; §6 history to Seq 49).
-- `Plans/pattern_notation.md` / `pattern_modulation.md` / `pattern_pitch.md` — the pattern subsystem
-  plans (P1/P2/P3), each with a Progress + headless-verification section (all DONE).
-- `tests/pattern/` — the headless pattern acceptance patches (`P1*`/`P2*`/`P3*`) + `README.md`.
-- `Plans/completed/` — archived B1/B2/M1 plans. `Plans/manual_content_edits.md` — partial, still active.
-- `docs/ligase_manual.md` — manual source (PDF held). Now documents the pattern subsystem AND the
-  pitch-destination arc + one-shot: SMEAR > Smear Pitch (resonator note->Hz, sources, override, fine),
-  PITCH & SPEED > Fine Tune + Channel-Aware MIDI Routing, PLAYBACK CONTROL > One-Shot (loop/trigger),
-  plus the MESSAGES quick-list + MODULATION targets (pitch_fine/smear_pitch_fine). **PDF is stale vs the
-  `.md`** — run `make manual` only when the owner asks (much has accumulated).
+- `QUEUE.md` — full changelog (§4a plan coverage; §6 history to Seq 66).
+- `docs/modulation_layers.md` — the modulation-layer contract (precedence, capture, ownership).
+- `Plans/snapshot_expander.md` — the in-flight build's spec + acceptance criteria.
+- `docs/ui/gen_panel.py` → `docs/ui/ligase_synthi_panel.svg` — the control-surface mockup.
+- `tests/` — per-feature headless acceptance patches (`polyphony/ spatial/ modmatrix/
+  pattern_events/ resonator/ pattern/ morph/ param_lock/`).
+- `docs/ligase_manual.md` — manual source (PDF intentionally stale).
