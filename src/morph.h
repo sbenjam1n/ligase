@@ -17,18 +17,26 @@
 #define MORPH_RANGE_COUNT    45   // get_param_range_by_name (41) + saw_cycles + saw_depth
                                   //   + pitch.semitone_range + smear_pitch.semitone_range
 #define MORPH_SCALAR_COUNT   64   // continuous scalar bases (fixed upper bound; capture table <= this)
-#define MORPH_DISCRETE_COUNT 32   // discrete modes/enums/channels (fixed upper bound)
+#define MORPH_DISCRETE_COUNT 48   // discrete modes/enums/channels (fixed upper bound; grown 32->48 for
+                                  //   the schema-v3 generator discretes — the included[] index layout
+                                  //   (ranges, then SCALAR_COUNT scalars, then discretes) is unchanged)
 
 #define MORPH_INCLUDE_COUNT (MORPH_RANGE_COUNT + MORPH_SCALAR_COUNT + MORPH_DISCRETE_COUNT)
 
 // Logical field counts actually populated by capture — the schema for the TEXT export
-// (morph_export/morph_import). MUST match the capture in ligase~.c:
-//   MORPH_SCALAR_USED   = morph_collect_scalars() (21) + MORPH_FX_SCALARS (11)
-//   MORPH_DISCRETE_USED = morph_collect_discretes() (28) + 2 enums (playhead_mode, pitch mode)
-// Bump MORPH_TEXT_VERSION whenever this schema changes (older text files are then refused).
-#define MORPH_SCALAR_USED   32
-#define MORPH_DISCRETE_USED 30
-#define MORPH_TEXT_VERSION  2   /* v2 adds the optional "exclude <idx...>" selection-tree line; v1 still imports */
+// (morph_export/morph_import). MUST match the capture + the shared field walker in ligase~.c:
+//   v1/v2 scalars   = morph_collect_scalars() (21) + MORPH_FX_SCALARS (11)          = 32
+//   v1/v2 discretes = morph_collect_discretes() (28) + 2 enums (playhead, pitch mode) = 30
+//   v3 appends the GENERATOR ("sources") params: scalars +29 (noise_freq_1..4,
+//   env_follow_ms, sphere_damping/elasticity x4, nbody G/damping/epsilon/pump x4),
+//   discretes +12 (nbody pump_interval/mode x4, sphere mode x4).
+// Bump MORPH_TEXT_VERSION whenever this schema changes. Import still accepts older
+// versions: fields with a newer `since` tag in the walker keep their current values.
+#define MORPH_SCALAR_USED_V2   32   // v1/v2 file layout (scalars written before v3)
+#define MORPH_DISCRETE_USED_V2 30   // v1/v2 file layout (discretes written before v3)
+#define MORPH_SCALAR_USED   61      // v3: 32 + 29 generator scalars
+#define MORPH_DISCRETE_USED 42      // v3: 30 + 12 generator discretes
+#define MORPH_TEXT_VERSION  3   /* v3 adds the generator ("sources") params; v1/v2 still import */
 
 // Route-leg easing curves
 enum {

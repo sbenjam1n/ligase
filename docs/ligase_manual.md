@@ -3061,6 +3061,17 @@ pitch mode, smear-pitch source, pan mode, sos mode, MIDI channels, …), both pi
 playable-FX scalar bases (moog cutoff/resonance/mix, smear frequency/resonance/stages/feedback, delay
 time/feedback/tone/mix).
 
+Since text schema v3 a snapshot ALSO carries the modulation sources' own "weather" params — the
+per-instance rate scales noise_freq_1..4, the envelope-follower release env_follow_ms, the sphere
+physics (sphere_damping/sphere_elasticity 1-4 and output modes), and the N-body physics (nbody_G /
+nbody_damping / nbody_epsilon / nbody_pump amount + interval 1-4 and output modes). Motion CHARACTER
+travels with the voice: retuning perlin_2's rate for scene B no longer retroactively changes scene A.
+If you prefer the old behaviour — one global rate knob sweeping every scene at once — exclude the
+group: `morph_exclude sources`.
+
+snapshot_recall (like the cursor blend and snapbuf_apply) honors the selection tree: excluded
+parameters keep their live values across a recall.
+
 ## The surface and the cursor
 
 morph_point <id> <x> <y> (alias morph_place) drops snapshot id at (x,y) on the normalised [0,1] x [0,1]
@@ -3089,17 +3100,21 @@ CPU, best for a static cursor than a fast route).
 By default the morph applies to the whole patch. morph_exclude <name...> drops parameters from the
 blend — an excluded parameter keeps whatever manual / modulation / inlet control owns it and the
 cursor leaves it untouched; morph_include <name...> adds them back, and morph_include all resets to
-the full patch. Snapshots still CAPTURE everything either way — this only changes what the cursor
-APPLIES (Bencina's Parameter Selection Tree).
+the full patch. Snapshots still CAPTURE everything either way — this only changes what a restore
+APPLIES: the cursor blend, snapshot_recall, and the expander's snapbuf_apply all honor it (Bencina's
+Parameter Selection Tree).
 
 Targets: all; a single parameter — amplitude, pan, speed, grainsize, grainstart, moog_cutoff,
 moog_resonance, moog_mix, smear_frequency, smear_resonance, smear_stages, smear_feedback, gdelay,
 gdelay_feedback, gdelay_tone, gdelay_mix; or a group — pitch (the grain pitch -> playback speed),
-smear_pitch (the resonator note), fx (moog + smear-resonator + delay + distortion). Each name covers
-that parameter's modulation band, its scalar base, and any mode it owns.
+smear_pitch (the resonator note), fx (moog + smear-resonator + delay + distortion), sources (the
+generator/weather params captured since schema v3: noise_freq_1..4, env_follow_ms, the sphere and
+N-body physics params and output modes). Each name covers that parameter's modulation band, its
+scalar base, and any mode it owns.
 
   morph_exclude pitch        # morph the timbre but hold the notes fixed
   morph_exclude fx           # morph grain + pitch but leave the effects alone
+  morph_exclude sources      # rates/physics stay global "weather" (pre-v3 behaviour)
   morph_include all          # back to morphing everything
 
 ## Routes (automated cursor paths)
@@ -3144,8 +3159,10 @@ bodies — those hold hundreds of values each and are not dumped as messages).
 morph_export <file> / morph_import <file> are the fully portable option: a human-readable .txt that
 holds EVERYTHING (every snapshot body + the surface), written as a logical-field schema rather than a
 memory image — so unlike the binary .morph it survives across builds whose struct layout differs (a
-"ligase_morph <version>" header refuses files whose schema changed). The snapshot lines are long (one
-per snapshot, hundreds of numbers) but it is plain text you can read, diff, and edit.
+"ligase_morph <version>" header guards the schema). The current schema is version 3 (v3 appended the
+generator/sources params); older v1/v2 files still import cleanly — their missing generator fields
+simply keep the values the engine has at import time. The snapshot lines are long (one per snapshot,
+hundreds of numbers) but it is plain text you can read, diff, and edit.
 
 Three persistence routes, then: morph_save/morph_load (binary, complete, fastest, build-specific);
 morph_export/morph_import (text, complete, human-readable + build-portable); morph_state (messages,
@@ -3166,6 +3183,78 @@ just the snapshots and layout but also which parameters the morph is allowed to 
 - morph_include/morph_exclude limit which parameters the morph applies (see "Limiting which parameters
 morph"). Both kernels ship: morph_interp 0 = IDW/Shepard (default), 1 = natural-neighbour (a mesh-free sampled
 Sibson approximation). The CV signal-inlet cursor is implemented (morph_cursor 1, inlets 22/23).
+
+# SNAPSHOT EXPANDER (EDIT BUFFER)
+
+Snapshots on their own are write-only: you can capture, recall, blend and export them, but you cannot
+look INSIDE one, and you cannot adjust one without recalling it into the live engine — hostile for
+live use, where preparing the next scene must not wreck the current one. The Snapshot Expander is a
+modular-synth style sidecar for exactly that: ONE edit buffer — patch memory's classic workbench —
+that you load snapshots into, inspect, and edit **completely offline**.
+
+**The cold-edit contract.** The edit buffer is never read by the audio pipeline. Every snapbuf_set is
+cold; the live engine changes on exactly two deliberate acts:
+
+- **snapbuf_apply** (panel: ASSIGN) — buffer -> live engine, through the same path as a snapshot
+  recall: it writes bases + bands + discretes, honors morph_include/morph_exclude, and never touches
+  matrix pins.
+- **snapbuf_store <id>** (panel: STORE) — buffer -> snapshot slot. **If that slot is placed on the
+  morph surface and part of an active blend, the field changes shape on the next block.** That is the
+  point — reshape a corner of the surface mid-set — and it is safe because it only ever happens on the
+  explicit STORE, never as a knob side-effect. Storing to an unplaced slot changes nothing live.
+
+## Messages
+
+  snapbuf_load <id>          copy stored snapshot -> buffer
+  snapbuf_from_live          capture the CURRENT voice -> buffer (the snapshot capture path:
+                             modulation-transparent — bases, never the momentary wobble)
+  snapbuf_set <field> ...    edit one field in the buffer (see grammar below)
+  snapbuf_get <field> [sub]  report one field/subfield on the state outlet (outlet 9),
+                             prefixed "snapbuf", e.g.  snapbuf amplitude_range min 0.2
+  snapbuf_dump               the whole buffer as RE-SENDABLE snapbuf_set lines on outlet 9
+                             (a panel populates every display from one dump; replaying the
+                             dump reconstructs the buffer)
+  snapbuf_store <id>         buffer -> slot (keeps the slot's surface placement; see above)
+  snapbuf_apply              buffer -> live engine (the ONLY realtime touchpoint)
+  snapbuf_clear              re-init the buffer to empty
+
+## Field addressing (the export-schema vocabulary)
+
+Fields use the text-export schema's logical names — the same enumeration, so the expander and the
+.txt schema can never diverge. Four kinds:
+
+- **Bands** (`<param>_range`, all 45): per-subfield —
+  `snapbuf_set moog_cutoff_range min 200` (subfields: min max enabled rand_type rand_instance
+  base_value slew invert) — or the whole band in export order:
+  `snapbuf_set amplitude_range 0.1 0.5 1 2 0 0.3 0.5 0`.
+- **Scalars** (`amplitude`, `moog_cutoff`, `gdelay_time`, `noise_freq_2`, `env_follow_ms`,
+  `sphere_damping_1`, `nbody_G_3`, …): `snapbuf_set amplitude 0.42`.
+- **Discretes** (`pan_mode`, `maxgrains`, `playhead`, `pitch_mode`, `nbody_mode_1`,
+  `sphere_mode_4`, `nbody_pump_interval_2`, …): `snapbuf_set pan_mode 1`.
+- **Scale lists**: whole-list set, matching the live message —
+  `snapbuf_set pitch_scale 0 4 7` / `snapbuf_set smear_pitch_scale 0 3 7`.
+
+An unknown field or subfield is a pd error and leaves the buffer untouched. `snapbuf_get <band>`
+without a subfield reports all 8 values in export order.
+
+## Workflow
+
+  # perform on the current scene, prepare the next one offline
+  snapbuf_load 3                          # pull scene B into the workbench
+  snapbuf_get moog_cutoff                 # look inside (outlet 9: "snapbuf moog_cutoff 800")
+  snapbuf_set moog_cutoff 1200            # cold edits — the live sound never flinches
+  snapbuf_set amplitude_range min 0.3
+  snapbuf_store 3                         # write it back to the slot...
+  snapbuf_apply                           # ...or land it on the live engine right now
+
+## Notes
+
+- One buffer (the slots are the storage; the buffer is a workbench). No audition/compare in v1 —
+  edits are audible only after ASSIGN.
+- snapbuf_apply respects the selection tree: with `morph_exclude sources` the applied voice leaves
+  the live generator rates untouched, exactly like a recall.
+- snapbuf_from_live inherits capture transparency: with the matrix wobbling a destination, the
+  buffer records the knob value (the tracked base), never base+offset.
 
 # QUERY STATE
 

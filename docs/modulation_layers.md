@@ -13,15 +13,34 @@ The three systems are not rivals — they hold different kinds of state:
 
 | Layer | Owns | Granularity | Persisted where |
 |---|---|---|---|
-| **Snapshots / metasurface** (`snapshot`, `morph_*`) | the **voice**: scalar bases, the param_range **bands** (min/max/enabled/generator — the band itself, never its momentary output), discretes, both pitch scales | recalled/blended per block by the route/joystick | the surface (`.morph` binary / `.txt` export / `morph_state` dump) |
+| **Snapshots / metasurface** (`snapshot`, `morph_*`) | the **voice**: scalar bases, the param_range **bands** (min/max/enabled/generator — the band itself, never its momentary output), discretes, both pitch scales, and — since export schema v3 — the **generator ("sources") params**: `noise_freq_1..4`, `env_follow_ms`, the sphere damping/elasticity and N-body G/damping/epsilon/pump params + both output-mode sets | recalled/blended per block by the route/joystick | the surface (`.morph` binary / `.txt` export / `morph_state` dump) |
 | **param_range** (`param_range`, `rand_type`) | **per-grain texture**: each triggered grain samples its ranges individually | per grain | captured *inside* snapshots as bands |
 | **Modulation matrix** (`matrix_connect`) | **per-block motion + input listening**: signed offsets summed on top of whatever base exists, incl. the envelope follower | per block (v1) · per grain at trigger (v1.5) | global — **not** captured by snapshots |
 
+Since schema v3 motion *character* is voice state, not global weather: how fast perlin_2 wanders
+travels with the snapshot. The old global behavior — one rate knob sweeping every scene at once —
+is one message away: `morph_exclude sources` (the selection tree gates every restore path:
+the cursor blend, `snapshot_recall`, and `snapbuf_apply`).
+
 **Pins are physical.** A snapshot deliberately does not capture matrix connections
-(`morph_snapshot_t` carries ranges/scalars/discretes/scales only). Recalling or morphing a
-snapshot changes the *sound*; the patch cords stay in — exactly like the pin board on the
-hardware the panel mockup is modelled on. Blending connection topology between snapshots
-(argmax on pins) would be musically incoherent, so it is ruled out by design, not omission.
+(`morph_snapshot_t` carries ranges/scalars/discretes/scales — and, since schema v3, the generator
+params — but **never pins**). Recalling or morphing a snapshot changes the *sound*; the patch cords
+stay in — exactly like the pin board on the hardware the panel mockup is modelled on. Blending
+connection topology between snapshots (argmax on pins) would be musically incoherent, so it is
+ruled out by design, not omission. (Note the one nuance v3 adds: `env_follow_ms` — the follower's
+release *time* — is now voice state, while the follower's *pins* remain physical.)
+
+### The fourth state-holder — the Snapshot Expander's edit buffer (explicitly OFFLINE)
+
+The expander (`snapbuf_*`, see the manual's SNAPSHOT EXPANDER section) adds one more place state
+lives: a single `morph_snapshot_t` **edit buffer** on the object. It is *not* a modulation layer —
+it sits outside the per-block pipeline entirely and is **never read by `ligase_perform`**. It holds
+a voice being inspected or prepared; the live engine changes on exactly two deliberate acts:
+`snapbuf_apply` (buffer → live, through the same masked-restore path as a recall) and
+`snapbuf_store <id>` (buffer → slot — if that slot is placed on the surface, an active blend
+reshapes on the next block; that is the STORE contract, never a knob side-effect). Everything else
+(`snapbuf_load`, `snapbuf_from_live`, `snapbuf_set/get/dump`, `snapbuf_clear`) is cold by
+construction: the regression gate proves a full edit session leaves the audio byte-identical.
 
 Grain parameters never needed the v1 matrix because they already have per-grain modulation
 via param_range, which is the richer mechanism for grain-cloud texture. The v1.5 matrix tier
@@ -64,6 +83,7 @@ Consequences, all verified in the source:
 | param_range modulation | the **band** (min/max/generator/enabled), never the generator's momentary output | **clean** — recall reproduces the motion, not a frozen phase |
 | the 11 opaque-FX params (moog/smear/gdelay) | the **fx_shadow** — written only by user-facing setters, never by the matrix apply | **clean** — a wobbling cutoff snapshots as its knob value |
 | self-read transport params (scanrate, organize, sos, iot, env_skew) | the matrix's **tracked base** (`mod_base[dest]`) when a connection actively drives the captured field (scanrate); organize/sos/iot capture message-stored bases the matrix never writes, and env_skew's live field is not a captured scalar | **clean** (was dirty in v1 for scanrate — SNAP baked `base + this block's LFO value`) |
+| generator ("sources") params (schema v3) | the message-set params themselves (`noise_frequency_scale[]`, `env_follow_ms`, the sphere/nbody physics params + output modes) — never a simulation's momentary position | **clean** — restore re-applies through the setters' own clamps, and `env_follow_ms` recomputes the follower coeff |
 
 **v1.5 closed the gap** (rules below): capture reads the matrix's tracked base
 (`mod_base[dest]`) whenever a connection is active on that destination, making SNAP
@@ -143,10 +163,17 @@ matrix_connect <src> <dest> <depth>   depth signed, in the destination's own uni
 matrix_disconnect <src> <dest>        remove one pin
 matrix_clear                          pull all pins
 matrix_dump                           list connections
-env_follow_ms <ms>                    follower release time (peak detector)
+env_follow_ms <ms>                    follower release time (peak detector; snapshot
+                                      state since schema v3 — morph_exclude sources
+                                      to keep it global)
 
 v1 destinations  (per block): gdelay gdelay_feed gdelay_tone gdelay_mix moog_cutoff
                  moog_resonance moog_mix smear_frequency smear_resonance smear_stages
                  smear_feedback scanrate organize sos iot env_skew modout1-4
 v1.5 additions   (per grain): speed grainsize grain_start amplitude pan pitch_fine
+
+Snapshot Expander (all cold except the two marked):
+snapbuf_load <id> · snapbuf_from_live · snapbuf_set/get/dump · snapbuf_clear
+snapbuf_apply  (buffer -> live; honors the selection tree)      [touches realtime]
+snapbuf_store <id>  (buffer -> slot; placed slot reshapes blend) [touches realtime]
 ```

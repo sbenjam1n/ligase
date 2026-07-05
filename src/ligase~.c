@@ -217,6 +217,12 @@ struct _ligase {
     morph_state_t *morph;   // morph / Metasurface layer (snapshot interpolation)
     morph_fx_shadow_t fx_shadow;  // last-set opaque-FX scalar bases (for morph capture)
 
+    // Snapshot Expander EDIT BUFFER (Plans/snapshot_expander.md) — patch memory's classic
+    // workbench: owned by the message thread, NEVER read in ligase_perform. Cold by
+    // construction; the live engine changes only on snapbuf_apply / snapbuf_store.
+    morph_snapshot_t snapbuf;
+    int snapbuf_has;        // buffer holds a voice (snapbuf_load / _from_live / _set)
+
     // Parameters
     float grain_size;
     float grain_start;
@@ -6402,6 +6408,10 @@ static void *ligase_new(void) {
     x->morph = (morph_state_t *)getbytes(sizeof(morph_state_t));
     if (x->morph) morph_state_init(x->morph);
 
+    // Snapshot Expander edit buffer starts empty
+    memset(&x->snapbuf, 0, sizeof(x->snapbuf));
+    x->snapbuf_has = 0;
+
     // FX shadow seeded to the FX-object defaults (so a capture before any FX setter is accurate)
     x->fx_shadow.moog_cutoff = 1000.0f; x->fx_shadow.moog_resonance = 0.0f; x->fx_shadow.moog_mix = 0.0f;
     x->fx_shadow.smear_frequency = 800.0f; x->fx_shadow.smear_resonance = 0.7f;
@@ -6738,6 +6748,92 @@ static void morph_restore_scales(ligase_t *x, const morph_snapshot_t *snap) {
     memcpy(ss->semitones, snap->smear_pitch_scale, sizeof(ss->semitones));
 }
 
+// ── Generator ("sources") params — schema v3 ────────────────────────────────
+// The modulation SOURCES' own params join the snapshot (GATE A.7, owner-approved):
+// motion character travels with the voice. Layout: appended after the v2-used
+// slots inside scalars[]/discretes[], so every v2 index (and every exported
+// selection-tree index) is unchanged. `morph_exclude sources` restores the old
+// global-weather behavior.
+#define MORPH_GEN_SCALAR_BASE   MORPH_SCALAR_USED_V2     /* 32 */
+#define MORPH_GEN_DISCRETE_BASE MORPH_DISCRETE_USED_V2   /* 30 */
+enum {                              // scalar offsets from MORPH_GEN_SCALAR_BASE
+    MGS_NOISE_FREQ        = 0,      // noise_freq_1..4 (per-instance rate scales)
+    MGS_ENV_FOLLOW_MS     = 4,      // envelope-follower release time
+    MGS_SPHERE_DAMPING    = 5,      // sphere_damping_1..4
+    MGS_SPHERE_ELASTICITY = 9,      // sphere_elasticity_1..4
+    MGS_NBODY_G           = 13,     // nbody_G_1..4
+    MGS_NBODY_DAMPING     = 17,     // nbody_damping_1..4
+    MGS_NBODY_EPSILON     = 21,     // nbody_epsilon_1..4
+    MGS_NBODY_PUMP        = 25,     // nbody_pump_1..4 (pump amount)
+    MGS_COUNT             = 29
+};
+enum {                              // discrete offsets from MORPH_GEN_DISCRETE_BASE
+    MGD_NBODY_PUMP_INTERVAL = 0,    // nbody_pump_interval_1..4
+    MGD_NBODY_MODE          = 4,    // nbody_mode_1..4 (output mode 0-10)
+    MGD_SPHERE_MODE         = 8,    // sphere_mode_1..4 (output mode 0-6)
+    MGD_COUNT               = 12
+};
+
+static void morph_capture_generators(ligase_t *x, morph_snapshot_t *snap) {
+    if (!x->scheduler) return;
+    perlin_state_t *ps = &x->scheduler->perlin_state;
+    float *g = &snap->scalars[MORPH_GEN_SCALAR_BASE];
+    int   *d = &snap->discretes[MORPH_GEN_DISCRETE_BASE];
+    for (int i = 0; i < 4; i++) {
+        g[MGS_NOISE_FREQ + i]          = ps->noise_frequency_scale[i];
+        g[MGS_SPHERE_DAMPING + i]      = ps->sphere[i].damping_factor;
+        g[MGS_SPHERE_ELASTICITY + i]   = ps->sphere[i].elasticity;
+        g[MGS_NBODY_G + i]             = ps->nbody[i].G;
+        g[MGS_NBODY_DAMPING + i]       = ps->nbody[i].damping;
+        g[MGS_NBODY_EPSILON + i]       = ps->nbody[i].epsilon;
+        g[MGS_NBODY_PUMP + i]          = ps->nbody[i].pump_amount;
+        d[MGD_NBODY_PUMP_INTERVAL + i] = ps->nbody[i].pump_interval;
+        d[MGD_NBODY_MODE + i]          = ps->nbody_output_mode[i];
+        d[MGD_SPHERE_MODE + i]         = ps->sphere_output_mode[i];
+    }
+    g[MGS_ENV_FOLLOW_MS] = ps->env_follow_ms;
+}
+
+// Restore writes back through the SAME limits the message setters enforce (sphere
+// setters clamp internally; nbody/noise limits mirrored here; env_follow_ms
+// recomputes the one-pole coeff exactly like ligase_env_follow_ms). No post()s —
+// this runs per block during a route.
+static void morph_restore_generators(ligase_t *x, const morph_snapshot_t *snap) {
+    if (!x->scheduler) return;
+    perlin_state_t *ps = &x->scheduler->perlin_state;
+    const float *g = &snap->scalars[MORPH_GEN_SCALAR_BASE];
+    const int   *d = &snap->discretes[MORPH_GEN_DISCRETE_BASE];
+    for (int i = 0; i < 4; i++) {
+        if (g[MGS_NOISE_FREQ + i] > 0.0f)               // setter refuses <= 0
+            ps->noise_frequency_scale[i] = g[MGS_NOISE_FREQ + i];
+        sphere_set_damping(&ps->sphere[i], g[MGS_SPHERE_DAMPING + i]);        // clamps 0..1
+        sphere_set_elasticity(&ps->sphere[i], g[MGS_SPHERE_ELASTICITY + i]);  // clamps 0..1
+        ps->nbody[i].G = g[MGS_NBODY_G + i];            // setter is unclamped
+        float dv = g[MGS_NBODY_DAMPING + i];
+        if (dv < 0.0f) dv = 0.0f; else if (dv > 1.0f) dv = 1.0f;
+        ps->nbody[i].damping = dv;
+        float ev = g[MGS_NBODY_EPSILON + i];
+        ps->nbody[i].epsilon = (ev < 0.0f) ? 0.0f : ev;
+        float pv = g[MGS_NBODY_PUMP + i];
+        ps->nbody[i].pump_amount = (pv < 0.0f) ? 0.0f : pv;
+        int iv = d[MGD_NBODY_PUMP_INTERVAL + i];
+        ps->nbody[i].pump_interval = (iv < 1) ? 1 : iv;
+        int nm = d[MGD_NBODY_MODE + i];
+        if (nm < 0) nm = 0; else if (nm > 10) nm = 10;
+        ps->nbody_output_mode[i] = nm;
+        int sm = d[MGD_SPHERE_MODE + i];
+        if (sm < 0) sm = 0; else if (sm > 6) sm = 6;
+        ps->sphere_output_mode[i] = sm;
+    }
+    float ms = g[MGS_ENV_FOLLOW_MS];
+    if (isfinite(ms)) {
+        if (ms < 0.0f) ms = 0.0f; else if (ms > 60000.0f) ms = 60000.0f;
+        float sr = (x->sample_rate > 0) ? (float)x->sample_rate : 48000.0f;
+        ps->env_follow_ms = ms;
+        ps->env_follow_coeff = (ms > 0.0f) ? expf(-1.0f / (ms * 0.001f * sr)) : 0.0f;
+    }
+}
+
 // Full snapshot capture: bands + scalar bases + discretes + scale lists.
 // (FX-shadow scalars are added in step 2b-2.)
 static void morph_capture(ligase_t *x, morph_snapshot_t *snap) {
@@ -6780,6 +6876,7 @@ static void morph_capture(ligase_t *x, morph_snapshot_t *snap) {
     for (int i = 0; i < in; i++) snap->discretes[i] = *ip[i];
     snap->discretes[in]     = (int)x->playhead_mode;
     snap->discretes[in + 1] = (int)x->scheduler->pitch_control.mode;
+    morph_capture_generators(x, snap);   // schema v3: sources/weather params
     morph_capture_scales(x, snap);
 }
 
@@ -6811,7 +6908,201 @@ static void morph_restore(ligase_t *x, const morph_snapshot_t *snap) {
     for (int i = 0; i < in; i++) *ip[i] = snap->discretes[i];
     x->playhead_mode                 = (playhead_mode_t)snap->discretes[in];
     x->scheduler->pitch_control.mode = (pitch_mode_t)snap->discretes[in + 1];
+    morph_restore_generators(x, snap);   // schema v3: sources/weather params
     morph_restore_scales(x, snap);
+}
+
+// included[] index layout: ranges [0..44], scalars [45..45+63], discretes [45+64..].
+#define MORPH_INC_SCALAR(i)   (MORPH_RANGE_COUNT + (i))
+#define MORPH_INC_DISCRETE(i) (MORPH_RANGE_COUNT + MORPH_SCALAR_COUNT + (i))
+
+static int morph_any_excluded(const morph_state_t *m) {
+    for (int i = 0; i < MORPH_INCLUDE_COUNT; i++) if (!m->included[i]) return 1;
+    return 0;
+}
+
+// Selection tree mask: for any EXCLUDED field, overwrite the snapshot's value in *b with
+// the CURRENT live value, so restoring b is a no-op for it — the morph leaves it to
+// manual/modulation/inlet control. (Scales follow their pitch / smear-pitch group's
+// discrete-mode flag.) Shared by the blend (morph_apply_at), snapshot_recall, and the
+// expander's snapbuf_apply — the tree is the single ownership boundary on every restore path.
+static void morph_mask_excluded(ligase_t *x, morph_snapshot_t *b) {
+    morph_state_t *m = x->morph;
+    if (!m || !morph_any_excluded(m)) return;
+    morph_snapshot_t cur;
+    memset(&cur, 0, sizeof(cur));
+    morph_capture(x, &cur);
+    int *inc = m->included;
+    for (int r = 0; r < MORPH_RANGE_COUNT; r++)
+        if (!inc[r]) b->ranges[r] = cur.ranges[r];
+    for (int s = 0; s < MORPH_SCALAR_COUNT; s++)
+        if (!inc[MORPH_INC_SCALAR(s)]) b->scalars[s] = cur.scalars[s];
+    for (int d = 0; d < MORPH_DISCRETE_COUNT; d++)
+        if (!inc[MORPH_INC_DISCRETE(d)]) b->discretes[d] = cur.discretes[d];
+    if (!inc[MORPH_INC_DISCRETE(29)]) {   // pitch mode -> keep the grain pitch scale
+        b->pitch_scale_count = cur.pitch_scale_count;
+        memcpy(b->pitch_scale, cur.pitch_scale, sizeof(b->pitch_scale));
+    }
+    if (!inc[MORPH_INC_DISCRETE(23)]) {   // smear source -> keep the smear pitch scale
+        b->smear_pitch_scale_count = cur.smear_pitch_scale_count;
+        memcpy(b->smear_pitch_scale, cur.smear_pitch_scale, sizeof(b->smear_pitch_scale));
+    }
+}
+
+// ── The shared field walker — ONE logical-name enumeration of every capturable field ──
+// The text export/import (morph_write_snap / morph_read_snap) and the Snapshot Expander
+// (snapbuf_set / snapbuf_get / snapbuf_dump) all iterate THIS table, so the text schema
+// and the expander vocabulary cannot diverge (the plan's no-schema-duplication rule).
+// TABLE ORDER == FILE ORDER: the v1/v2 fields first, in their original file order, then
+// the schema-v3 generator fields appended at the end (`since` = 3). Importing an old file
+// skips fields newer than the file's version — they keep their pre-filled current values.
+enum { MF_RANGE, MF_SCALAR, MF_DISCRETE, MF_SCALE };
+typedef struct {
+    const char   *name;    // logical field name (the snapbuf_set/get vocabulary)
+    unsigned char kind;    // MF_*
+    unsigned char idx;     // ranges[idx] / scalars[idx] / discretes[idx]; MF_SCALE: 0=pitch 1=smear
+    unsigned char since;   // text schema version that introduced this field
+} morph_field_t;
+
+#define MR(nm, i)    { nm, MF_RANGE,    (i), 1 }
+#define MS(nm, i)    { nm, MF_SCALAR,   (i), 1 }
+#define MD(nm, i)    { nm, MF_DISCRETE, (i), 1 }
+#define MS3(nm, off) { nm, MF_SCALAR,   MORPH_GEN_SCALAR_BASE + (off), 3 }
+#define MD3(nm, off) { nm, MF_DISCRETE, MORPH_GEN_DISCRETE_BASE + (off), 3 }
+static const morph_field_t morph_fields[] = {
+    // (a) the 45 modulation bands — morph_collect_ranges order; names = the
+    //     get_param_range_by_name vocabulary + "_range"
+    MR("speed_range", 0),  MR("scanrate_range", 1),  MR("organize_range", 2),
+    MR("sos_range", 3),    MR("iot_range", 4),       MR("maxgrains_range", 5),
+    MR("grainsize_range", 6), MR("grainstart_range", 7), MR("env_skew_range", 8),
+    MR("saw_cycles_range", 9), MR("saw_depth_range", 10),
+    MR("gdelay_range", 11), MR("gdelay_feed_range", 12), MR("gdelay_tone_range", 13),
+    MR("gdelay_mix_range", 14), MR("distortion_range", 15),
+    MR("amplitude_range", 16), MR("pan_range", 17),
+    MR("moog_cutoff_range", 18), MR("moog_resonance_range", 19), MR("moog_mix_range", 20),
+    MR("dist_emphasis_freq_range", 21), MR("dist_pregain_range", 22),
+    MR("dist_curve_blend_range", 23), MR("dist_drive_pos_range", 24),
+    MR("dist_drive_neg_range", 25), MR("dist_poly_c1_range", 26),
+    MR("dist_poly_c2_range", 27), MR("dist_poly_c3_range", 28),
+    MR("stut_reps_range", 29), MR("bencina_iot_range", 30),
+    MR("bencina_grainsize_range", 31), MR("bencina_pan_range", 32),
+    MR("smear_frequency_range", 33), MR("smear_resonance_range", 34),
+    MR("smear_stages_range", 35), MR("smear_feedback_range", 36),
+    MR("smear_pitch_fine_range", 37), MR("pitch_semitones_range", 38),
+    MR("pitch_fine_range", 39), MR("smear_pitch_semitones_range", 40),
+    MR("modout1_range", 41), MR("modout2_range", 42),
+    MR("modout3_range", 43), MR("modout4_range", 44),
+    // (b) continuous scalar bases — morph_collect_scalars order + the 11 FX shadows
+    MS("grainsize", 0),  MS("grainstart", 1), MS("speed", 2),   MS("organize", 3),
+    MS("amplitude", 4),  MS("pan", 5),        MS("saw_cycles", 6), MS("saw_depth", 7),
+    MS("scanrate", 8),   MS("sos", 9),        MS("iot", 10),    MS("quant", 11),
+    MS("gs_quant", 12),  MS("delay_quant", 13), MS("stut_length", 14),
+    MS("stut_length_quant", 15), MS("pitch_semitones", 16), MS("pitch_fine", 17),
+    MS("smear_pitch_semitones", 18), MS("smear_pitch_ref_hz", 19), MS("smear_pitch_fine", 20),
+    MS("moog_cutoff", 21), MS("moog_resonance", 22), MS("moog_mix", 23),
+    MS("smear_frequency", 24), MS("smear_resonance", 25), MS("smear_stages", 26),
+    MS("smear_feedback", 27), MS("gdelay_time", 28), MS("gdelay_feed", 29),
+    MS("gdelay_tone", 30), MS("gdelay_mix", 31),
+    // (c) discretes — morph_collect_discretes order + the 2 by-value enums
+    MD("clock_advance_quant", 0), MD("sos_mode", 1), MD("headless", 2),
+    MD("outlet3_mode", 3), MD("grain_bang_rate", 4), MD("quantize", 5),
+    MD("timesig_num", 6), MD("timesig_den", 7), MD("gs_quantize", 8),
+    MD("gs_timesig_num", 9), MD("gs_timesig_den", 10), MD("delay_quantize", 11),
+    MD("delay_timesig_num", 12), MD("delay_timesig_den", 13), MD("stut_length_mode", 14),
+    MD("stut_length_quantize", 15), MD("maxgrains", 16), MD("pan_mode", 17),
+    MD("grain_midi_channel", 18), MD("smear_midi_channel", 19), MD("pitch_midi_note", 20),
+    MD("pitch_pattern_slot", 21), MD("smear_pitch_enabled", 22), MD("smear_pitch_source", 23),
+    MD("smear_note", 24), MD("smear_ref_note", 25), MD("smear_pitch_pattern_slot", 26),
+    MD("smear_pitch_channel", 27), MD("playhead", 28), MD("pitch_mode", 29),
+    // (d) the two scale lists
+    { "pitch_scale",       MF_SCALE, 0, 1 },
+    { "smear_pitch_scale", MF_SCALE, 1, 1 },
+    // (e) schema v3 — generator ("sources") params, appended
+    MS3("noise_freq_1", MGS_NOISE_FREQ + 0), MS3("noise_freq_2", MGS_NOISE_FREQ + 1),
+    MS3("noise_freq_3", MGS_NOISE_FREQ + 2), MS3("noise_freq_4", MGS_NOISE_FREQ + 3),
+    MS3("env_follow_ms", MGS_ENV_FOLLOW_MS),
+    MS3("sphere_damping_1", MGS_SPHERE_DAMPING + 0), MS3("sphere_damping_2", MGS_SPHERE_DAMPING + 1),
+    MS3("sphere_damping_3", MGS_SPHERE_DAMPING + 2), MS3("sphere_damping_4", MGS_SPHERE_DAMPING + 3),
+    MS3("sphere_elasticity_1", MGS_SPHERE_ELASTICITY + 0), MS3("sphere_elasticity_2", MGS_SPHERE_ELASTICITY + 1),
+    MS3("sphere_elasticity_3", MGS_SPHERE_ELASTICITY + 2), MS3("sphere_elasticity_4", MGS_SPHERE_ELASTICITY + 3),
+    MS3("nbody_G_1", MGS_NBODY_G + 0), MS3("nbody_G_2", MGS_NBODY_G + 1),
+    MS3("nbody_G_3", MGS_NBODY_G + 2), MS3("nbody_G_4", MGS_NBODY_G + 3),
+    MS3("nbody_damping_1", MGS_NBODY_DAMPING + 0), MS3("nbody_damping_2", MGS_NBODY_DAMPING + 1),
+    MS3("nbody_damping_3", MGS_NBODY_DAMPING + 2), MS3("nbody_damping_4", MGS_NBODY_DAMPING + 3),
+    MS3("nbody_epsilon_1", MGS_NBODY_EPSILON + 0), MS3("nbody_epsilon_2", MGS_NBODY_EPSILON + 1),
+    MS3("nbody_epsilon_3", MGS_NBODY_EPSILON + 2), MS3("nbody_epsilon_4", MGS_NBODY_EPSILON + 3),
+    MS3("nbody_pump_1", MGS_NBODY_PUMP + 0), MS3("nbody_pump_2", MGS_NBODY_PUMP + 1),
+    MS3("nbody_pump_3", MGS_NBODY_PUMP + 2), MS3("nbody_pump_4", MGS_NBODY_PUMP + 3),
+    MD3("nbody_pump_interval_1", MGD_NBODY_PUMP_INTERVAL + 0), MD3("nbody_pump_interval_2", MGD_NBODY_PUMP_INTERVAL + 1),
+    MD3("nbody_pump_interval_3", MGD_NBODY_PUMP_INTERVAL + 2), MD3("nbody_pump_interval_4", MGD_NBODY_PUMP_INTERVAL + 3),
+    MD3("nbody_mode_1", MGD_NBODY_MODE + 0), MD3("nbody_mode_2", MGD_NBODY_MODE + 1),
+    MD3("nbody_mode_3", MGD_NBODY_MODE + 2), MD3("nbody_mode_4", MGD_NBODY_MODE + 3),
+    MD3("sphere_mode_1", MGD_SPHERE_MODE + 0), MD3("sphere_mode_2", MGD_SPHERE_MODE + 1),
+    MD3("sphere_mode_3", MGD_SPHERE_MODE + 2), MD3("sphere_mode_4", MGD_SPHERE_MODE + 3),
+};
+#undef MR
+#undef MS
+#undef MD
+#undef MS3
+#undef MD3
+#define MORPH_FIELD_COUNT ((int)(sizeof(morph_fields) / sizeof(morph_fields[0])))
+
+// The walker IS the schema: its field count must equal the morph.h schema counts
+// (45 ranges + 61 scalars + 42 discretes + 2 scale lists). Fails the build if the
+// table and the header drift apart.
+_Static_assert(sizeof(morph_fields) / sizeof(morph_fields[0]) ==
+               MORPH_RANGE_COUNT + MORPH_SCALAR_USED + MORPH_DISCRETE_USED + 2,
+               "morph_fields[] disagrees with the morph.h schema counts");
+
+// Band subfield order == the export column order.
+static const char *const morph_range_subs[8] =
+    { "min", "max", "enabled", "rand_type", "rand_instance", "base_value", "slew", "invert" };
+static const unsigned char morph_range_sub_is_int[8] = { 0, 0, 1, 1, 1, 0, 0, 1 };
+
+static float morph_range_get_sub(const morph_range_slot_t *r, int sub) {
+    switch (sub) {
+        case 0:  return r->min;
+        case 1:  return r->max;
+        case 2:  return (float)r->enabled;
+        case 3:  return (float)r->rand_type;
+        case 4:  return (float)r->rand_instance;
+        case 5:  return r->base_value;
+        case 6:  return r->slew;
+        default: return (float)r->invert;
+    }
+}
+
+static void morph_range_set_sub(morph_range_slot_t *r, int sub, float v) {
+    switch (sub) {
+        case 0:  r->min = v; break;
+        case 1:  r->max = v; break;
+        case 2:  r->enabled = (int)v; break;
+        case 3:  r->rand_type = (int)v; break;
+        case 4:  r->rand_instance = (int)v; break;
+        case 5:  r->base_value = v; break;
+        case 6:  r->slew = v; break;
+        default: r->invert = (int)v; break;
+    }
+}
+
+static const morph_field_t *morph_field_by_name(const char *nm) {
+    for (int i = 0; i < MORPH_FIELD_COUNT; i++)
+        if (strcmp(morph_fields[i].name, nm) == 0) return &morph_fields[i];
+    return NULL;
+}
+
+static int morph_range_sub_by_name(const char *nm) {
+    for (int k = 0; k < 8; k++)
+        if (strcmp(morph_range_subs[k], nm) == 0) return k;
+    if (strcmp(nm, "base") == 0) return 5;   // accept "base" for base_value
+    return -1;
+}
+
+// Scale-list access by walker idx (0 = grain pitch scale, 1 = smear pitch scale).
+static float *morph_snap_scale(morph_snapshot_t *s, int which, int **count) {
+    if (which == 0) { *count = &s->pitch_scale_count; return s->pitch_scale; }
+    *count = &s->smear_pitch_scale_count;
+    return s->smear_pitch_scale;
 }
 
 static int morph_snap_id(ligase_t *x, const char *who, int argc, t_atom *argv) {
@@ -6843,7 +7134,11 @@ static void ligase_snapshot_recall(ligase_t *x, t_symbol *s, int argc, t_atom *a
         pd_error(x, "ligase~: snapshot %d is empty", id);
         return;
     }
-    morph_restore(x, &x->morph->snaps[id]);
+    // Recall honors the selection tree (like the blend and snapbuf_apply): excluded
+    // fields — e.g. `morph_exclude sources` for global-weather rates — stay live.
+    morph_snapshot_t b = x->morph->snaps[id];
+    morph_mask_excluded(x, &b);
+    morph_restore(x, &b);
     post("ligase~: snapshot %d recalled", id);
 }
 
@@ -6854,15 +7149,6 @@ static void ligase_snapshot_clear(ligase_t *x, t_symbol *s, int argc, t_atom *ar
     if (id < 0) return;
     x->morph->snaps[id].in_use = 0;
     post("ligase~: snapshot %d cleared", id);
-}
-
-// included[] index layout: ranges [0..44], scalars [45..45+63], discretes [45+64..].
-#define MORPH_INC_SCALAR(i)   (MORPH_RANGE_COUNT + (i))
-#define MORPH_INC_DISCRETE(i) (MORPH_RANGE_COUNT + MORPH_SCALAR_COUNT + (i))
-
-static int morph_any_excluded(const morph_state_t *m) {
-    for (int i = 0; i < MORPH_INCLUDE_COUNT; i++) if (!m->included[i]) return 1;
-    return 0;
 }
 
 // ── The blend: apply the interpolated patch at cursor (cx,cy) ────────────────
@@ -6919,28 +7205,8 @@ static void morph_apply_at(ligase_t *x, float cx, float cy) {
         memcpy(b.smear_pitch_scale, as->smear_pitch_scale, sizeof(b.smear_pitch_scale));
     }
 
-    // Selection tree: for any EXCLUDED field, overwrite the blended value with the CURRENT live
-    // value, so applying b is a no-op for it — the morph leaves it to manual/modulation/inlet
-    // control. (Scales follow their pitch / smear-pitch group's discrete-mode flag.)
-    if (morph_any_excluded(m)) {
-        morph_snapshot_t cur;
-        morph_capture(x, &cur);
-        int *inc = m->included;
-        for (int r = 0; r < MORPH_RANGE_COUNT; r++)
-            if (!inc[r]) b.ranges[r] = cur.ranges[r];
-        for (int s = 0; s < MORPH_SCALAR_COUNT; s++)
-            if (!inc[MORPH_INC_SCALAR(s)]) b.scalars[s] = cur.scalars[s];
-        for (int d = 0; d < MORPH_DISCRETE_COUNT; d++)
-            if (!inc[MORPH_INC_DISCRETE(d)]) b.discretes[d] = cur.discretes[d];
-        if (!inc[MORPH_INC_DISCRETE(29)]) {   // pitch mode -> keep the grain pitch scale
-            b.pitch_scale_count = cur.pitch_scale_count;
-            memcpy(b.pitch_scale, cur.pitch_scale, sizeof(b.pitch_scale));
-        }
-        if (!inc[MORPH_INC_DISCRETE(23)]) {   // smear source -> keep the smear pitch scale
-            b.smear_pitch_scale_count = cur.smear_pitch_scale_count;
-            memcpy(b.smear_pitch_scale, cur.smear_pitch_scale, sizeof(b.smear_pitch_scale));
-        }
-    }
+    // Selection tree: excluded fields keep their current live values (shared mask helper).
+    morph_mask_excluded(x, &b);
 
     morph_restore(x, &b);
 }
@@ -7073,6 +7339,13 @@ static int morph_set_included(ligase_t *x, const char *name, int on) {
         for (unsigned i = 0; i < sizeof(rs)/sizeof(rs[0]); i++) R(rs[i]);
         for (int i = 21; i <= 31; i++) S(i);   // the FX scalar bases
         return 1; }
+    if (!strcmp(name, "sources")) {       // generator/weather params (schema v3):
+        // noise_freq_1..4, env_follow_ms, sphere damping/elasticity, nbody G/damping/
+        // epsilon/pump(+interval), nbody/sphere output modes. `morph_exclude sources`
+        // restores the pre-v3 global-weather behavior (rates stay live across recalls).
+        for (int i = 0; i < MGS_COUNT; i++) S(MORPH_GEN_SCALAR_BASE + i);
+        for (int i = 0; i < MGD_COUNT; i++) D(MORPH_GEN_DISCRETE_BASE + i);
+        return 1; }
     #undef R
     #undef S
     #undef D
@@ -7191,7 +7464,9 @@ static void morph_step(ligase_t *x, int n) {
 // surface (points + cursor + route). A magic+version+size header rejects incompatible files
 // (a struct-layout change bumps sizeof, so old files are refused rather than read as garbage).
 #define MORPH_FILE_MAGIC   0x4D4F5250u   /* 'MORP' */
-#define MORPH_FILE_VERSION 1u
+#define MORPH_FILE_VERSION 2u   /* v2: morph_state_t grew for schema v3 (generator params +
+                                   MORPH_DISCRETE_COUNT 32->48); v1 files are refused with a
+                                   clear error — re-export as text from the writing build. */
 
 static void ligase_morph_save(ligase_t *x, t_symbol *s) {
     if (!x->morph) return;
@@ -7229,7 +7504,13 @@ static void ligase_morph_load(ligase_t *x, t_symbol *s) {
     if (fread(hdr, sizeof(hdr), 1, f) != 1) { fclose(f); pd_error(x, "ligase~: morph_load — short read: %s", path); return; }
     if (hdr[0] != MORPH_FILE_MAGIC) { fclose(f); pd_error(x, "ligase~: morph_load — not a morph file: %s", path); return; }
     if (hdr[1] != MORPH_FILE_VERSION || hdr[2] != (uint32_t)sizeof(morph_state_t)) {
-        fclose(f); pd_error(x, "ligase~: morph_load — incompatible morph file (version/layout): %s", path); return;
+        fclose(f);
+        pd_error(x, "ligase~: morph_load — incompatible morph file %s: file is binary v%u (%u-byte state), "
+                    "this build needs v%u (%u bytes). Re-export it as text (morph_export) from the build "
+                    "that wrote it, then morph_import here.",
+                 path, (unsigned)hdr[1], (unsigned)hdr[2],
+                 (unsigned)MORPH_FILE_VERSION, (unsigned)sizeof(morph_state_t));
+        return;
     }
     morph_state_t tmp;
     if (fread(&tmp, sizeof(morph_state_t), 1, f) != 1) { fclose(f); pd_error(x, "ligase~: morph_load — short read: %s", path); return; }
@@ -7296,43 +7577,76 @@ static void ligase_morph_state(ligase_t *x) {
 // One snap line carries a full snapshot body (ranges + scalars + discretes + both scale lists,
 // each scale fixed at MAX_SCALE_NOTES wide for boundary-free token parsing).
 
+// Both directions iterate the shared field walker (morph_fields[]) — one enumeration,
+// two serializers, zero schema duplication with the Snapshot Expander.
 static void morph_write_snap(FILE *f, int id, const morph_snapshot_t *s) {
     fprintf(f, "snap %d", id);
-    for (int r = 0; r < MORPH_RANGE_COUNT; r++) {
-        const morph_range_slot_t *q = &s->ranges[r];
-        fprintf(f, " %.9g %.9g %d %d %d %.9g %.9g %d",
-                q->min, q->max, q->enabled, q->rand_type, q->rand_instance, q->base_value, q->slew, q->invert);
+    for (int i = 0; i < MORPH_FIELD_COUNT; i++) {
+        const morph_field_t *fd = &morph_fields[i];
+        switch (fd->kind) {
+            case MF_RANGE: {
+                const morph_range_slot_t *q = &s->ranges[fd->idx];
+                for (int k = 0; k < 8; k++) {
+                    if (morph_range_sub_is_int[k]) fprintf(f, " %d", (int)morph_range_get_sub(q, k));
+                    else                           fprintf(f, " %.9g", morph_range_get_sub(q, k));
+                }
+                break;
+            }
+            case MF_SCALAR:   fprintf(f, " %.9g", s->scalars[fd->idx]); break;
+            case MF_DISCRETE: fprintf(f, " %d", s->discretes[fd->idx]); break;
+            case MF_SCALE: {
+                int *cnt;
+                const float *sc = morph_snap_scale((morph_snapshot_t *)s, fd->idx, &cnt);
+                fprintf(f, " %d", *cnt);   // fixed at MAX_SCALE_NOTES wide: boundary-free token parsing
+                for (int k = 0; k < MAX_SCALE_NOTES; k++) fprintf(f, " %.9g", sc[k]);
+                break;
+            }
+        }
     }
-    for (int i = 0; i < MORPH_SCALAR_USED; i++)   fprintf(f, " %.9g", s->scalars[i]);
-    for (int i = 0; i < MORPH_DISCRETE_USED; i++) fprintf(f, " %d", s->discretes[i]);
-    fprintf(f, " %d", s->pitch_scale_count);
-    for (int i = 0; i < MAX_SCALE_NOTES; i++) fprintf(f, " %.9g", s->pitch_scale[i]);
-    fprintf(f, " %d", s->smear_pitch_scale_count);
-    for (int i = 0; i < MAX_SCALE_NOTES; i++) fprintf(f, " %.9g", s->smear_pitch_scale[i]);
     fprintf(f, "\n");
 }
 
-// Reads the snap body (the caller has consumed 'snap' + id). Returns 1 on success.
-static int morph_read_snap(FILE *f, morph_snapshot_t *s) {
-    memset(s, 0, sizeof(*s));
-    for (int r = 0; r < MORPH_RANGE_COUNT; r++) {
-        morph_range_slot_t *q = &s->ranges[r];
-        float mn, mx, bv, sl; int en, rt, ri, iv;
-        if (fscanf(f, "%g %g %d %d %d %g %g %d", &mn, &mx, &en, &rt, &ri, &bv, &sl, &iv) != 8) return 0;
-        q->min = mn; q->max = mx; q->enabled = en; q->rand_type = rt;
-        q->rand_instance = ri; q->base_value = bv; q->slew = sl; q->invert = iv;
+// Reads the snap body (the caller has consumed 'snap' + id) written by text schema
+// version `ver`; fields newer than `ver` are skipped and keep the values the caller
+// pre-filled *s with (v1/v2 compat: missing generator fields keep the current voice's).
+// Returns 1 on success.
+static int morph_read_snap(FILE *f, morph_snapshot_t *s, int ver) {
+    for (int i = 0; i < MORPH_FIELD_COUNT; i++) {
+        const morph_field_t *fd = &morph_fields[i];
+        if (fd->since > ver) continue;
+        switch (fd->kind) {
+            case MF_RANGE: {
+                morph_range_slot_t *q = &s->ranges[fd->idx];
+                for (int k = 0; k < 8; k++) {
+                    if (morph_range_sub_is_int[k]) {
+                        int v; if (fscanf(f, "%d", &v) != 1) return 0;
+                        morph_range_set_sub(q, k, (float)v);
+                    } else {
+                        float v; if (fscanf(f, "%g", &v) != 1) return 0;
+                        morph_range_set_sub(q, k, v);
+                    }
+                }
+                break;
+            }
+            case MF_SCALAR:
+                if (fscanf(f, "%g", &s->scalars[fd->idx]) != 1) return 0;
+                break;
+            case MF_DISCRETE:
+                if (fscanf(f, "%d", &s->discretes[fd->idx]) != 1) return 0;
+                break;
+            case MF_SCALE: {
+                int *cnt;
+                float *sc = morph_snap_scale(s, fd->idx, &cnt);
+                if (fscanf(f, "%d", cnt) != 1) return 0;
+                for (int k = 0; k < MAX_SCALE_NOTES; k++)
+                    if (fscanf(f, "%g", &sc[k]) != 1) return 0;
+                // clamp defensively (a corrupt file must not let the blend over-read the arrays)
+                if (*cnt < 0) *cnt = 0;
+                if (*cnt > MAX_SCALE_NOTES) *cnt = MAX_SCALE_NOTES;
+                break;
+            }
+        }
     }
-    for (int i = 0; i < MORPH_SCALAR_USED; i++)   if (fscanf(f, "%g", &s->scalars[i]) != 1) return 0;
-    for (int i = 0; i < MORPH_DISCRETE_USED; i++) if (fscanf(f, "%d", &s->discretes[i]) != 1) return 0;
-    if (fscanf(f, "%d", &s->pitch_scale_count) != 1) return 0;
-    for (int i = 0; i < MAX_SCALE_NOTES; i++) if (fscanf(f, "%g", &s->pitch_scale[i]) != 1) return 0;
-    if (fscanf(f, "%d", &s->smear_pitch_scale_count) != 1) return 0;
-    for (int i = 0; i < MAX_SCALE_NOTES; i++) if (fscanf(f, "%g", &s->smear_pitch_scale[i]) != 1) return 0;
-    // clamp counts defensively (a corrupt file must not let the blend over-read the scale arrays)
-    if (s->pitch_scale_count < 0) s->pitch_scale_count = 0;
-    if (s->pitch_scale_count > MAX_SCALE_NOTES) s->pitch_scale_count = MAX_SCALE_NOTES;
-    if (s->smear_pitch_scale_count < 0) s->smear_pitch_scale_count = 0;
-    if (s->smear_pitch_scale_count > MAX_SCALE_NOTES) s->smear_pitch_scale_count = MAX_SCALE_NOTES;
     return 1;
 }
 
@@ -7397,12 +7711,19 @@ static void ligase_morph_import(ligase_t *x, t_symbol *s) {
     m->point_count = 0; m->route_len = 0; m->route_active = 0;
     for (int i = 0; i < MORPH_INCLUDE_COUNT; i++) m->included[i] = 1;
 
+    // Snap-body template: pre-v3 files carry no generator ("sources") fields, so those
+    // keep the CURRENT values — captured once here and pre-filled into every snap read.
+    morph_snapshot_t tmpl;
+    memset(&tmpl, 0, sizeof(tmpl));
+    if (ver < MORPH_TEXT_VERSION) morph_capture(x, &tmpl);
+
     int snaps = 0, pts = 0, rts = 0, bad = 0;
     while (fscanf(f, "%63s", tok) == 1) {
         if (strcmp(tok, "snap") == 0) {
             int id;
             if (fscanf(f, "%d", &id) != 1 || id < 0 || id >= MORPH_MAX_SNAPSHOTS) { bad = 1; break; }
-            if (!morph_read_snap(f, &m->snaps[id])) { bad = 1; break; }
+            m->snaps[id] = tmpl;
+            if (!morph_read_snap(f, &m->snaps[id], ver)) { bad = 1; break; }
             m->snaps[id].in_use = 1; snaps++;
         } else if (strcmp(tok, "point") == 0) {
             int id; float px, py;
@@ -7431,6 +7752,233 @@ static void ligase_morph_import(ligase_t *x, t_symbol *s) {
     if (bad) { pd_error(x, "ligase~: morph_import — parse error in %s (loaded %d snapshots so far)", path, snaps); return; }
     post("ligase~: morph imported from %s (%d snapshots, %d points, %d waypoints)", path, snaps, pts, rts);
     if (m->point_count > 0) morph_apply_at(x, m->cursor_x, m->cursor_y);
+}
+
+// ═════ Snapshot Expander — the edit buffer (Plans/snapshot_expander.md) ═════
+// x->snapbuf is patch memory's classic EDIT BUFFER: a workbench for stored snapshots,
+// owned by the message thread and NEVER read in ligase_perform. All edits are COLD —
+// the live engine changes on exactly two deliberate acts:
+//   snapbuf_apply       buffer -> live (via morph_restore; honors the selection tree)
+//   snapbuf_store <id>  buffer -> slot (a slot placed on the surface KEEPS its placement,
+//                       so an active blend reshapes on the next block — deliberate)
+// Field addressing reuses the shared walker (morph_fields[]) — the text schema and the
+// expander vocabulary are the same enumeration by construction.
+
+static void ligase_snapbuf_load(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    int id = morph_snap_id(x, "snapbuf_load", argc, argv);
+    if (id < 0) return;
+    if (!x->morph->snaps[id].in_use) {
+        pd_error(x, "ligase~: snapbuf_load — snapshot %d is empty", id);
+        return;
+    }
+    x->snapbuf = x->morph->snaps[id];
+    x->snapbuf_has = 1;
+    post("ligase~: snapbuf loaded from slot %d (edits are cold until snapbuf_apply/snapbuf_store)", id);
+}
+
+static void ligase_snapbuf_from_live(ligase_t *x) {
+    memset(&x->snapbuf, 0, sizeof(x->snapbuf));
+    morph_capture(x, &x->snapbuf);   // v1.5 capture transparency: bases, never the wobble
+    x->snapbuf.in_use = 1;
+    x->snapbuf_has = 1;
+    post("ligase~: snapbuf captured from the live voice");
+}
+
+static void ligase_snapbuf_store(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (!x->morph) return;
+    if (!x->snapbuf_has) {
+        pd_error(x, "ligase~: snapbuf_store — edit buffer is empty (snapbuf_load / snapbuf_from_live first)");
+        return;
+    }
+    int id = morph_snap_id(x, "snapbuf_store", argc, argv);
+    if (id < 0) return;
+    x->morph->snaps[id] = x->snapbuf;
+    x->morph->snaps[id].in_use = 1;
+    int placed = 0;
+    for (int i = 0; i < x->morph->point_count; i++)
+        if (x->morph->points[i].snap_id == id) { placed = 1; break; }
+    post("ligase~: snapbuf stored to slot %d%s", id,
+         placed ? " (slot is placed — the surface reshapes next block)" : "");
+}
+
+static void ligase_snapbuf_apply(ligase_t *x) {
+    if (!x->snapbuf_has) {
+        pd_error(x, "ligase~: snapbuf_apply — edit buffer is empty (snapbuf_load / snapbuf_from_live first)");
+        return;
+    }
+    // The ONLY buffer->realtime touchpoint. Identical to a snapshot recall: through
+    // morph_restore, masked by the selection tree, never touching matrix pins.
+    morph_snapshot_t b = x->snapbuf;
+    morph_mask_excluded(x, &b);
+    morph_restore(x, &b);
+    post("ligase~: snapbuf applied to the live engine");
+}
+
+static void ligase_snapbuf_clear(ligase_t *x) {
+    memset(&x->snapbuf, 0, sizeof(x->snapbuf));
+    x->snapbuf_has = 0;
+    post("ligase~: snapbuf cleared");
+}
+
+// snapbuf_set <field> <value...>            whole field (bands: the 8 export-order values;
+//                                           scales: the whole semitone list)
+// snapbuf_set <band> <subfield> <value>     per-subfield band edit (min/max/enabled/rand_type/
+//                                           rand_instance/base_value/slew/invert)
+// Invalid field/subfield/args -> pd_error, buffer untouched (validated before any write).
+static void ligase_snapbuf_set(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 2 || argv[0].a_type != A_SYMBOL) {
+        pd_error(x, "ligase~: snapbuf_set needs <field> [subfield] <value...>");
+        return;
+    }
+    const char *nm = argv[0].a_w.w_symbol->s_name;
+    const morph_field_t *fd = morph_field_by_name(nm);
+    if (!fd) {
+        pd_error(x, "ligase~: snapbuf_set — unknown field '%s' (see snapbuf_dump for the vocabulary)", nm);
+        return;
+    }
+    switch (fd->kind) {
+        case MF_SCALAR:
+        case MF_DISCRETE: {
+            if (argv[1].a_type != A_FLOAT) {
+                pd_error(x, "ligase~: snapbuf_set %s needs one number", nm);
+                return;
+            }
+            float v = atom_getfloat(&argv[1]);
+            if (fd->kind == MF_SCALAR) x->snapbuf.scalars[fd->idx] = v;
+            else                       x->snapbuf.discretes[fd->idx] = (int)v;
+            break;
+        }
+        case MF_RANGE: {
+            morph_range_slot_t *q = &x->snapbuf.ranges[fd->idx];
+            if (argv[1].a_type == A_SYMBOL) {              // per-subfield form
+                int sub = morph_range_sub_by_name(argv[1].a_w.w_symbol->s_name);
+                if (sub < 0) {
+                    pd_error(x, "ligase~: snapbuf_set %s — unknown subfield '%s' "
+                                "(min max enabled rand_type rand_instance base_value slew invert)",
+                             nm, argv[1].a_w.w_symbol->s_name);
+                    return;
+                }
+                if (argc < 3 || argv[2].a_type != A_FLOAT) {
+                    pd_error(x, "ligase~: snapbuf_set %s %s needs one number", nm, morph_range_subs[sub]);
+                    return;
+                }
+                morph_range_set_sub(q, sub, atom_getfloat(&argv[2]));
+            } else {                                       // whole-band import-grammar form
+                if (argc < 9) {
+                    pd_error(x, "ligase~: snapbuf_set %s needs 8 values "
+                                "(min max enabled rand_type rand_instance base_value slew invert) "
+                                "or <subfield> <value>", nm);
+                    return;
+                }
+                for (int k = 0; k < 8; k++)
+                    if (argv[1 + k].a_type != A_FLOAT) {
+                        pd_error(x, "ligase~: snapbuf_set %s — value %d is not a number (buffer untouched)", nm, k + 1);
+                        return;
+                    }
+                for (int k = 0; k < 8; k++)
+                    morph_range_set_sub(q, k, atom_getfloat(&argv[1 + k]));
+            }
+            break;
+        }
+        case MF_SCALE: {                                   // whole-list set (GATE A.2)
+            int cnt = argc - 1;
+            if (cnt > MAX_SCALE_NOTES) cnt = MAX_SCALE_NOTES;
+            for (int k = 0; k < cnt; k++)
+                if (argv[1 + k].a_type != A_FLOAT) {
+                    pd_error(x, "ligase~: snapbuf_set %s — value %d is not a number (buffer untouched)", nm, k + 1);
+                    return;
+                }
+            int *pc;
+            float *sc = morph_snap_scale(&x->snapbuf, fd->idx, &pc);
+            *pc = cnt;
+            for (int k = 0; k < cnt; k++) sc[k] = atom_getfloat(&argv[1 + k]);
+            for (int k = cnt; k < MAX_SCALE_NOTES; k++) sc[k] = 0.0f;
+            break;
+        }
+    }
+    x->snapbuf_has = 1;   // an edited buffer is a voice-in-progress
+}
+
+// snapbuf_get <field> [subfield] — ONE report on the state outlet (outlet 9),
+// selector "snapbuf": e.g. `snapbuf amplitude_range min 0.2`.
+static void ligase_snapbuf_get(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 1 || argv[0].a_type != A_SYMBOL) {
+        pd_error(x, "ligase~: snapbuf_get needs <field> [subfield]");
+        return;
+    }
+    const char *nm = argv[0].a_w.w_symbol->s_name;
+    const morph_field_t *fd = morph_field_by_name(nm);
+    if (!fd) {
+        pd_error(x, "ligase~: snapbuf_get — unknown field '%s'", nm);
+        return;
+    }
+    t_atom a[MAX_SCALE_NOTES + 2];
+    SETSYMBOL(&a[0], gensym(fd->name));
+    int n = 1;
+    switch (fd->kind) {
+        case MF_SCALAR:   SETFLOAT(&a[n], x->snapbuf.scalars[fd->idx]); n++; break;
+        case MF_DISCRETE: SETFLOAT(&a[n], (t_float)x->snapbuf.discretes[fd->idx]); n++; break;
+        case MF_RANGE: {
+            const morph_range_slot_t *q = &x->snapbuf.ranges[fd->idx];
+            if (argc >= 2 && argv[1].a_type == A_SYMBOL) {   // one subfield
+                int sub = morph_range_sub_by_name(argv[1].a_w.w_symbol->s_name);
+                if (sub < 0) {
+                    pd_error(x, "ligase~: snapbuf_get %s — unknown subfield '%s'",
+                             nm, argv[1].a_w.w_symbol->s_name);
+                    return;
+                }
+                SETSYMBOL(&a[n], gensym(morph_range_subs[sub])); n++;
+                SETFLOAT(&a[n], morph_range_get_sub(q, sub)); n++;
+            } else {                                          // whole band, export order
+                for (int k = 0; k < 8; k++) { SETFLOAT(&a[n], morph_range_get_sub(q, k)); n++; }
+            }
+            break;
+        }
+        case MF_SCALE: {
+            int *pc;
+            const float *sc = morph_snap_scale(&x->snapbuf, fd->idx, &pc);
+            for (int k = 0; k < *pc && k < MAX_SCALE_NOTES; k++) { SETFLOAT(&a[n], sc[k]); n++; }
+            break;
+        }
+    }
+    outlet_anything(x->x_state_out, gensym("snapbuf"), n, a);
+}
+
+// snapbuf_dump — the WHOLE buffer as re-sendable `snapbuf_set` lines on outlet 9
+// (the morph_state idiom): a panel populates every display/knob from one dump, and
+// replaying the dump reconstructs the buffer field-for-field.
+static void ligase_snapbuf_dump(ligase_t *x) {
+    t_atom a[MAX_SCALE_NOTES + 2];
+    t_symbol *sel = gensym("snapbuf_set");
+    for (int i = 0; i < MORPH_FIELD_COUNT; i++) {
+        const morph_field_t *fd = &morph_fields[i];
+        SETSYMBOL(&a[0], gensym(fd->name));
+        int n = 1;
+        switch (fd->kind) {
+            case MF_SCALAR:   SETFLOAT(&a[n], x->snapbuf.scalars[fd->idx]); n++; break;
+            case MF_DISCRETE: SETFLOAT(&a[n], (t_float)x->snapbuf.discretes[fd->idx]); n++; break;
+            case MF_RANGE: {
+                const morph_range_slot_t *q = &x->snapbuf.ranges[fd->idx];
+                for (int k = 0; k < 8; k++) { SETFLOAT(&a[n], morph_range_get_sub(q, k)); n++; }
+                break;
+            }
+            case MF_SCALE: {
+                int *pc;
+                const float *sc = morph_snap_scale(&x->snapbuf, fd->idx, &pc);
+                for (int k = 0; k < *pc && k < MAX_SCALE_NOTES; k++) { SETFLOAT(&a[n], sc[k]); n++; }
+                if (n == 1) continue;   // empty scale list: nothing re-sendable to emit
+                break;
+            }
+        }
+        outlet_anything(x->x_state_out, sel, n, a);
+    }
+    post("ligase~: snapbuf dumped (%d fields%s)", MORPH_FIELD_COUNT,
+         x->snapbuf_has ? "" : "; buffer is empty/default");
 }
 
 // @region:ligase_pd.pd_external.setup Setup Function
@@ -7669,6 +8217,15 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_morph_state, gensym("morph_state"), 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_export, gensym("morph_export"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_import, gensym("morph_import"), A_DEFSYMBOL, 0);
+    // Snapshot Expander — the cold edit buffer (snapbuf_*)
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_load,      gensym("snapbuf_load"),      A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_from_live, gensym("snapbuf_from_live"), 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_set,       gensym("snapbuf_set"),       A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_get,       gensym("snapbuf_get"),       A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_dump,      gensym("snapbuf_dump"),      0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_store,     gensym("snapbuf_store"),     A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_apply,     gensym("snapbuf_apply"),     0);
+    class_addmethod(ligase_class, (t_method)ligase_snapbuf_clear,     gensym("snapbuf_clear"),     0);
 }
 
 // @endregion:ligase_pd.pd_external.setup
