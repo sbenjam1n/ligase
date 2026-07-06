@@ -360,7 +360,7 @@ text(MSX+636, ly+30, "all captured (v4) · FAMILY×INST feeds the SCOPE →", 6.
 
 # ---------- RIGHT-BOTTOM: JOYSTICK (morph) ----------
 JX, JY, JS = 812, 760, 216
-strip(JX-14, JY-36, JS+220, 268, "MORPH METASURFACE — JOYSTICK", "green")
+strip(JX-14, JY-36, 340, 268, "MORPH METASURFACE — JOYSTICK", "green")
 parts.append(f'<rect x="{JX}" y="{JY}" width="{JS}" height="{JS}" rx="6" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
 for f in (0.25, 0.5, 0.75):
     parts.append(f'<line x1="{JX+JS*f}" y1="{JY}" x2="{JX+JS*f}" y2="{JY+JS}" stroke="#33363b" stroke-width="0.8"/>')
@@ -386,30 +386,29 @@ knob(bx, JY+184, "POWER", "IDW sharp · MSG", None, "grey", 0.4, small=True)
 text(bx, JY+226, "morph_cursor 1 = CV", 6.8, MUTED)
 
 # ---------- RIGHT-BOTTOM: SCOPE (mod-source / grain-state display) ----------
-MQX = 1246
-strip(MQX, 724, 214, 268, "SCOPE", "green")
-parts.append(f'<rect x="{MQX+6}" y="742" width="202" height="148" rx="4" fill="{INSET}" stroke="#84888c" stroke-width="0.8"/>')
+MQX = 1150
+strip(MQX, 724, 310, 268, "SCOPE", "green")
+SDX, SDY, SDW, SDH = MQX+8, 742, 294, 186
+parts.append(f'<rect x="{SDX}" y="{SDY}" width="{SDW}" height="{SDH}" rx="4" fill="{INSET}" stroke="#84888c" stroke-width="0.8"/>')
 for gfrac in (0.25, 0.5, 0.75):
-    parts.append(f'<line x1="{MQX+6+202*gfrac:.0f}" y1="742" x2="{MQX+6+202*gfrac:.0f}" y2="890" stroke="#33363b" stroke-width="0.6"/>')
-    parts.append(f'<line x1="{MQX+6}" y1="{742+148*gfrac:.0f}" x2="{MQX+208}" y2="{742+148*gfrac:.0f}" stroke="#33363b" stroke-width="0.6"/>')
+    parts.append(f'<line x1="{SDX+SDW*gfrac:.0f}" y1="{SDY}" x2="{SDX+SDW*gfrac:.0f}" y2="{SDY+SDH}" stroke="#33363b" stroke-width="0.6"/>')
+    parts.append(f'<line x1="{SDX}" y1="{SDY+SDH*gfrac:.0f}" x2="{SDX+SDW}" y2="{SDY+SDH*gfrac:.0f}" stroke="#33363b" stroke-width="0.6"/>')
 # a REAL Lorenz trace (sigma 10, rho 28, beta 8/3), x-vs-z projection -- the FOLW/LRNZ view
 _lx, _ly, _lz = 0.1, 0.0, 20.0
 _pts = []
-for _i in range(6000):
+for _i in range(9000):
     _dx = 10.0*(_ly-_lx); _dy = _lx*(28.0-_lz)-_ly; _dz = _lx*_ly-(8.0/3.0)*_lz
     _lx += _dx*0.004; _ly += _dy*0.004; _lz += _dz*0.004
     if _i % 12 == 0:
-        _px = MQX+6 + (_lx+22.0)/44.0*202.0
-        _py = 742 + (1.0-(_lz-2.0)/48.0)*148.0
+        _px = SDX + (_lx+22.0)/44.0*SDW
+        _py = SDY + (1.0-(_lz-2.0)/48.0)*SDH
         _pts.append(f"{_px:.1f},{_py:.1f}")
 parts.append(f'<polyline points="{" ".join(_pts)}" fill="none" stroke="#79c98b" stroke-width="0.9" stroke-opacity="0.85"/>')
-switch(MQX+58, 912, 90, ["FOLW","GRAIN"], 0, "TAP")
-switch(MQX+165, 912, 66, ["XY","SWP"], 0, "VIEW")
-text(MQX+10, 946, "FOLW = the SOURCE SHAPE selection:", 6.6, MUTED, "start")
-text(MQX+10, 956, "waveforms / perlin / rand \u2192 time sweep", 6.6, MUTED, "start")
-text(MQX+10, 966, "lorenz / nbody / sphere \u2192 XY orbit", 6.6, MUTED, "start")
-text(MQX+10, 976, "GRAIN \u2192 constellation: X = splice pos, Y = env", 6.6, MUTED, "start")
-text(MQX+10, 988, "scope_x~ / scope_y~ = OUT 10/11 \u00b7 Plans/scope_taps.md (GATE A)", 6.3, BRONZE, "start")
+switch(MQX+72, 950, 96, ["FOLW","GRAIN"], 0, "TAP")
+switch(MQX+196, 950, 70, ["XY","SWP"], 0, "VIEW")
+badge(MQX+272, 946, "OUT 10/11", "in")
+text(MQX+10, 978, "FOLW = the SOURCE SHAPE selection (waveforms \u2192 sweep \u00b7 chaos/physics \u2192 XY orbit)", 6.5, MUTED, "start")
+text(MQX+10, 988, "GRAIN = constellation: X = splice position, Y = env \u00d7 amp \u00b7 scope_x~/scope_y~ \u00b7 Plans/scope_taps.md", 6.5, BRONZE, "start")
 
 # ---------- SNAPSHOT EXPANDER column (integrated into the main panel) ----------
 XL = 1508                # expander column left
