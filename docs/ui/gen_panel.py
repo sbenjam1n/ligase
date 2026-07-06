@@ -305,19 +305,27 @@ text(gx + 16*CELL + 3*CELL, gy - 66, "PER-GRAIN (v1.5)", size=7, fill="#d9c48a",
 text(gx + MW/2, gy + MHh + 31, "sources: LFO ×4 · perlin ×4 · lorenz ×4 · nbody ×4 · sphere ×4 · rand ×4 · pattern 0-7 · input env follower · per-grain cols apply at trigger, never write the knobs", size=7, fill=MUTED)
 
 # ---------- RIGHT-MIDDLE: MOD SOURCES (shared generators = the matrix rows) ----------
-MSX, MSY = 798, 612
-strip(MSX, MSY, 662, 104, "MOD SOURCES — SHARED GENERATORS (THE MATRIX ROWS)", "yellow")
-mky = MSY + 42
-for i in range(4):
-    knob(MSX+56 + i*66, mky, f"RATE {i+1}", "0.01 – 100 ×", "MSG", "yellow", 0.35 + i*0.1, small=True)
-knob(MSX+330, mky, "FOLLOW", "1 – 5000 ms", "MSG", "yellow", 0.25, small=True)
-parts.append(f'<line x1="{MSX+382}" y1="{MSY+16}" x2="{MSX+382}" y2="{MSY+78}" stroke="#3c4046" stroke-width="0.8"/>')
-knob(MSX+426, mky, "DAMP",  "sphere", "MSG", "grey", 0.6, small=True)
-knob(MSX+484, mky, "ELAST", "sphere", "MSG", "grey", 0.8, small=True)
-knob(MSX+548, mky, "G",     "nbody",  "MSG", "grey", 0.5, small=True)
-knob(MSX+606, mky, "DAMP",  "nbody",  "MSG", "grey", 0.3, small=True)
-text(MSX+331, MSY+88, "noise_freq_1..4 (instance n drives SIN/SAW/SQR/PERL n together) · env_follow_ms · sphere_damping/_elasticity · nbody_G/_damping", 6.8, MUTED)
-text(MSX+331, MSY+98, "rate = IOT × scale — sources breathe with grain density; rates are GLOBAL, shared by every pin and band on that instance", 6.8, "#d9c48a")
+MSX, MSY = 798, 598
+strip(MSX, MSY, 662, 118, "SOURCE SHAPE — MULTI-ENGINE EDIT (THE MATRIX ROWS)", "yellow")
+mky = MSY + 36
+switch(MSX+146, mky-2, 252, ["SIN","SAW","SQR","PERL","LRNZ","NBDY","SPHR","RAND","FOLW"], 5, "FAMILY")
+switch(MSX+300, mky-2, 60, ["1","2","3","4"], 0, "INST")
+knob(MSX+356, mky, "RATE", "0.01-100 x", None, "yellow", 0.4, small=True)
+knob(MSX+410, mky, "A", "", None, "yellow", 0.55, small=True)
+knob(MSX+462, mky, "B", "", None, "yellow", 0.3, small=True)
+knob(MSX+514, mky, "C", "", None, "yellow", 0.5, small=True)
+knob(MSX+566, mky, "D", "", None, "yellow", 0.65, small=True)
+button(MSX+622, mky-14, "KICK !", 46, lit=True)
+button(MSX+622, mky+10, "RESET", 46)
+switch(MSX+616, mky+38, 46, ["0","1","2"], 1)
+text(MSX+644, mky+41, "MODE", 6.3, MUTED, "start")
+# printed per-family legend (Synthi/Plaits idiom: same knobs, per-family meaning)
+lx = MSX+26; ly = MSY+80
+text(lx, ly,    "A    SIN/SAW/SQR: PHASE*   PERL: FREQ   LRNZ: SIGMA*   NBDY: G   SPHR: DAMP   FOLW: RELEASE ms", 6.4, MUTED, "start")
+text(lx, ly+10, "B    SAW: SKEW*   SQR: PULSE WIDTH*   LRNZ: RHO*   NBDY: DAMP   SPHR: ELAST", 6.4, MUTED, "start")
+text(lx, ly+20, "C    LRNZ: BETA*   NBDY: EPSILON   SPHR: SPIN*        D    NBDY: PUMP amt (hold = interval)   SPHR: KICK strength", 6.4, MUTED, "start")
+text(lx, ly+30, "RATE = IOT x scale (sources breathe with grain density; GLOBAL per instance)  ·  KICK = sphere_kick impulse  ·  RESET per family", 6.4, MUTED, "start")
+text(MSX+636, ly+30, "* = engine addition (schema v4)", 6.4, "#d9c48a", "end")
 
 # ---------- RIGHT-BOTTOM: JOYSTICK (morph) ----------
 JX, JY, JS = 812, 760, 216
