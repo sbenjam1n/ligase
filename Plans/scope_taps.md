@@ -2,7 +2,7 @@
 
 **Owner:** SLB
 **Date:** 2026-07-05
-**Status:** IN PROGRESS — **GATE A cleared 2026-07-05** (owner: "take the recommendations"): signal outlets 10/11; the tap table as specified; constellation + grainsum both (constellation default); monitor-not-state; default tap `lorenz 1`. Implementation running per Steps 1–4.
+**Status:** ✅ **DONE + headless-verified (2026-07-06, commit follows Seq 74).** GATE A at the recommendations. All taps measured (attractor / pure sine + perfect ramp / 0.80 Hz quadrature spin orbit / constellation with parked idle beam / grainsum scaling); regression exact; DSP restart clean. Owner feel test (AC5) remains. Known cost noted: the constellation probe is O(pool) per sample worst-case with a sparse pool, paid only while the grain tap is selected.
 **Tracked in:** `QUEUE.md` §4a (prototyping/UI/VST arc)
 **Related:** `docs/ui/ligase_synthi_panel.svg` (the SCOPE card, drawn with a real
 integrated Lorenz trace), `Plans/pd_panel_prototype.md` (the panel scope = a plugdata

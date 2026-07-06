@@ -3,7 +3,7 @@
 _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md` (§6);
 this is the "where we are / how to continue" digest._
 
-## Where we are (2026-07-05, Queue Seq 73)
+## Where we are (2026-07-06, Queue Seq 74)
 
 - **Branch state:** everything through Seq 70 is **merged to `main`** (PR #14 = Seq 61-68,
   PR #15 = Seq 69-70). Seq 71-73 work (plans + panel restyle/integration + the in-flight
@@ -65,11 +65,11 @@ this is the "where we are / how to continue" digest._
 - **Prototyping/UI/VST arc queued (Seq 71-72)**: `Plans/pd_panel_prototype.md` (layout
   single-source → SVG + .pd emitters) and `Plans/vst_plugin.md` (v1 = plugdata with ligase
   COMPILED IN — no runtime external loading in plugin hosts; LICENSE gate: plain GPL-2 vs
-  GPLv3 hosts) both at GATE A. `Plans/scope_taps.md` (Seq 72-73) **GATE A cleared, build
-  IN FLIGHT**: scope_x~/scope_y~ signal outlets 10/11, per-family tap table, the grain
-  CONSTELLATION (X = splice pos, Y = env×amp, one grain per sample) + grainsum, default
-  lorenz 1. If the tree has uncommitted src/ changes, they are this build — verify against
-  the plan's gates before committing.
+  GPLv3 hosts) both at GATE A. `Plans/scope_taps.md` (Seq 72-74) is **DONE +
+  headless-verified**: scope_x~/scope_y~ signal outlets 10/11, 11-family `scope_tap` table
+  (default lorenz 1 — the butterfly), the grain CONSTELLATION (X = splice pos, Y = env×amp,
+  one grain/sample; idle beam parks at 0,0) + grainsum; every tap's shape measured in
+  captured outlet data. Gotcha recorded: bare `play` STOPS — drive tests with `play 1`.
 - Remaining overall: **owner hardware/ear sign-off** on the new features (chord balance vs
   `maxgrains`, spatial orbit feel, matrix musicality, burst character, resonator-bank timbre —
   the GATE A.7 input for the v2 Karplus-Strong decision) + the §4 build-naming backlog stub +
