@@ -2,7 +2,7 @@
 
 **Owner:** SLB
 **Date:** 2026-07-05
-**Status:** PLANNED (GATE A — owner decisions below; recommendations flagged [R])
+**Status:** IN PROGRESS — **GATE A cleared 2026-07-05** (owner: "take the recommendations"): signal outlets 10/11; the tap table as specified; constellation + grainsum both (constellation default); monitor-not-state; default tap `lorenz 1`. Implementation running per Steps 1–4.
 **Tracked in:** `QUEUE.md` §4a (prototyping/UI/VST arc)
 **Related:** `docs/ui/ligase_synthi_panel.svg` (the SCOPE card, drawn with a real
 integrated Lorenz trace), `Plans/pd_panel_prototype.md` (the panel scope = a plugdata
