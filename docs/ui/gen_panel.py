@@ -157,8 +157,8 @@ def screw(x, y):
 # ---------- case + panel ----------
 parts.append(DEFS)
 parts.append(f'<rect width="{W}" height="{H}" fill="{CASE}"/>')
-parts.append(f'<rect x="14" y="14" width="{MAINW-28}" height="{H-28}" rx="14" fill="{PANEL}" stroke="#9ba0a5" stroke-width="1.2"/>')
-for sx in (34, MAINW-34):
+parts.append(f'<rect x="14" y="14" width="{W-28}" height="{H-28}" rx="14" fill="{PANEL}" stroke="#9ba0a5" stroke-width="1.2"/>')
+for sx in (34, W-34):
     for sy in (34, H-34):
         screw(sx, sy)
 
@@ -385,39 +385,36 @@ switch(bx, JY+136, 72, ["IDW", "NN"], 0, "KERNEL")
 knob(bx, JY+184, "POWER", "IDW sharp · MSG", None, "grey", 0.4, small=True)
 text(bx, JY+226, "morph_cursor 1 = CV", 6.8, MUTED)
 
-# ---------- RIGHT-BOTTOM: VU + master ----------
-VX, VY = 1220, 760
-strip(VX-14, VY-36, 270, 268, "MONITOR", "white")
-for ch, off in (("L", 0), ("R", 34)):
-    parts.append(f'<rect x="{VX+off}" y="{VY}" width="20" height="170" rx="3" fill="{INSET}" stroke="#84888c" stroke-width="0.8"/>')
-    segs = 12
-    lit = 8 if ch == "L" else 7
-    for i in range(segs):
-        yy = VY + 166 - i*13.5
-        col = "#2c2f34"
-        if i < lit: col = CAP["green"] if i < 9 else (CAP["yellow"] if i < 11 else CAP["red"])
-        parts.append(f'<rect x="{VX+off+3}" y="{yy-9}" width="14" height="9" fill="{col}"/>')
-    text(VX+off+10, VY+184, ch, 8, LEGEND, weight="bold")
-text(VX+27, VY-8, "OUTPUT", 8, MUTED)
-knob(VX+130, VY+40, "MASTER", "amplitude · IN 21", None, "red", 0.6)
-knob(VX+205, VY+40, "BANK MIX", "0 – 1", "MSG", "grey", 0.0, small=True)
-text(VX+130, VY+120, "OUTLETS", 8, MUTED, weight="bold")
-text(VX+130, VY+134, "1/2 audio · 3 note-change", 7, MUTED)
-text(VX+130, VY+146, "4 grain bang · 5 splice end", 7, MUTED)
-text(VX+130, VY+158, "9 state / param reports", 7, MUTED)
-text(VX+130, VY+186, "pattern events: message-driven", 7, MUTED)
-text(VX+130, VY+198, "pattern event grain [ 1(3,8) ]", 7, BRONZE)
+# ---------- RIGHT-BOTTOM: snapbuf quick-reference (former monitor slot) ----------
+MQX = 1246
+strip(MQX, 724, 214, 268, "EXPANDER MESSAGES", "grey")
+mq = [
+    ("snapbuf_load <id>", MUTED),
+    ("snapbuf_from_live", MUTED),
+    ("snapbuf_set <field> [sub] <v>", MUTED),
+    ("snapbuf_get <field> [sub]", MUTED),
+    ("snapbuf_dump  \u2192 outlet 9", MUTED),
+    ("snapbuf_store <id>", MUTED),
+    ("   reshapes a PLACED slot", BRONZE),
+    ("snapbuf_apply  (= ASSIGN)", MUTED),
+    ("   commits; ends an audition", BRONZE),
+    ("snapbuf_audition <0|1>", MUTED),
+    ("   exact revert on release", BRONZE),
+    ("snapbuf_compare  (A/B)", MUTED),
+    ("snapbuf_clear", MUTED),
+]
+for i, (ln, c) in enumerate(mq):
+    text(MQX+10, 748 + i*13, ln, 7, c, "start")
+text(MQX+10, 748 + 13*13 + 6, "edits are COLD until ASSIGN", 6.8, BRONZE, "start", "bold")
+text(MQX+10, 748 + 13*13 + 17, "Plans/snapshot_expander.md", 6.8, MUTED, "start")
 
-# ---------- XPNDR sidecar module (snapshot expander — edit buffer) ----------
-XL = MAINW + 14          # sidecar case left
-XW = W - XL - 14         # sidecar case width
-parts.append(f'<rect x="{XL}" y="14" width="{XW}" height="{H-28}" rx="14" fill="{PANEL}" stroke="#9ba0a5" stroke-width="1.2"/>')
-for sxx in (XL+20, XL+XW-20):
-    for syy in (34, H-34):
-        screw(sxx, syy)
-XC = XL + XW/2           # sidecar center x
-text(XL+38, 52, "XPNDR", size=21, anchor="start", weight="normal", ls="5")
-text(XL+38, 68, "SNAPSHOT EXPANDER — EDIT BUFFER", size=8, anchor="start", fill=MUTED, ls="1.5")
+# ---------- SNAPSHOT EXPANDER column (integrated into the main panel) ----------
+XL = 1508                # expander column left
+XW = 1886 - XL           # column width (to the panel's inner right edge)
+XC = XL + XW/2           # column center x
+parts.append(f'<line x1="{XL-12}" y1="42" x2="{XL-12}" y2="{H-56}" stroke="{LINE}" stroke-width="0.7"/>')
+text(XL+24, 56, "SNAPSHOT EXPANDER", size=13, anchor="start", weight="normal", ls="4")
+text(XL+24, 70, "EDIT BUFFER — cold; ASSIGN is the only realtime touchpoint", size=7.5, anchor="start", fill=MUTED, ls="0.5")
 
 xy = 92; xh = 104
 strip(XL+24, xy, XW-48, xh, "SNAPSHOT", "yellow")
@@ -464,27 +461,35 @@ text(XL+232, cky+22, "hold = momentary", 6.5, MUTED)
 text(XL+308, cky+22, "compare", 6.5, MUTED)
 text(XC, cky+42, "edits are COLD — ASSIGN commits; AUDITION borrows the live voice and reverts exactly", 7.2, BRONZE, weight="bold")
 
-xy += 100 + 18
-text(XL+38, xy, "MESSAGES", 8, MUTED, "start", "bold", ls="1.5")
-for i, ln in enumerate([
-    "snapbuf_load <id> · snapbuf_from_live · snapbuf_clear",
-    "snapbuf_set <field> [sub] <v> · snapbuf_get <field> [sub]",
-    "snapbuf_dump  (re-sendable lines → outlet 9)",
-    "snapbuf_store <id>   (reshapes the surface if slot is placed)",
-    "snapbuf_apply (commits; ends an audition) · snapbuf_audition <0|1> · snapbuf_compare",
-]):
-    text(XL+38, xy+14+i*11, ln, 7, MUTED, "start")
-text(XL+38, xy+14+5*11+8, "STORE to a placed slot reshapes the morph field next block —", 6.8, MUTED, "start")
-text(XL+38, xy+14+5*11+18, "deliberate act, never a knob side-effect. AUDITION reverts exact; ASSIGN mid-audition commits.", 6.8, MUTED, "start")
-text(XL+38, xy+14+5*11+38, "Pd prototype: own canvas · speaks only snapbuf_* · parses outlet 9.", 6.8, BRONZE, "start")
-text(XL+XW-24, H-58, "Plans/snapshot_expander.md", 7, MUTED, "end")
+# MONITOR moves under COMMIT (fills the column); see the relocated block below.
+VX2, VY2 = XL + 38, 782
+strip(VX2-14, VY2-36, XW-48, 268, "MONITOR", "white")
+for ch, off in (("L", 0), ("R", 34)):
+    parts.append(f'<rect x="{VX2+off}" y="{VY2}" width="20" height="170" rx="3" fill="{INSET}" stroke="#84888c" stroke-width="0.8"/>')
+    segs = 12
+    lit = 8 if ch == "L" else 7
+    for i in range(segs):
+        yy = VY2 + 166 - i*13.5
+        col = "#2c2f34"
+        if i < lit: col = CAP["green"] if i < 9 else (CAP["yellow"] if i < 11 else CAP["red"])
+        parts.append(f'<rect x="{VX2+off+3}" y="{yy-9}" width="14" height="9" fill="{col}"/>')
+    text(VX2+off+10, VY2+184, ch, 8, LEGEND, weight="bold")
+text(VX2+27, VY2-8, "OUTPUT", 8, MUTED)
+knob(VX2+150, VY2+40, "MASTER", "amplitude · IN 21", None, "red", 0.6)
+knob(VX2+235, VY2+40, "BANK MIX", "0 – 1", "MSG", "grey", 0.0, small=True)
+text(VX2+185, VY2+120, "OUTLETS", 8, MUTED, weight="bold")
+text(VX2+185, VY2+134, "1/2 audio · 3 note-change", 7, MUTED)
+text(VX2+185, VY2+146, "4 grain bang · 5 splice end", 7, MUTED)
+text(VX2+185, VY2+158, "9 state / param reports", 7, MUTED)
+text(VX2+185, VY2+186, "pattern events: message-driven", 7, MUTED)
+text(VX2+185, VY2+198, "pattern event grain [ 1(3,8) ]", 7, BRONZE)
 
 # ---------- footer ----------
 fy = H - 44
 parts.append(f'<line x1="40" y1="{fy-14}" x2="{W-40}" y2="{fy-14}" stroke="{LINE}" stroke-width="0.8"/>')
 text(46, fy, "Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save", size=8, fill=MUTED, anchor="start")
 text(46, fy+14, "BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix & param_range)", size=8, fill=MUTED, anchor="start")
-text(MAINW-46, fy+14, "ligase~ — QUEUE Seq 70 feature set", size=8, fill=MUTED, anchor="end")
+text(W-46, fy+14, "ligase~ — QUEUE Seq 70 feature set", size=8, fill=MUTED, anchor="end")
 
 svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">\n' + "\n".join(p for p in parts if p) + "\n</svg>\n"
 import os

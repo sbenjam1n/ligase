@@ -20,15 +20,15 @@
 </linearGradient>
 </defs>
 <rect width="1914" height="1096" fill="url(#caseEdge)"/>
-<rect x="14" y="14" width="1492" height="1068" rx="14" fill="url(#brushed)" stroke="#9ba0a5" stroke-width="1.2"/>
+<rect x="14" y="14" width="1886" height="1068" rx="14" fill="url(#brushed)" stroke="#9ba0a5" stroke-width="1.2"/>
 <circle cx="34" cy="34" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
 <line x1="31" y1="31" x2="37" y2="37" stroke="#6b7075" stroke-width="1.2"/>
 <circle cx="34" cy="1062" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
 <line x1="31" y1="1059" x2="37" y2="1065" stroke="#6b7075" stroke-width="1.2"/>
-<circle cx="1486" cy="34" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
-<line x1="1483" y1="31" x2="1489" y2="37" stroke="#6b7075" stroke-width="1.2"/>
-<circle cx="1486" cy="1062" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
-<line x1="1483" y1="1059" x2="1489" y2="1065" stroke="#6b7075" stroke-width="1.2"/>
+<circle cx="1880" cy="34" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
+<line x1="1877" y1="31" x2="1883" y2="37" stroke="#6b7075" stroke-width="1.2"/>
+<circle cx="1880" cy="1062" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
+<line x1="1877" y1="1059" x2="1883" y2="1065" stroke="#6b7075" stroke-width="1.2"/>
 <text x="52" y="52" font-family="Helvetica, Arial, sans-serif" font-size="25" fill="#26282b" text-anchor="start" letter-spacing="5">ligase~</text>
 <text x="214" y="52" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#71767c" text-anchor="start" letter-spacing="3">GRANULAR TAPE SYNTHESIZER</text>
 <text x="214" y="66" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="start" letter-spacing="2">SYNTHI-STYLE CONTROL SURFACE</text>
@@ -1133,226 +1133,226 @@
 <text x="1086" y="969" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">POWER</text>
 <text x="1086" y="978" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">IDW sharp · MSG</text>
 <text x="1086" y="986" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">morph_cursor 1 = CV</text>
-<circle cx="1214" cy="724" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1222" y="727.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">MONITOR</text>
-<line x1="1282" y1="724" x2="1476" y2="724" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="1220" y="760" width="20" height="170" rx="3" fill="url(#insetPlate)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="1223" y="917.0" width="14" height="9" fill="#4f9860"/>
-<rect x="1223" y="903.5" width="14" height="9" fill="#4f9860"/>
-<rect x="1223" y="890.0" width="14" height="9" fill="#4f9860"/>
-<rect x="1223" y="876.5" width="14" height="9" fill="#4f9860"/>
-<rect x="1223" y="863.0" width="14" height="9" fill="#4f9860"/>
-<rect x="1223" y="849.5" width="14" height="9" fill="#4f9860"/>
-<rect x="1223" y="836.0" width="14" height="9" fill="#4f9860"/>
-<rect x="1223" y="822.5" width="14" height="9" fill="#4f9860"/>
-<rect x="1223" y="809.0" width="14" height="9" fill="#2c2f34"/>
-<rect x="1223" y="795.5" width="14" height="9" fill="#2c2f34"/>
-<rect x="1223" y="782.0" width="14" height="9" fill="#2c2f34"/>
-<rect x="1223" y="768.5" width="14" height="9" fill="#2c2f34"/>
-<text x="1230" y="944" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">L</text>
-<rect x="1254" y="760" width="20" height="170" rx="3" fill="url(#insetPlate)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="1257" y="917.0" width="14" height="9" fill="#4f9860"/>
-<rect x="1257" y="903.5" width="14" height="9" fill="#4f9860"/>
-<rect x="1257" y="890.0" width="14" height="9" fill="#4f9860"/>
-<rect x="1257" y="876.5" width="14" height="9" fill="#4f9860"/>
-<rect x="1257" y="863.0" width="14" height="9" fill="#4f9860"/>
-<rect x="1257" y="849.5" width="14" height="9" fill="#4f9860"/>
-<rect x="1257" y="836.0" width="14" height="9" fill="#4f9860"/>
-<rect x="1257" y="822.5" width="14" height="9" fill="#2c2f34"/>
-<rect x="1257" y="809.0" width="14" height="9" fill="#2c2f34"/>
-<rect x="1257" y="795.5" width="14" height="9" fill="#2c2f34"/>
-<rect x="1257" y="782.0" width="14" height="9" fill="#2c2f34"/>
-<rect x="1257" y="768.5" width="14" height="9" fill="#2c2f34"/>
-<text x="1264" y="944" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">R</text>
-<text x="1247" y="752" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="middle">OUTPUT</text>
-<line x1="1335.9" y1="814.1" x2="1333.7" y2="816.3" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1350.0" y1="780.0" x2="1350.0" y2="777.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1364.1" y1="814.1" x2="1366.3" y2="816.3" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1350" cy="800.8" r="17" fill="#00000022"/>
-<circle cx="1350" cy="800" r="17" fill="#c04a38" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1350" cy="800" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1355.1" y1="790.0" x2="1357.2" y2="785.9" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1350" y="830" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MASTER</text>
-<text x="1350" y="839" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">amplitude · IN 21</text>
-<line x1="1414.4" y1="810.6" x2="1412.3" y2="812.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1425.0" y1="785.0" x2="1425.0" y2="782.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1435.6" y1="810.6" x2="1437.7" y2="812.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1425" cy="800.8" r="12" fill="#00000022"/>
-<circle cx="1425" cy="800" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1425" cy="800" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1419.4" y1="805.6" x2="1417.4" y2="807.6" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1425" y="825" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">BANK MIX</text>
-<text x="1425" y="834" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">0 – 1</text>
-<rect x="1412.9" y="771" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
-<text x="1425" y="780.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
-<text x="1350" y="880" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="middle" font-weight="bold">OUTLETS</text>
-<text x="1350" y="894" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">1/2 audio · 3 note-change</text>
-<text x="1350" y="906" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">4 grain bang · 5 splice end</text>
-<text x="1350" y="918" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">9 state / param reports</text>
-<text x="1350" y="946" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">pattern events: message-driven</text>
-<text x="1350" y="958" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#8a6d3b" text-anchor="middle">pattern event grain [ 1(3,8) ]</text>
-<rect x="1534" y="14" width="366" height="1068" rx="14" fill="url(#brushed)" stroke="#9ba0a5" stroke-width="1.2"/>
-<circle cx="1554" cy="34" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
-<line x1="1551" y1="31" x2="1557" y2="37" stroke="#6b7075" stroke-width="1.2"/>
-<circle cx="1554" cy="1062" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
-<line x1="1551" y1="1059" x2="1557" y2="1065" stroke="#6b7075" stroke-width="1.2"/>
-<circle cx="1880" cy="34" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
-<line x1="1877" y1="31" x2="1883" y2="37" stroke="#6b7075" stroke-width="1.2"/>
-<circle cx="1880" cy="1062" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
-<line x1="1877" y1="1059" x2="1883" y2="1065" stroke="#6b7075" stroke-width="1.2"/>
-<text x="1572" y="52" font-family="Helvetica, Arial, sans-serif" font-size="21" fill="#26282b" text-anchor="start" letter-spacing="5">XPNDR</text>
-<text x="1572" y="68" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="start" letter-spacing="1.5">SNAPSHOT EXPANDER — EDIT BUFFER</text>
-<circle cx="1566" cy="92" r="3" fill="#d9a23a" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1574" y="95.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">SNAPSHOT</text>
-<line x1="1641" y1="92" x2="1876" y2="92" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="1580.0" y="112.0" width="68" height="36" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="1582.0" y="114.0" width="64" height="32" rx="3" fill="#0a0705"/>
-<text x="1614" y="139" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">88</text>
-<text x="1614" y="139" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">02</text>
-<text x="1614" y="157.0" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">buffer holds snap</text>
-<line x1="1673.4" y1="144.6" x2="1671.3" y2="146.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1684.0" y1="119.0" x2="1684.0" y2="116.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1694.6" y1="144.6" x2="1696.7" y2="146.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1684" cy="134.8" r="12" fill="#00000022"/>
-<circle cx="1684" cy="134" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1684" cy="134" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1676.7" y1="131.0" x2="1674.0" y2="129.9" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1684" y="159" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">DATA</text>
-<text x="1684" y="168" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">slot 0 – 63</text>
-<rect x="1671.9" y="105" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
-<text x="1684" y="114.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
-<rect x="1750.0" y="113.5" width="64" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="1782" y="125" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">LOAD</text>
-<rect x="1743.0" y="139.5" width="78" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="1782" y="151" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">FROM LIVE</text>
-<text x="1782" y="174" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_load · snapbuf_from_live</text>
-<circle cx="1566" cy="208" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1574" y="211.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">ADDRESS — PAGE × PARAM</text>
-<line x1="1745" y1="208" x2="1876" y2="208" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="1561.0" y="241" width="312" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<text x="1580.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">GRAIN</text>
-<text x="1619.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">TAPE</text>
-<text x="1658.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">DELAY</text>
-<circle cx="1697.5" cy="246" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1697.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">FILTR</text>
-<text x="1736.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SMEAR</text>
-<text x="1775.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">ENV</text>
-<text x="1814.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PITCH</text>
-<text x="1853.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SPACE</text>
-<text x="1717.0" y="234" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">PAGE</text>
-<rect x="1561.0" y="289" width="312" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<text x="1580.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
-<circle cx="1619.5" cy="294" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1619.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
-<text x="1658.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
-<text x="1697.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
-<text x="1736.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">5</text>
-<text x="1775.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">6</text>
-<text x="1814.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">7</text>
-<text x="1853.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">8</text>
-<text x="1717.0" y="282" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">PARAM</text>
-<circle cx="1566" cy="338" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1574" y="341.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">VALUE</text>
-<line x1="1619" y1="338" x2="1876" y2="338" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="1580.0" y="363.0" width="100" height="34" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="1582.0" y="365.0" width="96" height="30" rx="3" fill="#0a0705"/>
-<text x="1630" y="388" font-family="Courier New, monospace" font-size="22" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">8.88</text>
-<text x="1630" y="388" font-family="Courier New, monospace" font-size="22" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">0.42</text>
-<text x="1630" y="406.0" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">stored value</text>
-<line x1="1715.9" y1="394.1" x2="1713.7" y2="396.3" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1730.0" y1="360.0" x2="1730.0" y2="357.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1744.1" y1="394.1" x2="1746.3" y2="396.3" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1730" cy="380.8" r="17" fill="#00000022"/>
-<circle cx="1730" cy="380" r="17" fill="#ece8da" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1730" cy="380" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1725.9" y1="369.6" x2="1724.2" y2="365.3" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1730" y="410" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">VALUE</text>
-<text x="1730" y="419" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">scalar · detent = discrete</text>
-<rect x="1717.9" y="346" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
-<text x="1730" y="355.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
-<text x="1824" y="376" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="start">snapbuf_get</text>
-<text x="1824" y="386" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="start">snapbuf_set</text>
-<circle cx="1566" cy="442" r="3" fill="#3b66b5" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1574" y="445.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">MODULATION BAND (of the addressed param)</text>
-<line x1="1878" y1="442" x2="1876" y2="442" stroke="#a4a9ae" stroke-width="0.7"/>
-<line x1="1601.4" y1="494.6" x2="1599.3" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1612.0" y1="469.0" x2="1612.0" y2="466.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1622.6" y1="494.6" x2="1624.7" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1612" cy="484.8" r="12" fill="#00000022"/>
-<circle cx="1612" cy="484" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1612" cy="484" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1605.6" y1="479.3" x2="1603.3" y2="477.7" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1612" y="509" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MIN</text>
-<text x="1612" y="518" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">band low</text>
-<line x1="1665.4" y1="494.6" x2="1663.3" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1676.0" y1="469.0" x2="1676.0" y2="466.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1686.6" y1="494.6" x2="1688.7" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1676" cy="484.8" r="12" fill="#00000022"/>
-<circle cx="1676" cy="484" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1676" cy="484" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1682.4" y1="479.3" x2="1684.7" y2="477.7" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1676" y="509" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MAX</text>
-<text x="1676" y="518" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">band high</text>
-<line x1="1729.4" y1="494.6" x2="1727.3" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1740.0" y1="469.0" x2="1740.0" y2="466.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1750.6" y1="494.6" x2="1752.7" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1740" cy="484.8" r="12" fill="#00000022"/>
-<circle cx="1740" cy="484" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1740" cy="484" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1732.2" y1="482.8" x2="1729.3" y2="482.3" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1740" y="509" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">SLEW</text>
-<text x="1740" y="518" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">smooth</text>
-<rect x="1783" y="470" width="26" height="16" rx="8" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<circle cx="1802" cy="478" r="6" fill="#4f9860" stroke="#6f7479" stroke-width="0.6"/>
-<text x="1796" y="498" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">ENABLED</text>
-<rect x="1839" y="470" width="26" height="16" rx="8" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<circle cx="1846" cy="478" r="6" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.6"/>
-<text x="1852" y="498" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">INVERT</text>
-<rect x="1565.0" y="557" width="210" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<text x="1580.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">OFF</text>
-<circle cx="1610.0" cy="562" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1610.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PERL</text>
-<text x="1640.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">LRNZ</text>
-<text x="1670.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">NBDY</text>
-<text x="1700.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SPHR</text>
-<text x="1730.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">RAND</text>
-<text x="1760.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PAT</text>
-<text x="1670" y="550" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">SOURCE</text>
-<rect x="1798.0" y="557" width="64" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<circle cx="1806.0" cy="562" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1806.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
-<text x="1822.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
-<text x="1838.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
-<text x="1854.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
-<text x="1830" y="550" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">INST</text>
-<circle cx="1566" cy="622" r="3" fill="#c04a38" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1574" y="625.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">COMMIT / AUDITION</text>
-<line x1="1708" y1="622" x2="1876" y2="622" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="1575.0" y="651.5" width="62" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="1606" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">STORE</text>
-<rect x="1653.0" y="651.5" width="62" height="17" rx="8.5" fill="#e8c47c" stroke="#a8863c" stroke-width="0.9"/>
-<text x="1684" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">ASSIGN</text>
-<rect x="1733.0" y="651.5" width="66" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="1766" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">AUDITION</text>
-<rect x="1822.0" y="651.5" width="40" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="1842" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">A/B</text>
-<text x="1606" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_store</text>
-<text x="1684" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_apply</text>
-<text x="1766" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">hold = momentary</text>
-<text x="1842" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">compare</text>
-<text x="1717.0" y="702" font-family="Helvetica, Arial, sans-serif" font-size="7.2" fill="#8a6d3b" text-anchor="middle" font-weight="bold">edits are COLD — ASSIGN commits; AUDITION borrows the live voice and reverts exactly</text>
-<text x="1572" y="740" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="start" font-weight="bold" letter-spacing="1.5">MESSAGES</text>
-<text x="1572" y="754" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_load &lt;id&gt; · snapbuf_from_live · snapbuf_clear</text>
-<text x="1572" y="765" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_set &lt;field&gt; [sub] &lt;v&gt; · snapbuf_get &lt;field&gt; [sub]</text>
-<text x="1572" y="776" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_dump  (re-sendable lines → outlet 9)</text>
-<text x="1572" y="787" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_store &lt;id&gt;   (reshapes the surface if slot is placed)</text>
-<text x="1572" y="798" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_apply (commits; ends an audition) · snapbuf_audition &lt;0|1&gt; · snapbuf_compare</text>
-<text x="1572" y="817" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="start">STORE to a placed slot reshapes the morph field next block —</text>
-<text x="1572" y="827" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="start">deliberate act, never a knob side-effect. AUDITION reverts exact; ASSIGN mid-audition commits.</text>
-<text x="1572" y="847" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#8a6d3b" text-anchor="start">Pd prototype: own canvas · speaks only snapbuf_* · parses outlet 9.</text>
-<text x="1876" y="1038" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="end">Plans/snapshot_expander.md</text>
+<circle cx="1254" cy="724" r="3" fill="#787f88" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1262" y="727.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">EXPANDER MESSAGES</text>
+<line x1="1396" y1="724" x2="1460" y2="724" stroke="#a4a9ae" stroke-width="0.7"/>
+<text x="1256" y="748" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_load &lt;id&gt;</text>
+<text x="1256" y="761" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_from_live</text>
+<text x="1256" y="774" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_set &lt;field&gt; [sub] &lt;v&gt;</text>
+<text x="1256" y="787" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_get &lt;field&gt; [sub]</text>
+<text x="1256" y="800" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_dump  → outlet 9</text>
+<text x="1256" y="813" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_store &lt;id&gt;</text>
+<text x="1256" y="826" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#8a6d3b" text-anchor="start">   reshapes a PLACED slot</text>
+<text x="1256" y="839" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_apply  (= ASSIGN)</text>
+<text x="1256" y="852" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#8a6d3b" text-anchor="start">   commits; ends an audition</text>
+<text x="1256" y="865" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_audition &lt;0|1&gt;</text>
+<text x="1256" y="878" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#8a6d3b" text-anchor="start">   exact revert on release</text>
+<text x="1256" y="891" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_compare  (A/B)</text>
+<text x="1256" y="904" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="start">snapbuf_clear</text>
+<text x="1256" y="923" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#8a6d3b" text-anchor="start" font-weight="bold">edits are COLD until ASSIGN</text>
+<text x="1256" y="934" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="start">Plans/snapshot_expander.md</text>
+<line x1="1496" y1="42" x2="1496" y2="1040" stroke="#a4a9ae" stroke-width="0.7"/>
+<text x="1532" y="56" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#26282b" text-anchor="start" letter-spacing="4">SNAPSHOT EXPANDER</text>
+<text x="1532" y="70" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#71767c" text-anchor="start" letter-spacing="0.5">EDIT BUFFER — cold; ASSIGN is the only realtime touchpoint</text>
+<circle cx="1540" cy="92" r="3" fill="#d9a23a" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1548" y="95.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">SNAPSHOT</text>
+<line x1="1615" y1="92" x2="1862" y2="92" stroke="#a4a9ae" stroke-width="0.7"/>
+<rect x="1554.0" y="112.0" width="68" height="36" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1556.0" y="114.0" width="64" height="32" rx="3" fill="#0a0705"/>
+<text x="1588" y="139" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">88</text>
+<text x="1588" y="139" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">02</text>
+<text x="1588" y="157.0" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">buffer holds snap</text>
+<line x1="1647.4" y1="144.6" x2="1645.3" y2="146.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1658.0" y1="119.0" x2="1658.0" y2="116.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1668.6" y1="144.6" x2="1670.7" y2="146.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1658" cy="134.8" r="12" fill="#00000022"/>
+<circle cx="1658" cy="134" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1658" cy="134" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1650.7" y1="131.0" x2="1648.0" y2="129.9" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1658" y="159" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">DATA</text>
+<text x="1658" y="168" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">slot 0 – 63</text>
+<rect x="1645.9" y="105" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
+<text x="1658" y="114.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
+<rect x="1724.0" y="113.5" width="64" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1756" y="125" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">LOAD</text>
+<rect x="1717.0" y="139.5" width="78" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1756" y="151" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">FROM LIVE</text>
+<text x="1756" y="174" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_load · snapbuf_from_live</text>
+<circle cx="1540" cy="208" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1548" y="211.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">ADDRESS — PAGE × PARAM</text>
+<line x1="1719" y1="208" x2="1862" y2="208" stroke="#a4a9ae" stroke-width="0.7"/>
+<rect x="1541.0" y="241" width="312" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<text x="1560.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">GRAIN</text>
+<text x="1599.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">TAPE</text>
+<text x="1638.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">DELAY</text>
+<circle cx="1677.5" cy="246" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1677.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">FILTR</text>
+<text x="1716.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SMEAR</text>
+<text x="1755.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">ENV</text>
+<text x="1794.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PITCH</text>
+<text x="1833.5" y="263" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SPACE</text>
+<text x="1697.0" y="234" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">PAGE</text>
+<rect x="1541.0" y="289" width="312" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<text x="1560.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
+<circle cx="1599.5" cy="294" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1599.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
+<text x="1638.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
+<text x="1677.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
+<text x="1716.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">5</text>
+<text x="1755.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">6</text>
+<text x="1794.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">7</text>
+<text x="1833.5" y="311" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">8</text>
+<text x="1697.0" y="282" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">PARAM</text>
+<circle cx="1540" cy="338" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1548" y="341.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">VALUE</text>
+<line x1="1593" y1="338" x2="1862" y2="338" stroke="#a4a9ae" stroke-width="0.7"/>
+<rect x="1554.0" y="363.0" width="100" height="34" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1556.0" y="365.0" width="96" height="30" rx="3" fill="#0a0705"/>
+<text x="1604" y="388" font-family="Courier New, monospace" font-size="22" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">8.88</text>
+<text x="1604" y="388" font-family="Courier New, monospace" font-size="22" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">0.42</text>
+<text x="1604" y="406.0" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">stored value</text>
+<line x1="1689.9" y1="394.1" x2="1687.7" y2="396.3" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1704.0" y1="360.0" x2="1704.0" y2="357.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1718.1" y1="394.1" x2="1720.3" y2="396.3" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1704" cy="380.8" r="17" fill="#00000022"/>
+<circle cx="1704" cy="380" r="17" fill="#ece8da" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1704" cy="380" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1699.9" y1="369.6" x2="1698.2" y2="365.3" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1704" y="410" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">VALUE</text>
+<text x="1704" y="419" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">scalar · detent = discrete</text>
+<rect x="1691.9" y="346" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
+<text x="1704" y="355.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
+<text x="1798" y="376" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="start">snapbuf_get</text>
+<text x="1798" y="386" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="start">snapbuf_set</text>
+<circle cx="1540" cy="442" r="3" fill="#3b66b5" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1548" y="445.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">MODULATION BAND (of the addressed param)</text>
+<line x1="1852" y1="442" x2="1862" y2="442" stroke="#a4a9ae" stroke-width="0.7"/>
+<line x1="1575.4" y1="494.6" x2="1573.3" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1586.0" y1="469.0" x2="1586.0" y2="466.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1596.6" y1="494.6" x2="1598.7" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1586" cy="484.8" r="12" fill="#00000022"/>
+<circle cx="1586" cy="484" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1586" cy="484" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1579.6" y1="479.3" x2="1577.3" y2="477.7" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1586" y="509" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MIN</text>
+<text x="1586" y="518" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">band low</text>
+<line x1="1639.4" y1="494.6" x2="1637.3" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1650.0" y1="469.0" x2="1650.0" y2="466.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1660.6" y1="494.6" x2="1662.7" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1650" cy="484.8" r="12" fill="#00000022"/>
+<circle cx="1650" cy="484" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1650" cy="484" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1656.4" y1="479.3" x2="1658.7" y2="477.7" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1650" y="509" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MAX</text>
+<text x="1650" y="518" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">band high</text>
+<line x1="1703.4" y1="494.6" x2="1701.3" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1714.0" y1="469.0" x2="1714.0" y2="466.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1724.6" y1="494.6" x2="1726.7" y2="496.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1714" cy="484.8" r="12" fill="#00000022"/>
+<circle cx="1714" cy="484" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1714" cy="484" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1706.2" y1="482.8" x2="1703.3" y2="482.3" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1714" y="509" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">SLEW</text>
+<text x="1714" y="518" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">smooth</text>
+<rect x="1757" y="470" width="26" height="16" rx="8" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<circle cx="1776" cy="478" r="6" fill="#4f9860" stroke="#6f7479" stroke-width="0.6"/>
+<text x="1770" y="498" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">ENABLED</text>
+<rect x="1813" y="470" width="26" height="16" rx="8" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<circle cx="1820" cy="478" r="6" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.6"/>
+<text x="1826" y="498" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">INVERT</text>
+<rect x="1539.0" y="557" width="210" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<text x="1554.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">OFF</text>
+<circle cx="1584.0" cy="562" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1584.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PERL</text>
+<text x="1614.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">LRNZ</text>
+<text x="1644.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">NBDY</text>
+<text x="1674.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SPHR</text>
+<text x="1704.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">RAND</text>
+<text x="1734.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PAT</text>
+<text x="1644" y="550" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">SOURCE</text>
+<rect x="1772.0" y="557" width="64" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<circle cx="1780.0" cy="562" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1780.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
+<text x="1796.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
+<text x="1812.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
+<text x="1828.0" y="579" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
+<text x="1804" y="550" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">INST</text>
+<circle cx="1540" cy="622" r="3" fill="#c04a38" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1548" y="625.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">COMMIT / AUDITION</text>
+<line x1="1682" y1="622" x2="1862" y2="622" stroke="#a4a9ae" stroke-width="0.7"/>
+<rect x="1549.0" y="651.5" width="62" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1580" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">STORE</text>
+<rect x="1627.0" y="651.5" width="62" height="17" rx="8.5" fill="#e8c47c" stroke="#a8863c" stroke-width="0.9"/>
+<text x="1658" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">ASSIGN</text>
+<rect x="1707.0" y="651.5" width="66" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1740" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">AUDITION</text>
+<rect x="1796.0" y="651.5" width="40" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1816" y="663" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">A/B</text>
+<text x="1580" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_store</text>
+<text x="1658" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_apply</text>
+<text x="1740" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">hold = momentary</text>
+<text x="1816" y="682" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">compare</text>
+<text x="1697.0" y="702" font-family="Helvetica, Arial, sans-serif" font-size="7.2" fill="#8a6d3b" text-anchor="middle" font-weight="bold">edits are COLD — ASSIGN commits; AUDITION borrows the live voice and reverts exactly</text>
+<circle cx="1540" cy="746" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1548" y="749.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">MONITOR</text>
+<line x1="1608" y1="746" x2="1862" y2="746" stroke="#a4a9ae" stroke-width="0.7"/>
+<rect x="1546" y="782" width="20" height="170" rx="3" fill="url(#insetPlate)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1549" y="939.0" width="14" height="9" fill="#4f9860"/>
+<rect x="1549" y="925.5" width="14" height="9" fill="#4f9860"/>
+<rect x="1549" y="912.0" width="14" height="9" fill="#4f9860"/>
+<rect x="1549" y="898.5" width="14" height="9" fill="#4f9860"/>
+<rect x="1549" y="885.0" width="14" height="9" fill="#4f9860"/>
+<rect x="1549" y="871.5" width="14" height="9" fill="#4f9860"/>
+<rect x="1549" y="858.0" width="14" height="9" fill="#4f9860"/>
+<rect x="1549" y="844.5" width="14" height="9" fill="#4f9860"/>
+<rect x="1549" y="831.0" width="14" height="9" fill="#2c2f34"/>
+<rect x="1549" y="817.5" width="14" height="9" fill="#2c2f34"/>
+<rect x="1549" y="804.0" width="14" height="9" fill="#2c2f34"/>
+<rect x="1549" y="790.5" width="14" height="9" fill="#2c2f34"/>
+<text x="1556" y="966" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">L</text>
+<rect x="1580" y="782" width="20" height="170" rx="3" fill="url(#insetPlate)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1583" y="939.0" width="14" height="9" fill="#4f9860"/>
+<rect x="1583" y="925.5" width="14" height="9" fill="#4f9860"/>
+<rect x="1583" y="912.0" width="14" height="9" fill="#4f9860"/>
+<rect x="1583" y="898.5" width="14" height="9" fill="#4f9860"/>
+<rect x="1583" y="885.0" width="14" height="9" fill="#4f9860"/>
+<rect x="1583" y="871.5" width="14" height="9" fill="#4f9860"/>
+<rect x="1583" y="858.0" width="14" height="9" fill="#4f9860"/>
+<rect x="1583" y="844.5" width="14" height="9" fill="#2c2f34"/>
+<rect x="1583" y="831.0" width="14" height="9" fill="#2c2f34"/>
+<rect x="1583" y="817.5" width="14" height="9" fill="#2c2f34"/>
+<rect x="1583" y="804.0" width="14" height="9" fill="#2c2f34"/>
+<rect x="1583" y="790.5" width="14" height="9" fill="#2c2f34"/>
+<text x="1590" y="966" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">R</text>
+<text x="1573" y="774" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="middle">OUTPUT</text>
+<line x1="1681.9" y1="836.1" x2="1679.7" y2="838.3" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1696.0" y1="802.0" x2="1696.0" y2="799.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1710.1" y1="836.1" x2="1712.3" y2="838.3" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1696" cy="822.8" r="17" fill="#00000022"/>
+<circle cx="1696" cy="822" r="17" fill="#c04a38" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1696" cy="822" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1701.1" y1="812.0" x2="1703.2" y2="807.9" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1696" y="852" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MASTER</text>
+<text x="1696" y="861" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">amplitude · IN 21</text>
+<line x1="1770.4" y1="832.6" x2="1768.3" y2="834.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1781.0" y1="807.0" x2="1781.0" y2="804.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1791.6" y1="832.6" x2="1793.7" y2="834.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1781" cy="822.8" r="12" fill="#00000022"/>
+<circle cx="1781" cy="822" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1781" cy="822" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1775.4" y1="827.6" x2="1773.4" y2="829.6" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1781" y="847" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">BANK MIX</text>
+<text x="1781" y="856" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">0 – 1</text>
+<rect x="1768.9" y="793" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
+<text x="1781" y="802.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
+<text x="1731" y="902" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="middle" font-weight="bold">OUTLETS</text>
+<text x="1731" y="916" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">1/2 audio · 3 note-change</text>
+<text x="1731" y="928" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">4 grain bang · 5 splice end</text>
+<text x="1731" y="940" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">9 state / param reports</text>
+<text x="1731" y="968" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">pattern events: message-driven</text>
+<text x="1731" y="980" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#8a6d3b" text-anchor="middle">pattern event grain [ 1(3,8) ]</text>
 <line x1="40" y1="1038" x2="1874" y2="1038" stroke="#a4a9ae" stroke-width="0.8"/>
 <text x="46" y="1052" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="start">Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save</text>
 <text x="46" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="start">BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix &amp; param_range)</text>
-<text x="1474" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="end">ligase~ — QUEUE Seq 70 feature set</text>
+<text x="1868" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="end">ligase~ — QUEUE Seq 70 feature set</text>
 </svg>
