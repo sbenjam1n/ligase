@@ -356,7 +356,7 @@ text(lx, ly,    "A    SIN/SAW/SQR: PHASE   PERL: FREQ   LRNZ: SIGMA   NBDY: G   
 text(lx, ly+10, "B    SAW: SKEW   SQR: PULSE WIDTH   LRNZ: RHO (chaos)   NBDY: DAMP   SPHR: ELAST", 6.4, MUTED, "start")
 text(lx, ly+20, "C    LRNZ: BETA   NBDY: EPSILON   SPHR: SPIN        D    NBDY: PUMP amt (hold = interval)   SPHR: KICK strength", 6.4, MUTED, "start")
 text(lx, ly+30, "RATE = IOT x scale (sources breathe with grain density; GLOBAL per instance)  ·  KICK = sphere_kick impulse  ·  RESET per family", 6.4, MUTED, "start")
-text(MSX+636, ly+30, "all captured — schema v4", 6.4, BRONZE, "end")
+text(MSX+636, ly+30, "all captured (v4) · FAMILY×INST feeds the SCOPE →", 6.4, BRONZE, "end")
 
 # ---------- RIGHT-BOTTOM: JOYSTICK (morph) ----------
 JX, JY, JS = 812, 760, 216
@@ -385,28 +385,31 @@ switch(bx, JY+136, 72, ["IDW", "NN"], 0, "KERNEL")
 knob(bx, JY+184, "POWER", "IDW sharp · MSG", None, "grey", 0.4, small=True)
 text(bx, JY+226, "morph_cursor 1 = CV", 6.8, MUTED)
 
-# ---------- RIGHT-BOTTOM: snapbuf quick-reference (former monitor slot) ----------
+# ---------- RIGHT-BOTTOM: SCOPE (mod-source / grain-state display) ----------
 MQX = 1246
-strip(MQX, 724, 214, 268, "EXPANDER MESSAGES", "grey")
-mq = [
-    ("snapbuf_load <id>", MUTED),
-    ("snapbuf_from_live", MUTED),
-    ("snapbuf_set <field> [sub] <v>", MUTED),
-    ("snapbuf_get <field> [sub]", MUTED),
-    ("snapbuf_dump  \u2192 outlet 9", MUTED),
-    ("snapbuf_store <id>", MUTED),
-    ("   reshapes a PLACED slot", BRONZE),
-    ("snapbuf_apply  (= ASSIGN)", MUTED),
-    ("   commits; ends an audition", BRONZE),
-    ("snapbuf_audition <0|1>", MUTED),
-    ("   exact revert on release", BRONZE),
-    ("snapbuf_compare  (A/B)", MUTED),
-    ("snapbuf_clear", MUTED),
-]
-for i, (ln, c) in enumerate(mq):
-    text(MQX+10, 748 + i*13, ln, 7, c, "start")
-text(MQX+10, 748 + 13*13 + 6, "edits are COLD until ASSIGN", 6.8, BRONZE, "start", "bold")
-text(MQX+10, 748 + 13*13 + 17, "Plans/snapshot_expander.md", 6.8, MUTED, "start")
+strip(MQX, 724, 214, 268, "SCOPE", "green")
+parts.append(f'<rect x="{MQX+6}" y="742" width="202" height="148" rx="4" fill="{INSET}" stroke="#84888c" stroke-width="0.8"/>')
+for gfrac in (0.25, 0.5, 0.75):
+    parts.append(f'<line x1="{MQX+6+202*gfrac:.0f}" y1="742" x2="{MQX+6+202*gfrac:.0f}" y2="890" stroke="#33363b" stroke-width="0.6"/>')
+    parts.append(f'<line x1="{MQX+6}" y1="{742+148*gfrac:.0f}" x2="{MQX+208}" y2="{742+148*gfrac:.0f}" stroke="#33363b" stroke-width="0.6"/>')
+# a REAL Lorenz trace (sigma 10, rho 28, beta 8/3), x-vs-z projection -- the FOLW/LRNZ view
+_lx, _ly, _lz = 0.1, 0.0, 20.0
+_pts = []
+for _i in range(6000):
+    _dx = 10.0*(_ly-_lx); _dy = _lx*(28.0-_lz)-_ly; _dz = _lx*_ly-(8.0/3.0)*_lz
+    _lx += _dx*0.004; _ly += _dy*0.004; _lz += _dz*0.004
+    if _i % 12 == 0:
+        _px = MQX+6 + (_lx+22.0)/44.0*202.0
+        _py = 742 + (1.0-(_lz-2.0)/48.0)*148.0
+        _pts.append(f"{_px:.1f},{_py:.1f}")
+parts.append(f'<polyline points="{" ".join(_pts)}" fill="none" stroke="#79c98b" stroke-width="0.9" stroke-opacity="0.85"/>')
+switch(MQX+58, 912, 90, ["FOLW","GRAIN"], 0, "TAP")
+switch(MQX+165, 912, 66, ["XY","SWP"], 0, "VIEW")
+text(MQX+10, 946, "FOLW = the SOURCE SHAPE selection:", 6.6, MUTED, "start")
+text(MQX+10, 956, "waveforms / perlin / rand \u2192 time sweep", 6.6, MUTED, "start")
+text(MQX+10, 966, "lorenz / nbody / sphere \u2192 XY orbit", 6.6, MUTED, "start")
+text(MQX+10, 976, "GRAIN \u2192 constellation: X = splice pos, Y = env", 6.6, MUTED, "start")
+text(MQX+10, 988, "scope_x~ / scope_y~ = OUT 10/11 \u00b7 Plans/scope_taps.md (GATE A)", 6.3, BRONZE, "start")
 
 # ---------- SNAPSHOT EXPANDER column (integrated into the main panel) ----------
 XL = 1508                # expander column left
