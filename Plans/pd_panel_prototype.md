@@ -2,7 +2,7 @@
 
 **Owner:** SLB
 **Date:** 2026-07-05
-**Status:** PLANNED (GATE A — owner decisions below; recommendations flagged [R])
+**Status:** IN PROGRESS — **GATE A cleared 2026-07-06** (owner: "continue", following the take-the-recommendations pattern): plugdata dialect; two canvases; generated via emit_pd; DEPTH-knob-at-pin-time matrix policy; headless-0 all-inlets-driven contract; 10 Hz display poll; snapshots ARE the preset system. Note: the layout source of truth is the CURRENT docs/ui/gen_panel.py (single chassis, SCOPE card, integrated expander column) — it has evolved past this plan's prose.
 **Tracked in:** `QUEUE.md` §4a (prototyping/UI/VST arc, Seq 71)
 **Related:** `docs/ui/gen_panel.py` → `docs/ui/ligase_synthi_panel.svg` (the design this
 makes real), `Plans/snapshot_expander.md` (the XPNDR API the sidecar canvas speaks),
