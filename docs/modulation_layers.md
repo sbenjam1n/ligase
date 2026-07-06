@@ -29,6 +29,8 @@ stay in — exactly like the pin board on the hardware the panel mockup is model
 connection topology between snapshots (argmax on pins) would be musically incoherent, so it is
 ruled out by design, not omission. (Note the one nuance v3 adds: `env_follow_ms` — the follower's
 release *time* — is now voice state, while the follower's *pins* remain physical.)
+The scope tap routing (`scope_tap`, signal outlets 10/11) is the same kind of thing: a MONITOR,
+not voice state — never captured by snapshots, never morphed, absent from the export vocabulary.
 
 ### The fourth state-holder — the Snapshot Expander's edit buffer (explicitly OFFLINE)
 

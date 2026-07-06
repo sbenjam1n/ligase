@@ -48,6 +48,12 @@ install: $(TARGET)
 	cp $(TARGET) ~/Documents/Pd/externals/
 	cp ligase~-help.pd ~/Documents/Pd/externals/
 
+# dist/ligase.plugdata — drag-and-drop install bundle for plugdata STANDALONE
+# (panel patches + README + ligase.conf + the compiled external(s) present).
+# Build on the Mac too so ligase~.pd_darwin rides along.
+bundle: $(TARGET)
+	python3 docs/ui/emit_bundle.py --verify
+
 # Test random sources
 test_random_sources: test_random_sources.c src/grain.o src/perlin.o src/envelope.o src/grain_distortion.o src/grain_delay.o
 	$(CC) $(CFLAGS) -o test_random_sources test_random_sources.c src/grain.o src/perlin.o src/envelope.o src/grain_distortion.o src/grain_delay.o -lm
@@ -98,6 +104,6 @@ manual: docs/ligase_manual.md docs/manual.css
 		-o ligase_manual.pdf
 	@echo "Regenerated ligase_manual.pdf"
 
-.PHONY: all clean install test_random test_pitch test_dist test_splice test_query manual
+.PHONY: all clean install bundle test_random test_pitch test_dist test_splice test_query manual
 
 # @endregion:erosion_pd.utils

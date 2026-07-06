@@ -149,6 +149,32 @@ typedef enum {
     PLAYHEAD_MODE_CLOCK_ADVANCE  // Mode 3: Clock advance, playhead advances on clock bang
 } playhead_mode_t;
 
+// SCOPE TAP (Plans/scope_taps.md) — which signal pair the appended scope outlets
+// (10 = scope_x~, 11 = scope_y~) carry. Selected by the `scope_tap <family> [inst]`
+// message. A MONITOR, not voice state: like the matrix pins ("pins are physical"),
+// the routing is never captured by snapshots, never morphed, and not in the
+// export/walker vocabulary (docs/modulation_layers.md).
+typedef enum {
+    SCOPE_TAP_SINE,      // Y = sineN readout (shaped), X = internal sweep ramp
+    SCOPE_TAP_SAW,       // Y = sawN readout (skewed), X = sweep
+    SCOPE_TAP_SQUARE,    // Y = squareN readout (pw), X = sweep
+    SCOPE_TAP_PERLIN,    // Y = perlin_1d_N readout, X = sweep
+    SCOPE_TAP_RAND,      // Y = randN's LAST emitted value (side-effect-free), X = sweep
+    SCOPE_TAP_FOLW,      // Y = env follower mono value, X = sweep
+    SCOPE_TAP_LORENZ,    // X = lorenz x-axis, Y = z-axis (THE BUTTERFLY; default tap)
+    SCOPE_TAP_NBODY,     // X = body 1 x-axis, Y = body 1 z-axis (orbits)
+    SCOPE_TAP_SPHERE,    // X = sphere x, Y = sphere z (bounces, spin orbits, kicks)
+    SCOPE_TAP_GRAIN,     // the GRAIN CONSTELLATION: pool round-robin, one grain/sample
+    SCOPE_TAP_GRAINSUM   // Y = soft-scaled sum of active grains' env*amp, X = sweep
+} scope_tap_family_t;
+
+// Internal X sweep rate (Hz) for the 1D taps (sine/saw/square/perlin/rand/folw and
+// grainsum): a fixed, readable 2 Hz ramp — fast enough that a plugdata [oscilloscope~]
+// frame always contains full traces, slow enough that a 0.2 Hz generator still reads
+// as a stepped waveform across sweeps. (Documented choice; the generator's own rate is
+// deliberately NOT used so slow generators don't produce minute-long sweeps.)
+#define LIGASE_SCOPE_SWEEP_HZ 2.0f
+
 struct _ligase {
     t_object x_obj;
 
@@ -200,6 +226,20 @@ struct _ligase {
     // State query outlet (outlet 9)
     t_outlet *x_state_out;
     // @endregion:ligase_pd.pd_external.outlets.state
+
+    // SCOPE TAP signal outlets (10 = scope_x~, 11 = scope_y~), APPENDED after the state
+    // outlet so every existing outlet index is untouched (the known class-construction
+    // rule from the morph CV-inlet work). Written every block in ligase_perform.
+    t_outlet *x_scope_x_out;
+    t_outlet *x_scope_y_out;
+
+    // SCOPE TAP state — a MONITOR (see scope_tap_family_t above): message-thread written
+    // (ligase_scope_tap), perform-thread read; POD single-writer/single-reader, no locks.
+    // Deliberately NOT captured by snapshots / the walker (docs/modulation_layers.md).
+    int   scope_family;       // scope_tap_family_t; default SCOPE_TAP_LORENZ (the butterfly)
+    int   scope_instance;     // generator instance 0-3 (user-facing 1-4); default 0
+    float scope_sweep_phase;  // internal X sweep ramp phase 0..1 (LIGASE_SCOPE_SWEEP_HZ)
+    int   scope_grain_scan;   // constellation round-robin pool index (perform-owned)
 
     // Core components
     reel_t *reel;
@@ -2007,6 +2047,169 @@ static void ligase_pattern_fire_event(ligase_t *x, int kind, float arg) {
 }
 // @endregion:ligase_pd.core.pattern.event_fire
 
+// @region:ligase_pd.pd_external.scope Scope Tap Writers (outlets 10/11)
+
+// Instantaneous envelope value x amplitude for one grain — the SAME table lookup (and the
+// same saw-carve formula) the render loop in scheduler_process uses, evaluated at the
+// grain's CURRENT envelope_phase. One call per output SAMPLE total (constellation) or per
+// active grain per BLOCK (grainsum), never per grain per sample.
+static inline float ligase_scope_grain_env(const scheduler_t *sched, const grain_t *g) {
+    if (g->grain_length <= 0) return 0.0f;
+    int env_idx = (g->envelope_phase * sched->envelope->length) / g->grain_length;
+    if (env_idx < 0) env_idx = 0;
+    else if (env_idx >= sched->envelope->length) env_idx = sched->envelope->length - 1;
+    float env_val = sched->envelope->table[env_idx];
+    if (g->saw_depth > 0.0f) {   // mirror the render loop's saw-modulation carve
+        float t = (float)g->envelope_phase / (float)g->grain_length;
+        float phase = t * g->saw_cycles;
+        float saw_val = phase - floorf(phase);
+        env_val *= 1.0f - (g->saw_depth * (1.0f - saw_val));
+    }
+    return env_val * g->amplitude;
+}
+
+// Fill scope_x/scope_y for one block according to the selected tap. Runs at the END of
+// ligase_perform (after process_grains), so grain taps see this block's post-render state
+// and generator taps see the values the engine used this block. Perform-thread only reads
+// perform-owned state — no locking anywhere (single-reader scan, like the matrix caches).
+//
+// Rate semantics (documented design):
+//   - Generator taps are per-block SAMPLE-AND-HOLD. The generators themselves only advance
+//     per grain trigger (update_perlin_coords, tied to IOT), so their values step anyway;
+//     holding for 64 samples is honest — the scope shows exactly the staircase the engine
+//     modulates with, with zero interpolation cost.
+//   - The X sweep ramp (1D taps) IS per-sample (a clean line at LIGASE_SCOPE_SWEEP_HZ).
+//   - The GRAIN constellation is per-sample: a Vectrex-style refresh, one active grain per
+//     output sample, round-robin over the pool (index scan of perform-owned POD).
+static void ligase_scope_write(ligase_t *x, t_sample *sx, t_sample *sy, int n) {
+    scheduler_t *sched = x->scheduler;
+    if (!sched || !sched->envelope || !sched->envelope->table || sched->envelope->length <= 0) {
+        memset(sx, 0, sizeof(t_sample) * n);
+        memset(sy, 0, sizeof(t_sample) * n);
+        return;
+    }
+    perlin_state_t *ps = &sched->perlin_state;
+    int inst = x->scope_instance;
+    if (inst < 0) inst = 0; else if (inst > 3) inst = 3;   // defensive; setter already clamps
+
+    // --- GRAIN CONSTELLATION: one grain per sample, round-robin over the pool ------------
+    if (x->scope_family == SCOPE_TAP_GRAIN) {
+        grain_t *pool = sched->grain_pool;
+        int pool_size = sched->pool_size;
+        if (!pool || pool_size <= 0 || !sched->active_list) {
+            // No grains -> the beam parks at center (0,0).
+            memset(sx, 0, sizeof(t_sample) * n);
+            memset(sy, 0, sizeof(t_sample) * n);
+            return;
+        }
+        int idx = x->scope_grain_scan;
+        if (idx < 0 || idx >= pool_size) idx = 0;
+        for (int i = 0; i < n; i++) {
+            // Advance to the next active grain (at most one full pool lap; the active_list
+            // check above guarantees at least one hit, the probe cap is the safety net).
+            int found = 0;
+            for (int probe = 0; probe < pool_size; probe++) {
+                idx++;
+                if (idx >= pool_size) idx = 0;
+                if (pool[idx].active) { found = 1; break; }
+            }
+            if (!found) { sx[i] = 0.0f; sy[i] = 0.0f; continue; }
+            grain_t *g = &pool[idx];
+            // X = position within the grain's splice, normalized to ±1 (zero-length guarded)
+            float len = (float)g->splice_end - (float)g->splice_start;
+            float posn = (len > 0.0f) ? (g->position - (float)g->splice_start) / len : 0.5f;
+            if (posn < 0.0f) posn = 0.0f; else if (posn > 1.0f) posn = 1.0f;
+            sx[i] = posn * 2.0f - 1.0f;
+            // Y = instantaneous envelope value x amplitude (the grain's loudness)
+            sy[i] = ligase_scope_grain_env(sched, g);
+        }
+        x->scope_grain_scan = idx;
+        return;
+    }
+
+    // --- 2D taps (chaos/physics x/z plane): per-block S/H on both axes --------------------
+    if (x->scope_family == SCOPE_TAP_LORENZ ||
+        x->scope_family == SCOPE_TAP_NBODY ||
+        x->scope_family == SCOPE_TAP_SPHERE) {
+        float xv, yv;
+        if (x->scope_family == SCOPE_TAP_LORENZ) {
+            // X = x-axis, Y = z-axis: the butterfly's classic projection.
+            xv = lorenz_get_normalized(&ps->lorenz[inst], 0) * 2.0f - 1.0f;
+            yv = lorenz_get_normalized(&ps->lorenz[inst], 2) * 2.0f - 1.0f;
+        } else if (x->scope_family == SCOPE_TAP_NBODY) {
+            // Body 1 (the "planet" — the liveliest stable orbiter), x/z plane. Fixed body
+            // choice (documented): the constellation-of-bodies view is a later nicety, and
+            // body 1 is the readable orbit in every stock configuration.
+            float v[3];
+            nbody_get_normalized_vec3(&ps->nbody[inst], 1, v);
+            xv = v[0];
+            yv = v[2];
+        } else {
+            float v[3];
+            sphere_get_normalized_vec3(&ps->sphere[inst], v);
+            xv = v[0];
+            yv = v[2];
+        }
+        for (int i = 0; i < n; i++) { sx[i] = xv; sy[i] = yv; }
+        return;
+    }
+
+    // --- 1D taps: Y = generator readout (per-block S/H), X = internal sweep ramp ----------
+    float yv;
+    switch (x->scope_family) {
+        case SCOPE_TAP_SINE:
+            yv = mod_source_value(ps, MOD_SRC_SINE1 + inst);    break;
+        case SCOPE_TAP_SAW:
+            yv = mod_source_value(ps, MOD_SRC_SAW1 + inst);     break;
+        case SCOPE_TAP_SQUARE:
+            yv = mod_source_value(ps, MOD_SRC_SQUARE1 + inst);  break;
+        case SCOPE_TAP_PERLIN:
+            yv = mod_source_value(ps, MOD_SRC_PERLIN1 + inst);  break;
+        case SCOPE_TAP_RAND:
+            // The LCG's current state IS its last emitted value ((float)seed / 2^31 —
+            // see rand_float_seeded), so read it directly instead of mod_source_value:
+            // tapping rand must NOT advance the shared seed the param_range RAND
+            // sources draw from (a monitor never perturbs the engine).
+            yv = (float)ps->rand_seed[inst] / 2147483648.0f;    break;
+        case SCOPE_TAP_FOLW:
+            yv = ps->env_follow_value[2];                       break;   // mono follower
+        case SCOPE_TAP_GRAINSUM: {
+            // The cloud's amplitude silhouette: per-block sum of active grains' env*amp
+            // (the same per-grain values the render mixes), soft-scaled with tanh(sum/4)
+            // so a handful of full-scale grains lands mid-screen and dense clouds
+            // saturate toward 1 instead of clipping off-screen (documented scaling).
+            float sum = 0.0f;
+            for (grain_t *g = sched->active_list; g; g = g->next)
+                sum += ligase_scope_grain_env(sched, g);
+            float ynorm = tanhf(sum * 0.25f);
+            float inc0 = LIGASE_SCOPE_SWEEP_HZ / (float)x->sample_rate;
+            float ph0 = x->scope_sweep_phase;
+            for (int i = 0; i < n; i++) {
+                sx[i] = ph0 * 2.0f - 1.0f;
+                sy[i] = ynorm;
+                ph0 += inc0;
+                if (ph0 >= 1.0f) ph0 -= 1.0f;
+            }
+            x->scope_sweep_phase = ph0;
+            return;
+        }
+        default:
+            yv = 0.5f;                                          break;   // defensive: park at 0
+    }
+    float yb = yv * 2.0f - 1.0f;                    // 0..1 readout -> scope-friendly ±1
+    float inc = LIGASE_SCOPE_SWEEP_HZ / (float)x->sample_rate;
+    float ph = x->scope_sweep_phase;
+    for (int i = 0; i < n; i++) {
+        sx[i] = ph * 2.0f - 1.0f;
+        sy[i] = yb;
+        ph += inc;
+        if (ph >= 1.0f) ph -= 1.0f;
+    }
+    x->scope_sweep_phase = ph;
+}
+
+// @endregion:ligase_pd.pd_external.scope
+
 static t_int *ligase_perform(t_int *w) {
     // Flush denormals to zero for this audio callback (FPU mode is per-thread). Prevents the
     // gradual CPU climb from subnormal floats piling up in delay/moog/distortion feedback
@@ -2023,7 +2226,19 @@ static t_int *ligase_perform(t_int *w) {
 
     if (!x) {
         if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: ERROR - NULL x pointer!\n");
-        return (w + 29);
+        // Zero every output (audio + scope) so no garbage feeds downstream.
+        {
+            t_sample *ol = (t_sample *)(w[26]), *or_ = (t_sample *)(w[27]);
+            t_sample *sx = (t_sample *)(w[28]), *sy = (t_sample *)(w[29]);
+            int nn = (int)(w[30]);
+            if (nn > 0 && nn <= 8192) {
+                if (ol)  memset(ol,  0, sizeof(t_sample) * nn);
+                if (or_) memset(or_, 0, sizeof(t_sample) * nn);
+                if (sx)  memset(sx,  0, sizeof(t_sample) * nn);
+                if (sy)  memset(sy,  0, sizeof(t_sample) * nn);
+            }
+        }
+        return (w + 31);
     }
 
     if (first_call && LIGASE_DEBUG) {
@@ -2058,7 +2273,9 @@ static t_int *ligase_perform(t_int *w) {
     t_sample *morph_y_in = (t_sample *)(w[25]);
     t_sample *out_left = (t_sample *)(w[26]);
     t_sample *out_right = (t_sample *)(w[27]);
-    int n = (int)(w[28]);
+    t_sample *scope_x_out = (t_sample *)(w[28]);   // scope tap X (outlet 10)
+    t_sample *scope_y_out = (t_sample *)(w[29]);   // scope tap Y (outlet 11)
+    int n = (int)(w[30]);
 
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Signal pointers extracted, blocksize=%d\n", n);
 
@@ -2069,7 +2286,9 @@ static t_int *ligase_perform(t_int *w) {
         // stale/garbage downstream as a dropout burst).
         if (out_left)  memset(out_left, 0, sizeof(t_sample) * n);
         if (out_right) memset(out_right, 0, sizeof(t_sample) * n);
-        return (w + 29);
+        if (scope_x_out) memset(scope_x_out, 0, sizeof(t_sample) * n);
+        if (scope_y_out) memset(scope_y_out, 0, sizeof(t_sample) * n);
+        return (w + 31);
     }
 
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Blocksize check passed, validating pointers...\n");
@@ -2088,17 +2307,20 @@ static t_int *ligase_perform(t_int *w) {
     if (!speed_in || !organize_in || !scanrate_in || !sos_in || !iot_in || !maxgrains_in ||
         !gdelay_time_in || !gdelay_feedback_in || !gdelay_tone_in || !gdelay_mix_in ||
         !smear_in || !moog_cutoff_in || !moog_resonance_in || !moog_mix_in ||
-        !midi_in || !env_skew_in || !amplitude_in || !pan_in || !out_left || !out_right) {
+        !midi_in || !env_skew_in || !amplitude_in || !pan_in || !out_left || !out_right ||
+        !scope_x_out || !scope_y_out) {
 null_ptr_error:
         if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: ERROR - NULL signal pointer detected!\n");
         if (LIGASE_DEBUG) fprintf(stderr, "  in_left=%p in_right=%p grain_size_in=%p\n",
                 (void*)in_left, (void*)in_right, (void*)grain_size_in);
-        // Zero output and return
+        // Zero output (audio + scope — the bailout must not leave garbage in ANY out) and return
         for (int i = 0; i < n; i++) {
             if (out_left) out_left[i] = 0.0f;
             if (out_right) out_right[i] = 0.0f;
+            if (scope_x_out) scope_x_out[i] = 0.0f;
+            if (scope_y_out) scope_y_out[i] = 0.0f;
         }
-        return (w + 29);
+        return (w + 31);
     }
 
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: All signal pointers validated\n");
@@ -2264,8 +2486,12 @@ null_ptr_error:
     }
     // @endregion:ligase_pd.pd_external.outlets.outlet3_note_change
 
-    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: About to return (w + 29)\n");
-    return (w + 29);
+    // SCOPE TAP: fill scope_x~/scope_y~ (outlets 10/11) LAST, so grain taps see this
+    // block's post-render pool state and generator taps hold the values the engine used.
+    ligase_scope_write(x, scope_x_out, scope_y_out, n);
+
+    if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: About to return (w + 31)\n");
+    return (w + 31);
 }
 
 // Propagate a host sample-rate change to every subsystem, reallocating buffers and
@@ -2315,14 +2541,14 @@ static void ligase_dsp(ligase_t *x, t_signal **sp) {
         return;
     }
 
-    // Verify signal pointers are valid (check first and last)
-    if (!sp || !sp[0] || !sp[25]) {
+    // Verify signal pointers are valid (check first and last; 24 inlets + 4 outlets)
+    if (!sp || !sp[0] || !sp[27]) {
         pd_error(x, "ligase~: invalid signal pointer array");
         return;
     }
 
     // Verify signal vectors are valid
-    for (int i = 0; i < 26; i++) {
+    for (int i = 0; i < 28; i++) {
         if (!sp[i] || !sp[i]->s_vec) {
             pd_error(x, "ligase~: invalid signal vector at index %d", i);
             return;
@@ -2340,7 +2566,7 @@ static void ligase_dsp(ligase_t *x, t_signal **sp) {
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_dsp: Adding perform callback (sr=%d, blocksize=%d)\n",
             x->sample_rate, sp[0]->s_n);
 
-    dsp_add(ligase_perform, 28, x,
+    dsp_add(ligase_perform, 30, x,
             sp[0]->s_vec,   // in_left
             sp[1]->s_vec,   // in_right
             sp[2]->s_vec,   // grain_size
@@ -2367,6 +2593,8 @@ static void ligase_dsp(ligase_t *x, t_signal **sp) {
             sp[23]->s_vec,  // morph cursor Y (v1.1)
             sp[24]->s_vec,  // out_left
             sp[25]->s_vec,  // out_right
+            sp[26]->s_vec,  // scope_x (tap X, outlet 10)
+            sp[27]->s_vec,  // scope_y (tap Y, outlet 11)
             sp[0]->s_n);
 
     if (LIGASE_DEBUG) fprintf(stderr, "ligase_dsp: COMPLETE\n");
@@ -3148,6 +3376,59 @@ static void ligase_spatial(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
     post("ligase~: spatial source = %s instance %d (nbody body %d); send 'pan_mode 2' to engage",
          (x->scheduler->spatial_source == RAND_TYPE_SPHERE) ? "sphere" : "nbody",
          x->scheduler->spatial_instance, x->scheduler->spatial_nbody_body);
+}
+
+// scope_tap <family> [inst] — route a modulation source / grain-state view to the scope
+// signal outlets (10 = scope_x~, 11 = scope_y~). Families: sine|saw|square|perlin|rand|
+// folw (Y = readout, X = 2 Hz sweep), lorenz|nbody|sphere (X/Y = the sim's x/z plane),
+// grain (the constellation, DEFAULT grain view), grainsum (amplitude silhouette + sweep).
+// [inst] is the generator instance 1-4 (default 1; ignored by folw/grain/grainsum).
+// A MONITOR, not voice state: never captured by snapshots, never morphed.
+static void ligase_scope_tap(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    static const struct { const char *name; int family; int has_inst; } taps[] = {
+        { "sine",     SCOPE_TAP_SINE,     1 },
+        { "saw",      SCOPE_TAP_SAW,      1 },
+        { "square",   SCOPE_TAP_SQUARE,   1 },
+        { "perlin",   SCOPE_TAP_PERLIN,   1 },
+        { "rand",     SCOPE_TAP_RAND,     1 },
+        { "folw",     SCOPE_TAP_FOLW,     0 },
+        { "lorenz",   SCOPE_TAP_LORENZ,   1 },
+        { "nbody",    SCOPE_TAP_NBODY,    1 },
+        { "sphere",   SCOPE_TAP_SPHERE,   1 },
+        { "grain",    SCOPE_TAP_GRAIN,    0 },
+        { "grainsum", SCOPE_TAP_GRAINSUM, 0 },
+    };
+    if (argc < 1 || argv[0].a_type != A_SYMBOL) {
+        pd_error(x, "ligase~: scope_tap <sine|saw|square|perlin|rand|folw|lorenz|nbody|sphere|grain|grainsum> [inst 1-4]");
+        return;
+    }
+    const char *name = argv[0].a_w.w_symbol->s_name;
+    int found = -1;
+    for (int t = 0; t < (int)(sizeof(taps) / sizeof(taps[0])); t++) {
+        if (strcmp(name, taps[t].name) == 0) { found = t; break; }
+    }
+    if (found < 0) {
+        pd_error(x, "ligase~: scope_tap — unknown family '%s' (sine|saw|square|perlin|rand|folw|lorenz|nbody|sphere|grain|grainsum)", name);
+        return;
+    }
+    int inst = 1;   // user-facing 1-4; omitted -> instance 1 (predictable default)
+    if (taps[found].has_inst && argc >= 2 && argv[1].a_type == A_FLOAT) {
+        inst = (int)argv[1].a_w.w_float;
+        if (inst < 1 || inst > 4) {
+            pd_error(x, "ligase~: scope_tap %s — instance must be 1-4", name);
+            return;
+        }
+    }
+    // instance FIRST, family second: perform reads {family, instance} unsynchronized, and
+    // any interleaving must index a valid instance of SOME valid family (both are always
+    // in range, so the worst case is one block of the mixed pair — harmless on a monitor).
+    x->scope_instance = inst - 1;
+    x->scope_family = taps[found].family;
+    if (taps[found].has_inst)
+        post("ligase~: scope tap = %s %d (outlets 10/11)", name, inst);
+    else
+        post("ligase~: scope tap = %s (outlets 10/11)", name);
 }
 
 static void ligase_spatial_width(ligase_t *x, t_floatarg w) {
@@ -6525,6 +6806,15 @@ static void *ligase_new(void) {
     x->x_state_out = outlet_new(&x->x_obj, &s_list);
     // @endregion:ligase_pd.pd_external.outlets.state.creation
 
+    // SCOPE TAP signal outlets (10 = scope_x~, 11 = scope_y~) — APPENDED LAST so every
+    // existing outlet index is untouched. Default tap: the Lorenz butterfly (instance 1).
+    x->x_scope_x_out = outlet_new(&x->x_obj, &s_signal);
+    x->x_scope_y_out = outlet_new(&x->x_obj, &s_signal);
+    x->scope_family = SCOPE_TAP_LORENZ;
+    x->scope_instance = 0;
+    x->scope_sweep_phase = 0.0f;
+    x->scope_grain_scan = 0;
+
     // Initialize components
     x->reel = reel_create();
     x->envelope = envelope_create(ENVELOPE_COSINE, 4096);  // Smoother default
@@ -8300,6 +8590,7 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_pan, gensym("pan"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pan_mode, gensym("pan_mode"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_spatial, gensym("spatial"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_scope_tap, gensym("scope_tap"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_spatial_width, gensym("spatial_width"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_spatial_depth, gensym("spatial_depth"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_spatial_tilt, gensym("spatial_tilt"), A_DEFFLOAT, 0);

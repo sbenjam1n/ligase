@@ -3,73 +3,59 @@
 _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md` (§6);
 this is the "where we are / how to continue" digest._
 
-## Where we are (2026-07-05, Queue Seq 70)
+## Where we are (2026-07-06, Queue Seq 79)
 
-- **Branch state:** all new work is on **`claude/queue-execution-plans-8snsz1`** (pushed to
-  origin), ~14 commits ahead of `main`. `main` still ends at the morph completion (Seq 60).
-  **Merging the branch to `main` is pending owner action** (PR or fast-forward).
-- **All five remaining direction plans are DONE + headless-verified** (Seq 61), each built on
-  its plan's recommended GATE-A options, one commit per feature, all gated on the automated
-  test procedure at the exact baseline:
-  - **Polyphony** (`7238cb9`) — 8-voice pool, `poly <0|1>` / `chord …` / vel-0 note-off via
-    channel-aware `midi`; steal-oldest; per-voice transposition through
-    `scheduler_trigger_grain(…, voice_note, voice_active)`. Needs `pitch_mode 4` to sound.
-  - **Spatial granulation** (`2b8df2c`) — `pan_mode 2` + `spatial <sphere|nbody> [inst] [body]`;
-    per-grain frozen 3D snapshot → front-biased azimuth → constant-power gains precomputed at
-    trigger. `spatial_width/depth/tilt` (lean v1: depth/tilt inert).
-  - **Modulation matrix v1** (`bc45503`) — `matrix_connect <src> <dest> <depth>` (+ disconnect/
-    clear/dump), 44 sources (gens ×4, pattern0-7, env_l/r/mono peak follower `env_follow_ms`),
-    20 per-block dests incl. modout1-4 (compound gate); bipolar depth in dest units;
-    apply-site clamps; `mod_track_base()` prevents offset integration on self-read dests.
-  - **Pattern events** (`fdc13b1`) — `pattern event|trigger grain/splice/retrig/gate/bang`,
-    Euclid `1(3,8)` (Bjorklund), `rev`; kind tag in a parallel per-slot array written before
-    the step_count publish barrier; free-scan `pattern_alloc_event_slot`.
-  - **Resonator bank** (`a737b30`) — `smear_mode 1`: new `src/grain_smear_bank.{c,h}`, up to 16
-    whole `grain_smear` voices verbatim (Shape A, 1/N pre-scale), tuned by `smear_pitch_scale`
-    through the P1 note→Hz per block; `smear_bank_mix/feedback/resonance/stages`.
-- **Modulation matrix v1.5 is DONE** (`30235fb`, Seq 62) — six per-grain dests
-  (`speed grainsize grain_start amplitude pan pitch_fine`, alias `grainstart`) applied
-  FUNCTIONALLY at grain trigger (never write the shared fields; bitmask-guarded), speed
-  composes with the pitch override (a pin = detune around the note), and **capture
-  transparency** (`morph_capture` reads `mod_base` under an active connection — SNAP records
-  the base voice, never a wobble sample). Contract + as-built notes: **`docs/modulation_layers.md`**
-  (the four-layer precedence/capture/ownership model — read it before touching modulation).
-- **Snapshot expander (edit buffer) is DONE** (`2644a57`, Seq 63–67; plan
-  `Plans/snapshot_expander.md`) — the cold-edit sidecar: `snapbuf_load/from_live/set/get/
-  dump/store/apply/clear` over ONE shared 150-entry field walker (also drives export/import;
-  `since`-versioned). **Schema v3**: the generator ("sources") params joined snapshots —
-  "params are weather control" — with v1/v2 file compat and `morph_exclude sources` for
-  global weather. `snapbuf_apply` is the only realtime touchpoint; STORE to a placed slot
-  reshapes the blend next block. Deliberate alignment: `snapshot_recall` now honors the
-  selection tree (shared `morph_mask_excluded()`; no-op when nothing is excluded). Cold-edit
-  byte-identity proven (25 edits during recording, WAV md5 unchanged). **v1.1 audition/compare
-  shipped** (Seq 68): `snapbuf_audition <0|1>` (capture-to-revert, masked apply, EXACT revert;
-  apply mid-audition commits) + `snapbuf_compare` A/B toggle.
-- **Source shapes are DONE** (`fe90c79`, Seq 69–70; plan `Plans/source_shapes.md`) — every
-  generator's shape is settable: `waveform_phase/square_pw/saw_skew <inst> <v>` (readout-side,
-  defaults bit-identical), `lorenz_sigma/rho/beta` (ρ = the chaos knob), `sphere_spin`
-  (energy-neutral velocity curl; feeds pan_mode 2 beautifully) + `sphere_kick_rand`. All 28
-  scalars are **capture schema v4** (v1–v3 files import; old exclude indices remapped;
-  `sources` group covers them; the expander addresses them by name). Panel: the SOURCE SHAPE
-  multi-engine cluster (FAMILY×INST cursor → RATE + A–D knobs + printed legend).
-- **Panel UI mockup** — `docs/ui/ligase_synthi_panel.svg`, regenerated deterministically by
-  `docs/ui/gen_panel.py` (edit the script, run it, screenshot via the pre-installed headless
-  chromium to review). EMS-Synthi idiom: every signal inlet badged `IN n`, message/preset
-  params badged `MSG`; Presto-Patch pin matrix = the modulation matrix (22×16 subset, per-grain
-  columns behind the dashed divider); joystick = morph CV cursor (IN 23/24); PLAYHEAD strip +
-  twin QUANTIZE groups (playhead + delay, identical); LED splice select (DATA + ENTER →
-  `splice_finish_nav`); SELECT/EXPORT REEL; MOD SOURCES strip (RATE 1-4 = `noise_freq_1..4`,
-  FOLLOW, sphere/nbody physics); **XPNDR sidecar** = the snapshot expander (cold-edit legend,
-  PAGE×PARAM cursor, band-edit cluster, STORE/ASSIGN).
-- Remaining overall: **owner hardware/ear sign-off** on the new features (chord balance vs
-  `maxgrains`, spatial orbit feel, matrix musicality, burst character, resonator-bank timbre —
-  the GATE A.7 input for the v2 Karplus-Strong decision) + the §4 build-naming backlog stub +
+- **Branch state:** everything through Seq 70 is **merged to `main`** (PR #14 = Seq 61-68,
+  PR #15 = Seq 69-70). Seq 71-78 (plans, panel restyle/integration, scope taps, the panel
+  prototype + `.plugdata` bundle) is on `claude/queue-execution-plans-8snsz1`, pushed, unmerged.
+- **The panel is a WORKING INSTRUMENT** (`Plans/pd_panel_prototype.md` steps 1-5 DONE,
+  Seq 76/78). One layout source, three artifacts:
+  - `docs/ui/panel_layout.py` — the control surface AS DATA (113 records: `lgR_<id>`
+    receive symbols, bindings, engine-unit ranges per the update_inlets validation windows;
+    matrix vocabulary; per-family SOURCE SHAPE meanings; XPNDR 8×8 field map; DIST presets).
+  - `emit_svg.py` → `docs/ui/ligase_synthi_panel.svg` (the silkscreen; `gen_panel.py` is a
+    thin wrapper; render via headless chromium). Byte-identical output through the refactor.
+  - `emit_pd.py` → `pd/ligase_panel.pd` (3328 objects) + `pd/ligase_xpndr.pd` (standalone
+    expander over the `lg_engine`/`lg_state9` buses). All gates measured headless:
+    zero-error loads, knob→snapbuf readback, matrix pin ↔ `matrix_dump` round-trip,
+    joystick→morph cursor, XPNDR round-trip, SOURCE SHAPE routing, 32-slot preset bank
+    (silkscreen 1-32 → engine snapshot slots 0-31). `pd/README.md` = setup, scope hookup,
+    scripting/MIDI hook (`; lgR_<id> <v>` drives GUI + engine), honest seams
+    (`splice_finish_nav` is the 0/1 flag not a jump — B-item candidate; MASTER knob
+    deliberately unwired; GAUS/EXP silkscreen-forward).
+  - **`make bundle` → `dist/ligase.plugdata`** (Seq 78): drag-drop install for plugdata
+    STANDALONE ≥ 0.9.2, matched against the actual loader (`installPackage()`: ZIP →
+    top-level dir into `Patches/`; `meta.json` PatchInfo keys; `FolderName: ligase`).
+    Deterministic (rebuild sha256-identical), `--verify` structural check, install
+    simulated (extract + load: zero errors; external AND `ligase.conf` load from the
+    package). Build on the Mac so `ligase~.pd_darwin` rides along.
+  - Panel geometry (owner-directed, Seq 76): SCOPE display = exact 216×216 twin of the
+    joystick pad, top-aligned with the metasurface grid; PRESETS = 4×8 = 32 slots.
+- **Scope taps are DONE** (Seq 74, `Plans/scope_taps.md`): `scope_x~`/`scope_y~` signal
+  outlets 10/11, 11-family `scope_tap` table (default `lorenz 1` — the butterfly), the
+  grain CONSTELLATION (X = splice pos, Y = env×amp, one grain/sample; idle beam parks at
+  0,0) + `grainsum`; every tap's shape measured in captured outlet data. Monitor, not
+  voice state (never captured/morphed). Gotcha: bare `play` STOPS — drive tests with
+  `play 1`.
+- **Feature set shipped this session (all merged or on-branch, each regression-exact):**
+  poly (8-voice pool, needs `pitch_mode 4`), spatial (`pan_mode 2` + sphere/nbody),
+  matrix v1 + v1.5 (44 src × 26 dest incl. six per-grain dests with capture transparency),
+  pattern events (Euclid + `rev`), resonator bank (`smear_mode 1`), snapshot expander
+  (`snapbuf_*` cold-edit buffer + audition/compare, schema v3), source shapes (waveform
+  phase/PW/skew, lorenz σρβ, sphere spin/kick, schema v4), scope taps. Contract doc:
+  **`docs/modulation_layers.md`** — read it before touching modulation/capture/morph.
+- **VST plan** (`Plans/vst_plugin.md`) at GATE A: v1 = plugdata fork with ligase COMPILED
+  IN (no runtime external loading in plugin hosts), panel = GUI, ~16 host params.
+  **License decision DEFERRED by owner (Seq 77)** — "no one is using it but us";
+  personal-use builds unaffected; re-raise only at distribution time.
+- Remaining overall: owner hands-on/ear gates (below) + §4 build-naming backlog stub +
   morph FX scalar bases for distortion-enhancement/stut/bencina (minor).
 
 ## What ligase~ is
-- Pure Data granular synth / sampler / looper / delay external. C, GPL-v2. Repo `sbenjam1n/ligase`.
-- **Hardware-synth PROTOTYPE** → design every parameter to be **signal/CV-driven via its inlet**
-  where an inlet exists; message-only params should be modulation-matrix reachable.
+- Pure Data granular synth / sampler / looper / delay external. C, GPL-v2 (plain, no
+  or-later — deferral noted above). Repo `sbenjam1n/ligase`.
+- **Hardware-synth PROTOTYPE** → design every parameter to be **signal/CV-driven via its
+  inlet** where an inlet exists; message-only params should be matrix-reachable.
 - Owner runs **plugdata 0.9.2 on an Intel Mac** + a Focusrite. Cloud sessions run Linux.
 
 ## Working conventions (carry these — they bit us when ignored)
@@ -77,12 +63,17 @@ this is the "where we are / how to continue" digest._
   (cloud-session convention). Older `main` history used the owner-identity convention.
 - **Do NOT regenerate the PDF.** `docs/ligase_manual.md` is the source of truth; the PDF is
   intentionally stale. `make manual` ONLY when the owner explicitly asks.
+- **Panel/patches are GENERATED — hand-tweaks go in `panel_layout.py`**, then re-run
+  `gen_panel.py` + `emit_pd.py` (+ `make bundle` if shipping). Never edit the artifacts.
 - **No "fog" in new comments** — replaced by the allpass **smear**.
 - **plugdata caches the external**: a new build needs a full plugdata quit+relaunch.
 - **After pulling, `make clean && make` once** (header deps tracked via `-MMD -MP`, B26).
 - **Read `docs/modulation_layers.md` before changing modulation/capture/morph code** — it is
   the precedence + capture-transparency contract; violating it reintroduces the v1 SNAP bug.
-- **QUEUE discipline:** bump Queue Seq + one-line §6 entry on any §1/§4a change; plans live in
+- **Class-construction trap:** appending signal inlets/outlets requires the dsp_add arg
+  growth + ALL FOUR perform `return (w+N)` bumps (current: dsp_add 30, returns `(w+31)`,
+  outlets 0-11).
+- **QUEUE discipline:** bump Queue Seq + one-line §6 entry on §1/§4a changes; plans live in
   `Plans/`, GATE-A style with [R] recommendations; the owner approves gates (sometimes
   wholesale: "take the recommendations").
 
@@ -94,41 +85,56 @@ this is the "where we are / how to continue" digest._
   default behavior changed — investigate before committing.
 - **pd hygiene (cost real time):** `pkill -9 pd` before runs; wrap in `timeout -s KILL <n>s`;
   every test patch must self-quit (`[delay]` → `\; pd quit`) or pd hangs forever; loadbang
-  `\; pd dsp 1` (required under `-nosound`).
-- Capture audio with `writesf~ 2` (wire `stop` → writesf~, or the WAV header never finalizes);
-  float-extensible WAVs need `sox -b 16 -e signed` conversion before python's `wave` reads them.
-- To HEAR delay wet: `sos 0` + `gdelay_mix 1` (default sos masks it). Headless 0 honors an
-  unconnected inlet's literal 0 (it overwrites params) — use headless 1 for message-only tests.
-- Grain debug: the first 5 triggers + first 8 finals print to stderr
-  (`grain triggered #` / `grain final #`) — the finals show per-grain matrix offsets landing.
+  `\; pd dsp 1` (required under `-nosound`); **bare `play` STOPS — use `play 1`**; msg
+  boxes don't chain to delays (use parallel loadbang→delay branches).
+- Capture audio with `writesf~ 2` (wire `stop` → writesf~, or the WAV header never
+  finalizes); float-extensible WAVs need `sox -b 16 -e signed` before python's `wave`.
+- To HEAR delay wet: `sos 0` + `gdelay_mix 1`. Headless 0 honors an unconnected inlet's
+  literal 0 — use headless 1 for message-only tests. `query` returns 0 for unmodulated
+  scalars — probe via `snapbuf_from_live` + `snapbuf_get <field>` instead.
+- **Panel patches are the scripting harness too:** `; lgR_<id> <val>` (ids in
+  `panel_layout.py`) drives any control headless — used for all the panel gates.
 - Owner-side (Mac): `ligase~.pd_darwin`, plugdata; test plans in `TEST_PLAN_MACOS.md`.
 
 ## Control-surface quick map (what shipped this session)
 - Poly: `poly 1`, `chord 60 64 67`, `midi <n> <vel> <ch>` (vel 0 = off), needs `pitch_mode 4`.
 - Spatial: `spatial sphere 0` / `spatial nbody 2 1`, `pan_mode 2`, `spatial_width <0-1>`.
-- Matrix: `matrix_connect env_mono moog_cutoff 3000`; per-grain: `matrix_connect rand1 grainsize 0.5`;
-  `matrix_dump`, `env_follow_ms 300`. Full lists in the manual's MODULATION MATRIX section.
+- Matrix: `matrix_connect env_mono moog_cutoff 3000`; per-grain: `matrix_connect rand1
+  grainsize 0.5`; `matrix_dump`, `env_follow_ms 300`. Full lists in the manual.
 - Events: `pattern event grain [ 1(3,8) ]`; actions grain/splice/retrig/gate/bang; `rev`.
-- Bank: `smear_pitch_scale 0 4 7` + `smear_mode 1` + `smear_bank_mix 0.5` (+ resonance ~0.998
-  for tight tuning).
+- Bank: `smear_pitch_scale 0 4 7` + `smear_mode 1` + `smear_bank_mix 0.5`.
 - Expander: `snapbuf_load 2` → `snapbuf_get moog_cutoff` → `snapbuf_set moog_cutoff 620` →
-  `snapbuf_store 2` / `snapbuf_apply`; edits are COLD; get/dump report on the state outlet.
-- (Earlier arcs — patterns P1-P3, smear pitch, MIDI routing, fine tune, one-shot, morph — are
-  documented in the manual and QUEUE §6; the pattern mini-notation digest lives in the manual's
-  PATTERNS section. Pattern tests: `tests/pattern/`; morph: `tests/morph/`.)
+  `snapbuf_store 2` / `snapbuf_apply`; `snapbuf_audition 1/0` (exact revert),
+  `snapbuf_compare` (A/B). Edits are COLD; get/dump report on the state outlet (9).
+- Source shapes: `waveform_phase/square_pw/saw_skew <inst> <v>`, `lorenz_sigma/rho/beta
+  <inst> <v>`, `sphere_spin <inst> <v>`, `sphere_kick_rand <inst>`.
+- Scope: `scope_tap lorenz 1` (default) / `scope_tap grain` / `scope_tap grainsum` →
+  outlets 10/11 → `[oscilloscope~]` in XY mode.
+- Snapshots ARE the presets: panel slots 1-32 → `snapshot 0-31` / `snapshot_recall 0-31`;
+  place any slot on the morph surface.
 
 ## Immediate next steps
-1. Owner ear-test round on the new features (list above) + the expander workflow feel (AC6)
-   — file findings as new B-items. (Branch was PR'd → `main` and merged at Seq 68.)
-4. Parked ideas: source-rates-as-matrix-destinations (matrix-on-matrix; matrix plan's domain);
-   expander v1.1 = audition + A/B compare pair; morph FX bases completeness; §4 build-naming
-   cleanup (only when cutting a release); `make manual` when the owner asks (much accumulated).
+1. **Owner hands-on gate** (panel plan Step 6): on the Mac, `make && make bundle` (adds
+   `ligase~.pd_darwin`), drag `dist/ligase.plugdata` into plugdata standalone, feel test
+   (knob ranges, matrix workflow, scope hookup per the package README); findings become
+   `panel_layout.py` data edits.
+2. Owner ear-test round on the feature set (chord balance vs `maxgrains`, spatial orbit
+   feel, matrix musicality, resonator-bank timbre = the GATE A.7 KS input, scope
+   usefulness while dialing SOURCE SHAPE) — file findings as new B-items.
+3. `Plans/vst_plugin.md` v1 build (plugdata fork, ligase compiled in) whenever the owner
+   greenlights — license deferral does not block personal-use builds.
+4. Parked: source-rates-as-matrix-destinations (matrix-on-matrix); morph FX bases
+   completeness; §4 build-naming cleanup (only when cutting a release); `make manual` when
+   the owner asks (much accumulated); splice jump-to-N message (panel B-item candidate).
 
 ## Pointers
-- `QUEUE.md` — full changelog (§4a plan coverage; §6 history to Seq 66).
+- `QUEUE.md` — Seq 79; §4a plan coverage; §6 history is the changelog.
 - `docs/modulation_layers.md` — the modulation-layer contract (precedence, capture, ownership).
-- `Plans/snapshot_expander.md` — the expander's spec + measured acceptance criteria (DONE).
-- `docs/ui/gen_panel.py` → `docs/ui/ligase_synthi_panel.svg` — the control-surface mockup.
+- `docs/ui/panel_layout.py` → `emit_svg.py` (silkscreen) + `emit_pd.py` (`pd/` patches) +
+  `emit_bundle.py` (`dist/ligase.plugdata`) — the control surface, single-sourced.
+- `pd/README.md` — how to install/open/script/MIDI-map the panel.
+- `Plans/` — execution plans (`pd_panel_prototype.md` steps 1-5 done; `vst_plugin.md` at
+  GATE A; completed plans archived in `Plans/completed/`).
 - `tests/` — per-feature headless acceptance patches (`polyphony/ spatial/ modmatrix/
-  pattern_events/ resonator/ pattern/ morph/ param_lock/`).
+  pattern_events/ resonator/ pattern/ morph/`).
 - `docs/ligase_manual.md` — manual source (PDF intentionally stale).
