@@ -2,7 +2,8 @@
 
 **Owner:** SLB
 **Date:** 2026-07-05
-**Status:** IN PROGRESS — **GATE A cleared 2026-07-06** (owner: "continue", following the take-the-recommendations pattern): plugdata dialect; two canvases; generated via emit_pd; DEPTH-knob-at-pin-time matrix policy; headless-0 all-inlets-driven contract; 10 Hz display poll; snapshots ARE the preset system. Note: the layout source of truth is the CURRENT docs/ui/gen_panel.py (single chassis, SCOPE card, integrated expander column) — it has evolved past this plan's prose.
+**Status:** IN PROGRESS — **GATE A cleared 2026-07-06** (owner: "continue", following the take-the-recommendations pattern): plugdata dialect; two canvases; generated via emit_pd; DEPTH-knob-at-pin-time matrix policy; headless-0 all-inlets-driven contract; 10 Hz display poll; snapshots ARE the preset system. Note: the layout source of truth is the CURRENT docs/ui layout data (single chassis, SCOPE card, integrated expander column) — it has evolved past this plan's prose.
+**Steps 1–4 DONE + headless-verified 2026-07-06 (Seq 76):** `panel_layout.py` (layout AS DATA) + `emit_svg.py` (SVG **byte-identical** to the committed silkscreen) + `emit_pd.py` → `pd/ligase_panel.pd` (3328 objects) + `pd/ligase_xpndr.pd` + `pd/README.md`. All step gates measured: zero-error headless loads, knob→snapbuf readback, matrix pin ↔ matrix_dump round-trip, joystick→morph cursor, XPNDR canvas round-trip, SOURCE SHAPE routing sends, regression at the exact baseline. As-built seams recorded in `pd/README.md` (splice_finish_nav = flag not jump → B-item candidate; MASTER knob unwired by design; GAUS/EXP silkscreen-forward). Remaining: **Step 5** `.plugdata` bundle + **Step 6** owner hands-on.
 **Tracked in:** `QUEUE.md` §4a (prototyping/UI/VST arc, Seq 71)
 **Related:** `docs/ui/gen_panel.py` → `docs/ui/ligase_synthi_panel.svg` (the design this
 makes real), `Plans/snapshot_expander.md` (the XPNDR API the sidecar canvas speaks),

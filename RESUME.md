@@ -3,7 +3,7 @@
 _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md` (§6);
 this is the "where we are / how to continue" digest._
 
-## Where we are (2026-07-06, Queue Seq 74)
+## Where we are (2026-07-06, Queue Seq 76)
 
 - **Branch state:** everything through Seq 70 is **merged to `main`** (PR #14 = Seq 61-68,
   PR #15 = Seq 69-70). Seq 71-73 work (plans + panel restyle/integration + the in-flight
@@ -52,24 +52,27 @@ this is the "where we are / how to continue" digest._
   scalars are **capture schema v4** (v1–v3 files import; old exclude indices remapped;
   `sources` group covers them; the expander addresses them by name). Panel: the SOURCE SHAPE
   multi-engine cluster (FAMILY×INST cursor → RATE + A–D knobs + printed legend).
-- **Panel UI mockup** — `docs/ui/ligase_synthi_panel.svg`, regenerated deterministically by
-  `docs/ui/gen_panel.py` (edit → run → screenshot via the pre-installed headless chromium).
-  **Restyled Seq 70+: minimalist-luxury chromecore Buchla** (brushed-aluminum panel, colored-
-  skirt knobs with chrome domes, banana jacks, hairline sections, recessed dark beds) and
-  **integrated into ONE chassis** (the XPNDR sidecar dissolved into a third column; MONITOR
-  relocated beneath COMMIT). Layout: left = the inlet strips; middle = Presto-Patch matrix
-  (22×16, per-grain divider) + SOURCE SHAPE multi-engine cluster + MORPH joystick + the
-  **SCOPE card** (294×186 phosphor bed with a genuinely integrated Lorenz trace — the
-  metasurface's visual twin); right = the expander column + MONITOR. Every signal inlet
-  badged `IN n`, message params `MSG`.
-- **Prototyping/UI/VST arc queued (Seq 71-72)**: `Plans/pd_panel_prototype.md` (layout
-  single-source → SVG + .pd emitters) and `Plans/vst_plugin.md` (v1 = plugdata with ligase
-  COMPILED IN — no runtime external loading in plugin hosts; LICENSE gate: plain GPL-2 vs
-  GPLv3 hosts) both at GATE A. `Plans/scope_taps.md` (Seq 72-74) is **DONE +
-  headless-verified**: scope_x~/scope_y~ signal outlets 10/11, 11-family `scope_tap` table
-  (default lorenz 1 — the butterfly), the grain CONSTELLATION (X = splice pos, Y = env×amp,
-  one grain/sample; idle beam parks at 0,0) + grainsum; every tap's shape measured in
-  captured outlet data. Gotcha recorded: bare `play` STOPS — drive tests with `play 1`.
+- **Panel = layout-as-data, TWO emitters (Seq 76)** — `docs/ui/panel_layout.py` is the single
+  source of truth (113 control records with bindings + engine-unit ranges, matrix vocabulary,
+  per-family SOURCE SHAPE meanings, XPNDR field map, distortion presets); `emit_svg.py` renders
+  the silkscreen `docs/ui/ligase_synthi_panel.svg` (`gen_panel.py` is a thin wrapper; edit →
+  run → screenshot via headless chromium) and `emit_pd.py` emits the WORKING patches
+  `pd/ligase_panel.pd` + `pd/ligase_xpndr.pd` (see `pd/README.md`; every control has a
+  `lgR_<id>` receive symbol = the scripting/MIDI hook). Style: minimalist-luxury chromecore
+  Buchla, ONE chassis (expander = third column). Geometry (owner-directed): SCOPE display is
+  the exact 216×216 twin of the joystick pad, top-aligned; PRESETS = 4×8 = 32 slots
+  (silkscreen 1-32 → engine snapshot slots 0-31). Every signal inlet badged `IN n`, message
+  params `MSG`.
+- **Prototyping/UI/VST arc (Seq 71-76)**: `Plans/scope_taps.md` **DONE** (scope_x~/scope_y~
+  outlets 10/11, 11-family `scope_tap` table default lorenz 1, grain CONSTELLATION
+  X = splice pos / Y = env×amp + grainsum; every tap's shape measured; gotcha: bare `play`
+  STOPS — drive tests with `play 1`). `Plans/pd_panel_prototype.md` **steps 1-4 DONE**
+  (Seq 76): the panel is now a WORKING patch — all gates measured headless (zero-error
+  loads, knob→snapbuf readback, matrix pin ↔ matrix_dump, joystick→morph cursor, XPNDR
+  round-trip, SOURCE SHAPE routing). Remaining there: Step 5 `.plugdata` bundle
+  (owner-approved: panel patches + README + conf + both platform externals, drag-drop
+  install into plugdata STANDALONE) + Step 6 owner hands-on. `Plans/vst_plugin.md` still at
+  GATE A (v1 = plugdata with ligase COMPILED IN; LICENSE gate: plain GPL-2 vs GPLv3 hosts).
 - Remaining overall: **owner hardware/ear sign-off** on the new features (chord balance vs
   `maxgrains`, spatial orbit feel, matrix musicality, burst character, resonator-bank timbre —
   the GATE A.7 input for the v2 Karplus-Strong decision) + the §4 build-naming backlog stub +
@@ -127,9 +130,16 @@ this is the "where we are / how to continue" digest._
   PATTERNS section. Pattern tests: `tests/pattern/`; morph: `tests/morph/`.)
 
 ## Immediate next steps
-1. Owner ear-test round on the new features (list above) + the expander workflow feel (AC6)
-   — file findings as new B-items. (Branch was PR'd → `main` and merged at Seq 68.)
-4. Parked ideas: source-rates-as-matrix-destinations (matrix-on-matrix; matrix plan's domain);
+1. **`.plugdata` bundle** (`Plans/pd_panel_prototype.md` Step 5, owner-approved): emit_bundle /
+   `make bundle` → `ligase.plugdata` (panel patches + README + conf + both platform
+   externals); container layout must be checked against plugdata's loader; drag-drop install
+   is the owner-machine test.
+2. Owner hands-on gate: open `pd/ligase_panel.pd` in plugdata on the Mac (feel test — knob
+   ranges, matrix workflow, scope hookup per `pd/README.md`); findings become layout-data edits.
+3. Owner ear-test round on the new features (list above) + the expander workflow feel (AC6)
+   — file findings as new B-items.
+4. `Plans/vst_plugin.md` GATE A: the LICENSE decision (GPL-2-only vs "or later") is the owner's.
+5. Parked ideas: source-rates-as-matrix-destinations (matrix-on-matrix; matrix plan's domain);
    expander v1.1 = audition + A/B compare pair; morph FX bases completeness; §4 build-naming
    cleanup (only when cutting a release); `make manual` when the owner asks (much accumulated).
 
@@ -137,7 +147,8 @@ this is the "where we are / how to continue" digest._
 - `QUEUE.md` — full changelog (§4a plan coverage; §6 history to Seq 66).
 - `docs/modulation_layers.md` — the modulation-layer contract (precedence, capture, ownership).
 - `Plans/snapshot_expander.md` — the expander's spec + measured acceptance criteria (DONE).
-- `docs/ui/gen_panel.py` → `docs/ui/ligase_synthi_panel.svg` — the control-surface mockup.
+- `docs/ui/panel_layout.py` → `emit_svg.py` (silkscreen SVG) + `emit_pd.py` (`pd/` patches) —
+  the control surface, single-sourced; `pd/README.md` = how to open/script/MIDI-map it.
 - `tests/` — per-feature headless acceptance patches (`polyphony/ spatial/ modmatrix/
   pattern_events/ resonator/ pattern/ morph/ param_lock/`).
 - `docs/ligase_manual.md` — manual source (PDF intentionally stale).
