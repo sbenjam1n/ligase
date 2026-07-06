@@ -712,6 +712,17 @@ typedef struct {
     // Waveform LFO phase accumulators (one per instance, 0.0-1.0)
     float waveform_phase[4];
 
+    // SOURCE SHAPE (capture schema v4) — per-instance READOUT shaping for the waveform
+    // LFOs. All three modify only how sine/saw/square READ the shared per-instance
+    // phase accumulator above; the phase ADVANCE is untouched, so sineN/sawN/squareN
+    // stay phase-locked siblings and the defaults are bit-identical to the unshaped
+    // readouts. Set by the waveform_phase/square_pw/saw_skew messages (clamped there);
+    // snapshot state restored through the same clamps.
+    float waveform_phase_offset[4]; // 0-1 phase offset added at readout (default 0)
+    float square_pw[4];             // square pulse width / duty 0.05-0.95 (default 0.5)
+    float saw_skew[4];              // saw skew 0-1: 0 = ramp up (default), 0.5 = triangle,
+                                    // 1 = ramp down (rise time = (1-skew) of the period)
+
     // Pattern (mini-notation) slots — compiled tables + free-running cycle phase per slot.
     // Covered by the scheduler_create memset (perlin_state is a value member of scheduler_t),
     // so step_count==0 (inactive) for every slot on construction.

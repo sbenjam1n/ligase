@@ -16,10 +16,18 @@
 #define MORPH_MAX_WAYPOINTS  64
 #define MORPH_RANGE_COUNT    45   // get_param_range_by_name (41) + saw_cycles + saw_depth
                                   //   + pitch.semitone_range + smear_pitch.semitone_range
-#define MORPH_SCALAR_COUNT   64   // continuous scalar bases (fixed upper bound; capture table <= this)
+#define MORPH_SCALAR_COUNT   96   // continuous scalar bases (fixed upper bound; capture table <= this).
+                                  //   Grown 64->96 for the schema-v4 SOURCE SHAPE scalars (61 used + 28
+                                  //   new = 89 > 64). CAUTION: the included[] index layout is (ranges,
+                                  //   then SCALAR_COUNT scalars, then discretes), so this growth SHIFTS
+                                  //   the discrete include-indices in exported files: v1-v3 exports wrote
+                                  //   discrete indices from base 45+64=109; v4 writes them from 45+96=141.
+                                  //   morph_import remaps old-layout exclude indices by file version
+                                  //   (see MORPH_SCALAR_COUNT_V3 and the "exclude" handler in ligase~.c).
+#define MORPH_SCALAR_COUNT_V3 64  // the pre-v4 scalar capacity — the OLD included[] layout stride,
+                                  //   kept only for the import-time exclude-index remap
 #define MORPH_DISCRETE_COUNT 48   // discrete modes/enums/channels (fixed upper bound; grown 32->48 for
-                                  //   the schema-v3 generator discretes — the included[] index layout
-                                  //   (ranges, then SCALAR_COUNT scalars, then discretes) is unchanged)
+                                  //   the schema-v3 generator discretes)
 
 #define MORPH_INCLUDE_COUNT (MORPH_RANGE_COUNT + MORPH_SCALAR_COUNT + MORPH_DISCRETE_COUNT)
 
@@ -30,13 +38,16 @@
 //   v3 appends the GENERATOR ("sources") params: scalars +29 (noise_freq_1..4,
 //   env_follow_ms, sphere_damping/elasticity x4, nbody G/damping/epsilon/pump x4),
 //   discretes +12 (nbody pump_interval/mode x4, sphere mode x4).
+//   v4 appends the SOURCE SHAPE params: scalars +28 (waveform_phase_1..4,
+//   square_pw_1..4, saw_skew_1..4, lorenz sigma/rho/beta x4, sphere_spin_1..4).
 // Bump MORPH_TEXT_VERSION whenever this schema changes. Import still accepts older
 // versions: fields with a newer `since` tag in the walker keep their current values.
 #define MORPH_SCALAR_USED_V2   32   // v1/v2 file layout (scalars written before v3)
 #define MORPH_DISCRETE_USED_V2 30   // v1/v2 file layout (discretes written before v3)
-#define MORPH_SCALAR_USED   61      // v3: 32 + 29 generator scalars
-#define MORPH_DISCRETE_USED 42      // v3: 30 + 12 generator discretes
-#define MORPH_TEXT_VERSION  3   /* v3 adds the generator ("sources") params; v1/v2 still import */
+#define MORPH_SCALAR_USED_V3   61   // v3 file layout (scalars written before v4)
+#define MORPH_SCALAR_USED   89      // v4: 32 + 29 generator + 28 source-shape scalars
+#define MORPH_DISCRETE_USED 42      // v3/v4: 30 + 12 generator discretes
+#define MORPH_TEXT_VERSION  4   /* v4 adds the SOURCE SHAPE params; v1-v3 still import */
 
 // Route-leg easing curves
 enum {
