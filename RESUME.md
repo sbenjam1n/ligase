@@ -3,7 +3,7 @@
 _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md` (§6);
 this is the "where we are / how to continue" digest._
 
-## Where we are (2026-07-05, Queue Seq 68)
+## Where we are (2026-07-05, Queue Seq 70)
 
 - **Branch state:** all new work is on **`claude/queue-execution-plans-8snsz1`** (pushed to
   origin), ~14 commits ahead of `main`. `main` still ends at the morph completion (Seq 60).
@@ -45,6 +45,13 @@ this is the "where we are / how to continue" digest._
   byte-identity proven (25 edits during recording, WAV md5 unchanged). **v1.1 audition/compare
   shipped** (Seq 68): `snapbuf_audition <0|1>` (capture-to-revert, masked apply, EXACT revert;
   apply mid-audition commits) + `snapbuf_compare` A/B toggle.
+- **Source shapes are DONE** (`fe90c79`, Seq 69–70; plan `Plans/source_shapes.md`) — every
+  generator's shape is settable: `waveform_phase/square_pw/saw_skew <inst> <v>` (readout-side,
+  defaults bit-identical), `lorenz_sigma/rho/beta` (ρ = the chaos knob), `sphere_spin`
+  (energy-neutral velocity curl; feeds pan_mode 2 beautifully) + `sphere_kick_rand`. All 28
+  scalars are **capture schema v4** (v1–v3 files import; old exclude indices remapped;
+  `sources` group covers them; the expander addresses them by name). Panel: the SOURCE SHAPE
+  multi-engine cluster (FAMILY×INST cursor → RATE + A–D knobs + printed legend).
 - **Panel UI mockup** — `docs/ui/ligase_synthi_panel.svg`, regenerated deterministically by
   `docs/ui/gen_panel.py` (edit the script, run it, screenshot via the pre-installed headless
   chromium to review). EMS-Synthi idiom: every signal inlet badged `IN n`, message/preset

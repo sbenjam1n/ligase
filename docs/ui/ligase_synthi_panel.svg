@@ -1026,11 +1026,11 @@
 <text x="1414.0" y="689" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">1</text>
 <text x="1429.3333333333333" y="689" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#9aa0a6" text-anchor="middle">2</text>
 <text x="1442" y="675" font-family="Helvetica, Arial, sans-serif" font-size="6.3" fill="#9aa0a6" text-anchor="start">MODE</text>
-<text x="824" y="678" font-family="Helvetica, Arial, sans-serif" font-size="6.4" fill="#9aa0a6" text-anchor="start">A    SIN/SAW/SQR: PHASE*   PERL: FREQ   LRNZ: SIGMA*   NBDY: G   SPHR: DAMP   FOLW: RELEASE ms</text>
-<text x="824" y="688" font-family="Helvetica, Arial, sans-serif" font-size="6.4" fill="#9aa0a6" text-anchor="start">B    SAW: SKEW*   SQR: PULSE WIDTH*   LRNZ: RHO*   NBDY: DAMP   SPHR: ELAST</text>
-<text x="824" y="698" font-family="Helvetica, Arial, sans-serif" font-size="6.4" fill="#9aa0a6" text-anchor="start">C    LRNZ: BETA*   NBDY: EPSILON   SPHR: SPIN*        D    NBDY: PUMP amt (hold = interval)   SPHR: KICK strength</text>
+<text x="824" y="678" font-family="Helvetica, Arial, sans-serif" font-size="6.4" fill="#9aa0a6" text-anchor="start">A    SIN/SAW/SQR: PHASE   PERL: FREQ   LRNZ: SIGMA   NBDY: G   SPHR: DAMP   FOLW: RELEASE ms</text>
+<text x="824" y="688" font-family="Helvetica, Arial, sans-serif" font-size="6.4" fill="#9aa0a6" text-anchor="start">B    SAW: SKEW   SQR: PULSE WIDTH   LRNZ: RHO (chaos)   NBDY: DAMP   SPHR: ELAST</text>
+<text x="824" y="698" font-family="Helvetica, Arial, sans-serif" font-size="6.4" fill="#9aa0a6" text-anchor="start">C    LRNZ: BETA   NBDY: EPSILON   SPHR: SPIN        D    NBDY: PUMP amt (hold = interval)   SPHR: KICK strength</text>
 <text x="824" y="708" font-family="Helvetica, Arial, sans-serif" font-size="6.4" fill="#9aa0a6" text-anchor="start">RATE = IOT x scale (sources breathe with grain density; GLOBAL per instance)  ·  KICK = sphere_kick impulse  ·  RESET per family</text>
-<text x="1434" y="708" font-family="Helvetica, Arial, sans-serif" font-size="6.4" fill="#d9c48a" text-anchor="end">* = engine addition (schema v4)</text>
+<text x="1434" y="708" font-family="Helvetica, Arial, sans-serif" font-size="6.4" fill="#d9c48a" text-anchor="end">all captured — schema v4</text>
 <rect x="798" y="724" width="436" height="268" rx="6" fill="none" stroke="#5c6167" stroke-width="1"/>
 <rect x="810" y="717" width="189" height="14" fill="#26292e"/>
 <circle cx="817" cy="724" r="3" fill="#5a9e6a"/>
@@ -1299,5 +1299,5 @@
 <line x1="40" y1="1038" x2="1874" y2="1038" stroke="#5c6167" stroke-width="0.8"/>
 <text x="46" y="1052" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="start">Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save</text>
 <text x="46" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="start">BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix &amp; param_range)</text>
-<text x="1474" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="end">ligase~ — QUEUE Seq 68 feature set</text>
+<text x="1474" y="1066" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#9aa0a6" text-anchor="end">ligase~ — QUEUE Seq 70 feature set</text>
 </svg>

@@ -321,11 +321,11 @@ switch(MSX+616, mky+38, 46, ["0","1","2"], 1)
 text(MSX+644, mky+41, "MODE", 6.3, MUTED, "start")
 # printed per-family legend (Synthi/Plaits idiom: same knobs, per-family meaning)
 lx = MSX+26; ly = MSY+80
-text(lx, ly,    "A    SIN/SAW/SQR: PHASE*   PERL: FREQ   LRNZ: SIGMA*   NBDY: G   SPHR: DAMP   FOLW: RELEASE ms", 6.4, MUTED, "start")
-text(lx, ly+10, "B    SAW: SKEW*   SQR: PULSE WIDTH*   LRNZ: RHO*   NBDY: DAMP   SPHR: ELAST", 6.4, MUTED, "start")
-text(lx, ly+20, "C    LRNZ: BETA*   NBDY: EPSILON   SPHR: SPIN*        D    NBDY: PUMP amt (hold = interval)   SPHR: KICK strength", 6.4, MUTED, "start")
+text(lx, ly,    "A    SIN/SAW/SQR: PHASE   PERL: FREQ   LRNZ: SIGMA   NBDY: G   SPHR: DAMP   FOLW: RELEASE ms", 6.4, MUTED, "start")
+text(lx, ly+10, "B    SAW: SKEW   SQR: PULSE WIDTH   LRNZ: RHO (chaos)   NBDY: DAMP   SPHR: ELAST", 6.4, MUTED, "start")
+text(lx, ly+20, "C    LRNZ: BETA   NBDY: EPSILON   SPHR: SPIN        D    NBDY: PUMP amt (hold = interval)   SPHR: KICK strength", 6.4, MUTED, "start")
 text(lx, ly+30, "RATE = IOT x scale (sources breathe with grain density; GLOBAL per instance)  ·  KICK = sphere_kick impulse  ·  RESET per family", 6.4, MUTED, "start")
-text(MSX+636, ly+30, "* = engine addition (schema v4)", 6.4, "#d9c48a", "end")
+text(MSX+636, ly+30, "all captured — schema v4", 6.4, "#d9c48a", "end")
 
 # ---------- RIGHT-BOTTOM: JOYSTICK (morph) ----------
 JX, JY, JS = 812, 760, 216
@@ -453,7 +453,7 @@ fy = H - 44
 parts.append(f'<line x1="40" y1="{fy-14}" x2="{W-40}" y2="{fy-14}" stroke="{LINE}" stroke-width="0.8"/>')
 text(46, fy, "Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save", size=8, fill=MUTED, anchor="start")
 text(46, fy+14, "BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix & param_range)", size=8, fill=MUTED, anchor="start")
-text(MAINW-46, fy+14, "ligase~ — QUEUE Seq 68 feature set", size=8, fill=MUTED, anchor="end")
+text(MAINW-46, fy+14, "ligase~ — QUEUE Seq 70 feature set", size=8, fill=MUTED, anchor="end")
 
 svg = f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" viewBox="0 0 {W} {H}">\n' + "\n".join(p for p in parts if p) + "\n</svg>\n"
 import os

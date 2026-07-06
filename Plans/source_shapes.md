@@ -2,8 +2,11 @@
 
 **Owner:** SLB
 **Date:** 2026-07-05
-**Status:** APPROVED — GATE A taken at the [R] recommendations per owner ("yes" to
-author-and-build, 2026-07-05, following the SOURCE SHAPE panel design at Seq 69).
+**Status:** ✅ **DONE + headless-verified (2026-07-05, commit fe90c79).** GATE A taken at
+the [R] recommendations per owner. As-built corrections: **28** new scalars (7 params ×
+4 instances — the summary said 24, the table was authoritative); square polarity = HIGH
+for the final `pw` fraction (duty == pw AND the pw-0.5 default bit-identical — the
+"high while phase < pw" wording contradicted the default constraint). See QUEUE Seq 70.
 **Tracked in:** `QUEUE.md` §4a
 **Related:** `docs/ui/ligase_synthi_panel.svg` (the SOURCE SHAPE multi-engine cluster,
 drawn with the new params marked `*`), `docs/modulation_layers.md` (sources are voice
@@ -63,7 +66,7 @@ GATE-A decisions, taken at [R]:
 
 ## Capture / persistence (schema v4)
 
-- 24 new scalars (`waveform_phase_1..4`, `square_pw_1..4`, `saw_skew_1..4`,
+- 28 new scalars (`waveform_phase_1..4`, `square_pw_1..4`, `saw_skew_1..4`,
   `lorenz_sigma/rho/beta_1..4`, `sphere_spin_1..4`) join `morph_snapshot_t`,
   capture/restore (through the setters' clamps), and the shared walker with
   `since = 4`. (`sphere_kick_rand` is an event, not state — not captured.)
