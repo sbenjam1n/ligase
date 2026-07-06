@@ -3,11 +3,11 @@
 _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md` (§6);
 this is the "where we are / how to continue" digest._
 
-## Where we are (2026-07-05, Queue Seq 70)
+## Where we are (2026-07-05, Queue Seq 73)
 
-- **Branch state:** all new work is on **`claude/queue-execution-plans-8snsz1`** (pushed to
-  origin), ~14 commits ahead of `main`. `main` still ends at the morph completion (Seq 60).
-  **Merging the branch to `main` is pending owner action** (PR or fast-forward).
+- **Branch state:** everything through Seq 70 is **merged to `main`** (PR #14 = Seq 61-68,
+  PR #15 = Seq 69-70). Seq 71-73 work (plans + panel restyle/integration + the in-flight
+  scope-taps build) is on `claude/queue-execution-plans-8snsz1`, pushed, unmerged.
 - **All five remaining direction plans are DONE + headless-verified** (Seq 61), each built on
   its plan's recommended GATE-A options, one commit per feature, all gated on the automated
   test procedure at the exact baseline:
@@ -53,14 +53,23 @@ this is the "where we are / how to continue" digest._
   `sources` group covers them; the expander addresses them by name). Panel: the SOURCE SHAPE
   multi-engine cluster (FAMILY×INST cursor → RATE + A–D knobs + printed legend).
 - **Panel UI mockup** — `docs/ui/ligase_synthi_panel.svg`, regenerated deterministically by
-  `docs/ui/gen_panel.py` (edit the script, run it, screenshot via the pre-installed headless
-  chromium to review). EMS-Synthi idiom: every signal inlet badged `IN n`, message/preset
-  params badged `MSG`; Presto-Patch pin matrix = the modulation matrix (22×16 subset, per-grain
-  columns behind the dashed divider); joystick = morph CV cursor (IN 23/24); PLAYHEAD strip +
-  twin QUANTIZE groups (playhead + delay, identical); LED splice select (DATA + ENTER →
-  `splice_finish_nav`); SELECT/EXPORT REEL; MOD SOURCES strip (RATE 1-4 = `noise_freq_1..4`,
-  FOLLOW, sphere/nbody physics); **XPNDR sidecar** = the snapshot expander (cold-edit legend,
-  PAGE×PARAM cursor, band-edit cluster, STORE/ASSIGN).
+  `docs/ui/gen_panel.py` (edit → run → screenshot via the pre-installed headless chromium).
+  **Restyled Seq 70+: minimalist-luxury chromecore Buchla** (brushed-aluminum panel, colored-
+  skirt knobs with chrome domes, banana jacks, hairline sections, recessed dark beds) and
+  **integrated into ONE chassis** (the XPNDR sidecar dissolved into a third column; MONITOR
+  relocated beneath COMMIT). Layout: left = the inlet strips; middle = Presto-Patch matrix
+  (22×16, per-grain divider) + SOURCE SHAPE multi-engine cluster + MORPH joystick + the
+  **SCOPE card** (294×186 phosphor bed with a genuinely integrated Lorenz trace — the
+  metasurface's visual twin); right = the expander column + MONITOR. Every signal inlet
+  badged `IN n`, message params `MSG`.
+- **Prototyping/UI/VST arc queued (Seq 71-72)**: `Plans/pd_panel_prototype.md` (layout
+  single-source → SVG + .pd emitters) and `Plans/vst_plugin.md` (v1 = plugdata with ligase
+  COMPILED IN — no runtime external loading in plugin hosts; LICENSE gate: plain GPL-2 vs
+  GPLv3 hosts) both at GATE A. `Plans/scope_taps.md` (Seq 72-73) **GATE A cleared, build
+  IN FLIGHT**: scope_x~/scope_y~ signal outlets 10/11, per-family tap table, the grain
+  CONSTELLATION (X = splice pos, Y = env×amp, one grain per sample) + grainsum, default
+  lorenz 1. If the tree has uncommitted src/ changes, they are this build — verify against
+  the plan's gates before committing.
 - Remaining overall: **owner hardware/ear sign-off** on the new features (chord balance vs
   `maxgrains`, spatial orbit feel, matrix musicality, burst character, resonator-bank timbre —
   the GATE A.7 input for the v2 Karplus-Strong decision) + the §4 build-naming backlog stub +
