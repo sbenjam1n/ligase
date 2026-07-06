@@ -103,8 +103,23 @@ schema-single-source discipline as the morph field walker.)
    splice display tracks `shift`; open/save panels wired (headless: message-level test).
 4. **XPNDR canvas.** **GATE:** load→edit→get→store→apply round-trip driven entirely
    through the canvas's message wiring, verified against outlet-9 echoes.
-5. **Owner hands-on gate.** plugdata on the Mac: the feel test (knob ranges, layout
-   ergonomics, matrix workflow). Findings become panel-layout tweaks (data edits).
+5. **`.plugdata` bundle packaging (owner-added 2026-07-06).** A `make bundle` /
+   `emit_bundle.py` step producing **`ligase.plugdata`**: the generated panel patches +
+   README + `ligase.conf` + the compiled externals (`ligase~.pd_darwin` AND
+   `.pd_linux` — Pd loads the platform match; the patch's own directory is on the
+   search path). Drag-and-drop installs the whole instrument into plugdata
+   **standalone** (0.9.2's bundle/LIBRARY mechanism). Boundary: this does NOT change
+   the plugin story — plugdata-as-VST still requires the compiled-in build
+   (`Plans/vst_plugin.md` v1). Format note: the bundle's exact container layout must
+   be matched against plugdata's loader source / a sample bundle (structural check in
+   CI; the drag-drop install is an owner-machine test). Distribution caveat: macOS
+   Gatekeeper quarantines unsigned downloaded binaries — personal use unaffected;
+   public distribution = signing + the GPL license gate. **GATE:** the bundle builds
+   deterministically, its structure matches plugdata's loader expectations, and the
+   contained patch set is byte-identical to the emitted ones.
+6. **Owner hands-on gate.** plugdata on the Mac: drag-drop the bundle, then the feel
+   test (knob ranges, layout ergonomics, matrix workflow). Findings become
+   panel-layout tweaks (data edits).
 
 ## Acceptance criteria
 
