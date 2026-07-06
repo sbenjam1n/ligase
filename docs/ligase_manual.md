@@ -293,10 +293,21 @@ bencina_level <gain> - wet makeup gain into the tanh soft-limit (default 6.0). H
 Sphere Simulation
 
 sphere_kick <instance> <vx> <vy> <vz> - Apply velocity impulse
+sphere_kick_rand <instance> <0-50> - Kick in a random direction (event)
 sphere_damping <instance> <0-1> - Damping coefficient
 sphere_elasticity <instance> <0-1> - Bounce elasticity
+sphere_spin <instance> <-10 to 10> - Orbit: rotate velocity about the y-axis (0 = off)
 sphere_reset <instance> - Reset to initial state
 sphere_mode <instance> <0-6> - Output mode (X/Y/Z/VelX/VelY/VelZ/VelMag)
+
+Source Shape (see SOURCE SHAPE)
+
+waveform_phase <instance> <0-1> - Readout phase offset for sine/saw/square (default 0)
+square_pw <instance> <0.05-0.95> - Square pulse width / duty (default 0.5)
+saw_skew <instance> <0-1> - Saw skew: 0 ramp up, 0.5 triangle, 1 ramp down (default 0)
+lorenz_sigma <instance> <1-20> - Lorenz sigma (default 10)
+lorenz_rho <instance> <1-60> - Lorenz rho, the chaos knob (default 28)
+lorenz_beta <instance> <0.5-8> - Lorenz beta (default 8/3)
 
 Parameter Ranging
 
@@ -353,11 +364,26 @@ nbody_damping <instance> <0-0.1> - Energy damping
 nbody_pump <instance> <0-0.01> - Energy injection
 nbody_reset <instance> - Reset to initial conditions
 
+Lorenz Configuration (SOURCE SHAPE)
+
+lorenz_sigma <instance> <1-20> - Attractor sigma (default 10)
+lorenz_rho <instance> <1-60> - Attractor rho / chaos knob (default 28)
+lorenz_beta <instance> <0.5-8> - Attractor beta (default 8/3)
+lorenz_reset <instance> - Reset to initial conditions
+
+Waveform Shape (SOURCE SHAPE)
+
+waveform_phase <instance> <0-1> - Readout phase offset for that instance's sine/saw/square
+square_pw <instance> <0.05-0.95> - Square pulse width / high-duty fraction
+saw_skew <instance> <0-1> - Saw skew: 0 ramp up, 0.5 triangle, 1 ramp down
+
 Sphere Configuration
 
 sphere_kick <instance> <vx> <vy> <vz> - Apply velocity impulse
+sphere_kick_rand <instance> <0-50> - Random-direction kick x strength (event, not captured)
 sphere_damping <instance> <0-1> - Damping coefficient
 sphere_elasticity <instance> <0-1> - Bounce elasticity
+sphere_spin <instance> <-10 to 10> - Rotate velocity about the y-axis per update (orbit; default 0)
 sphere_reset <instance> - Reset to initial state
 sphere_mode <instance> <0-6> - Output: X/Y/Z/VelX/VelY/VelZ/VelMag
 
@@ -2410,9 +2436,13 @@ Body positions, velocities, distances, angular momentum, total energy. Returns n
 
 sphere_kick <instance> <vx> <vy> <vz>  Apply velocity impulse to sphere instance. Creates sudden, decaying motion patterns.
 
+sphere_kick_rand <instance> <0-50>  Fire the same kick in a RANDOM unit direction × strength — the one-argument "KICK!" gesture. An event, not state: never captured by snapshots.
+
 sphere_damping <instance> <0-1>  Set damping coefficient. Higher values = faster energy decay.
 
 sphere_elasticity <instance> <0-1>  Set bounce elasticity. 1.0 = perfect elastic bounce. Lower values absorb energy on wall contact.
+
+sphere_spin <instance> <-10 to 10>  SOURCE SHAPE: rotate the sphere's VELOCITY vector about the y-axis by spin × dt per update — an energy-neutral curl (speed magnitude preserved, so it cannot blow up) that composes with damping/elasticity/kick and turns a kicked sphere into an ORBIT. Audible as a periodic stereo sweep under pan_mode 2. Default 0 = off.
 
 sphere_reset <instance>  Reset sphere to initial position and zero velocity.
 
@@ -2420,15 +2450,15 @@ sphere_mode <instance> <0-6>  Set output mode. 0-2 = position axes, 3-5 = veloci
 
 - RAND_TYPE_SAW
 
-Sawtooth wave LFO. Unipolar ramp from 0.0 to 1.0. Phase advances by iot × noise_frequency_scale per grain trigger. Creates predictable linear sweep patterns for modulation.
+Sawtooth wave LFO. Unipolar ramp from 0.0 to 1.0. Phase advances by iot × noise_frequency_scale per grain trigger. Creates predictable linear sweep patterns for modulation. Shapeable readout (see SOURCE SHAPE): waveform_phase offsets it, saw_skew folds it (0 ramp up, 0.5 triangle, 1 ramp down).
 
 - RAND_TYPE_SINE
 
-Sine wave LFO. Unipolar 0.0 to 1.0 (mapped from bipolar sine). Phase advances by iot × noise_frequency_scale per grain trigger. Creates smooth, predictable oscillating modulation.
+Sine wave LFO. Unipolar 0.0 to 1.0 (mapped from bipolar sine). Phase advances by iot × noise_frequency_scale per grain trigger. Creates smooth, predictable oscillating modulation. Shapeable readout (see SOURCE SHAPE): waveform_phase offsets it.
 
 - RAND_TYPE_SQUARE
 
-Square wave LFO. Bipolar switching: 0.0 below 50% duty cycle, 1.0 above. Phase advances by iot × noise_frequency_scale per grain trigger. Creates alternating on/off modulation patterns.
+Square wave LFO. Bipolar switching: 0.0 low, 1.0 high, high for square_pw of each cycle (default 0.5 = 50% duty). Phase advances by iot × noise_frequency_scale per grain trigger. Creates alternating on/off modulation patterns. Shapeable readout (see SOURCE SHAPE): waveform_phase offsets it, square_pw sets the duty.
 
 - RAND_TYPE_PATTERN
 
@@ -2716,6 +2746,49 @@ Useful for synchronizing modulation patterns
 Lorenz Reset:
 
 Returns x, y, z to initial values (x0, y0, z0)
+
+# SOURCE SHAPE
+
+Every modulation generator family has settable SHAPE parameters (all per instance 1-4,
+all clamped at the setter, all defaults = the pre-shape behaviour exactly). They are the
+engine half of the SOURCE SHAPE panel cluster.
+
+Waveform readout shaping (sine/saw/square N are three views of ONE shared oscillator per
+instance; these shape how each view READS the shared phase — the phase advance itself is
+untouched, so the three stay phase-locked siblings):
+
+waveform_phase <instance> <0-1>  Phase OFFSET added at readout for that instance's sine,
+saw and square. 0.25 shifts sine by 90 degrees. Default 0.
+
+square_pw <instance> <0.05-0.95>  Square pulse width: the square is high for pw of each
+cycle (the high stretch sits at the end of the cycle, so the default 0.5 is bit-identical
+to the historical readout). Default 0.5.
+
+saw_skew <instance> <0-1>  Saw rise/fall fold: rise time = (1-skew) of the period.
+0 = ramp up (default, the historical saw), 0.5 = symmetric triangle, 1 = ramp down.
+
+Lorenz attractor parameters (the textbook constants, unlocked):
+
+lorenz_sigma <instance> <1-20>  Default 10.
+lorenz_rho <instance> <1-60>  THE musical knob: below ~24 the orbit settles toward a fixed
+point (readout goes static — lorenz_reset recovers it), 28 = the classic attractor,
+higher = wilder excursions. Default 28.
+lorenz_beta <instance> <0.5-8>  Default 8/3.
+The clamps keep the fixed-dt integrator bounded; the existing divergence flush in the
+update remains the backstop.
+
+Sphere motion (see also the Sphere Simulation messages):
+
+sphere_spin <instance> <-10 to 10>  Energy-neutral velocity curl about the y-axis (orbit).
+Default 0.
+sphere_kick_rand <instance> <0-50>  Random-direction kick (event; not snapshot state).
+
+Capture: all SOURCE SHAPE parameters except sphere_kick_rand are snapshot state since
+capture schema v4, in the selection-tree group "sources" — capture/recall, the cursor
+blend, the Snapshot Expander (snapbuf_set saw_skew_2 0.5 …) and the text export address
+them by name (waveform_phase_1..4, square_pw_1..4, saw_skew_1..4, lorenz_sigma/rho/
+beta_1..4, sphere_spin_1..4). `morph_exclude sources` keeps them live across recalls.
+Restores re-apply through the same clamps as the setters.
 
 Each instance has different starting position:
 
@@ -3069,6 +3142,12 @@ travels with the voice: retuning perlin_2's rate for scene B no longer retroacti
 If you prefer the old behaviour — one global rate knob sweeping every scene at once — exclude the
 group: `morph_exclude sources`.
 
+Schema v4 extends the same group with the SOURCE SHAPE params (see SOURCE SHAPE):
+waveform_phase_1..4, square_pw_1..4, saw_skew_1..4, lorenz_sigma/rho/beta_1..4 and
+sphere_spin_1..4 — a voice's waveform character, attractor tuning and orbit spin all recall
+with it (restored through the setters' clamps; sphere_kick_rand is an event and is not
+captured). The same `morph_exclude sources` keeps them live.
+
 snapshot_recall (like the cursor blend and snapbuf_apply) honors the selection tree: excluded
 parameters keep their live values across a recall.
 
@@ -3109,8 +3188,9 @@ moog_resonance, moog_mix, smear_frequency, smear_resonance, smear_stages, smear_
 gdelay_feedback, gdelay_tone, gdelay_mix; or a group — pitch (the grain pitch -> playback speed),
 smear_pitch (the resonator note), fx (moog + smear-resonator + delay + distortion), sources (the
 generator/weather params captured since schema v3: noise_freq_1..4, env_follow_ms, the sphere and
-N-body physics params and output modes). Each name covers that parameter's modulation band, its
-scalar base, and any mode it owns.
+N-body physics params and output modes — plus, since schema v4, the SOURCE SHAPE params:
+waveform_phase/square_pw/saw_skew, lorenz_sigma/rho/beta and sphere_spin, all 1-4). Each name
+covers that parameter's modulation band, its scalar base, and any mode it owns.
 
   morph_exclude pitch        # morph the timbre but hold the notes fixed
   morph_exclude fx           # morph grain + pitch but leave the effects alone
@@ -3159,10 +3239,12 @@ bodies — those hold hundreds of values each and are not dumped as messages).
 morph_export <file> / morph_import <file> are the fully portable option: a human-readable .txt that
 holds EVERYTHING (every snapshot body + the surface), written as a logical-field schema rather than a
 memory image — so unlike the binary .morph it survives across builds whose struct layout differs (a
-"ligase_morph <version>" header guards the schema). The current schema is version 3 (v3 appended the
-generator/sources params); older v1/v2 files still import cleanly — their missing generator fields
-simply keep the values the engine has at import time. The snapshot lines are long (one per snapshot,
-hundreds of numbers) but it is plain text you can read, diff, and edit.
+"ligase_morph <version>" header guards the schema). The current schema is version 4 (v3 appended the
+generator/sources params, v4 the SOURCE SHAPE params); older v1-v3 files still import cleanly —
+their missing fields simply keep the values the engine has at import time, and the "exclude" line's
+indices are remapped from the older layout by file version, so old exclude lines keep selecting the
+same fields. The snapshot lines are long (one per snapshot, hundreds of numbers) but it is plain
+text you can read, diff, and edit.
 
 Three persistence routes, then: morph_save/morph_load (binary, complete, fastest, build-specific);
 morph_export/morph_import (text, complete, human-readable + build-portable); morph_state (messages,
@@ -3242,7 +3324,9 @@ Fields use the text-export schema's logical names — the same enumeration, so t
   base_value slew invert) — or the whole band in export order:
   `snapbuf_set amplitude_range 0.1 0.5 1 2 0 0.3 0.5 0`.
 - **Scalars** (`amplitude`, `moog_cutoff`, `gdelay_time`, `noise_freq_2`, `env_follow_ms`,
-  `sphere_damping_1`, `nbody_G_3`, …): `snapbuf_set amplitude 0.42`.
+  `sphere_damping_1`, `nbody_G_3`, and the v4 SOURCE SHAPE params `waveform_phase_1..4`,
+  `square_pw_1..4`, `saw_skew_1..4`, `lorenz_sigma/rho/beta_1..4`, `sphere_spin_1..4`, …):
+  `snapbuf_set amplitude 0.42`, `snapbuf_set saw_skew_2 0.5`.
 - **Discretes** (`pan_mode`, `maxgrains`, `playhead`, `pitch_mode`, `nbody_mode_1`,
   `sphere_mode_4`, `nbody_pump_interval_2`, …): `snapbuf_set pan_mode 1`.
 - **Scale lists**: whole-list set, matching the live message —

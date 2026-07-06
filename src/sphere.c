@@ -88,6 +88,9 @@ void sphere_init(sphere_state_t *sphere) {
     // Default collision settings
     sphere->elasticity = 0.8f;  // 80% energy retained on bounce
     sphere->enable_collision = 1;  // Enabled by default
+
+    // SOURCE SHAPE: no spin by default (bit-identical to the spinless sim)
+    sphere->spin_rate = 0.0f;
 }
 
 void sphere_set_position(sphere_state_t *sphere, float x, float y, float z) {
@@ -134,6 +137,13 @@ void sphere_set_elasticity(sphere_state_t *sphere, float elasticity) {
 
 void sphere_set_collision_enabled(sphere_state_t *sphere, int enabled) {
     sphere->enable_collision = enabled;
+}
+
+void sphere_set_spin(sphere_state_t *sphere, float spin_rate) {
+    // Clamp spin rate to valid range
+    if (spin_rate < -10.0f) spin_rate = -10.0f;
+    if (spin_rate > 10.0f) spin_rate = 10.0f;
+    sphere->spin_rate = spin_rate;
 }
 
 // @endregion:ligase_pd.utils.random.sphere.parameters
@@ -218,6 +228,22 @@ static void check_collisions(sphere_state_t *sphere) {
 
 void sphere_tick(sphere_state_t *sphere, float time_increment) {
     // Adapted from STK Sphere::tick()
+
+    // SOURCE SHAPE spin: rotate the VELOCITY vector about the y-axis by spin*dt —
+    // an energy-neutral curl (|v| preserved up to rounding, so it cannot blow up).
+    // Applied before integration so the position curls this step; composes with the
+    // wall bounces (which only flip a component) and with damping (a scalar on |v|).
+    // Guarded so spin 0 leaves the sim bit-identical to the spinless update.
+    if (sphere->spin_rate != 0.0f) {
+        float angle = sphere->spin_rate * time_increment;
+        float c = cosf(angle);
+        float s = sinf(angle);
+        float vx = sphere->velocity.x;
+        float vz = sphere->velocity.z;
+        sphere->velocity.x = c * vx + s * vz;
+        sphere->velocity.z = -s * vx + c * vz;
+    }
+
     // Update position based on velocity (Euler integration)
     sphere->position.x += time_increment * sphere->velocity.x;
     sphere->position.y += time_increment * sphere->velocity.y;

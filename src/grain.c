@@ -76,6 +76,56 @@ static float rand_float_seeded(unsigned int *seed) {
 
 // @endregion:ligase_pd.utils.random.basic
 
+// @region:ligase_pd.utils.random.waveform_shape Waveform Readout Shaping (SOURCE SHAPE)
+
+// SOURCE SHAPE readout helpers — the SINGLE point of truth for how sine/saw/square map
+// the shared per-instance phase accumulator to a [0,1] value. Used by all three readout
+// sites (scale-degree selection, sample_param_range, mod_source_value) so a matrix source
+// and a param_range source pointing at the same instance always agree. Shaping is
+// READOUT-side only: the shared phase ADVANCE (update_perlin_coords) is untouched, and
+// the defaults (offset 0, pw 0.5, skew 0) are bit-identical to the unshaped readouts.
+
+// Effective readout phase: shared accumulator + per-instance offset, wrapped to [0,1).
+// Offset is clamped to [0,1] at the setter, so at most one wrap is ever needed; with the
+// default offset 0 this returns the accumulator bit-identically (p + 0.0f == p).
+static inline float waveform_eff_phase(const perlin_state_t *ps, int instance) {
+    float p = ps->waveform_phase[instance] + ps->waveform_phase_offset[instance];
+    if (p >= 1.0f) p -= 1.0f;
+    return p;
+}
+
+// Sine readout: unipolar [0,1]. Default offset 0 reproduces the historical
+// (sinf(phase * 2pi) + 1) * 0.5 bit-for-bit.
+static inline float waveform_sine_value(const perlin_state_t *ps, int instance) {
+    float phase_radians = waveform_eff_phase(ps, instance) * 2.0f * M_PI;
+    return (sinf(phase_radians) + 1.0f) * 0.5f;
+}
+
+// Saw readout with skew: rise over (1-skew) of the period, fall over the rest.
+// skew 0 = ramp up (rise = whole period; p / 1.0f == p, bit-identical to the historical
+// bare-phase ramp), 0.5 = symmetric triangle, 1 = ramp down.
+static inline float waveform_saw_value(const perlin_state_t *ps, int instance) {
+    float p = waveform_eff_phase(ps, instance);
+    float skew = ps->saw_skew[instance];
+    float rise = 1.0f - skew;
+    float v;
+    if (p < rise) v = p / rise;                 // rise == 0 -> branch never taken
+    else          v = (1.0f - p) / skew;        // p >= rise and p < 1 imply skew > 0
+    if (v < 0.0f) v = 0.0f;                     // guard rounding at tiny rise/fall widths
+    if (v > 1.0f) v = 1.0f;
+    return v;
+}
+
+// Square readout with pulse width: HIGH for the final pw fraction of the cycle
+// (low while phase < 1-pw), so the high-duty fraction equals pw AND the default
+// pw 0.5 reproduces the historical (phase < 0.5 ? 0 : 1) readout bit-for-bit.
+static inline float waveform_square_value(const perlin_state_t *ps, int instance) {
+    return (waveform_eff_phase(ps, instance) < 1.0f - ps->square_pw[instance])
+         ? 0.0f : 1.0f;
+}
+
+// @endregion:ligase_pd.utils.random.waveform_shape
+
 // @region:ligase_pd.core.pitch.conversion Pitch to Speed Conversion
 
 // Convert semitones to speed ratio
@@ -151,21 +201,20 @@ float sample_scale_semitones(pitch_scale_t *scale, perlin_state_t *perlin_state,
         }
 
         case RAND_TYPE_SAW: {
-            // Sawtooth wave LFO: unipolar ramp from 0 to 1
-            random_value = perlin_state->waveform_phase[instance];
+            // Sawtooth wave LFO (shaped readout: waveform_phase offset + saw_skew)
+            random_value = waveform_saw_value(perlin_state, instance);
             break;
         }
 
         case RAND_TYPE_SINE: {
-            // Sine wave LFO: map to unipolar 0 to 1
-            float phase_radians = perlin_state->waveform_phase[instance] * 2.0f * M_PI;
-            random_value = (sinf(phase_radians) + 1.0f) * 0.5f;
+            // Sine wave LFO, unipolar 0 to 1 (shaped readout: waveform_phase offset)
+            random_value = waveform_sine_value(perlin_state, instance);
             break;
         }
 
         case RAND_TYPE_SQUARE: {
-            // Square wave LFO: bipolar switching at 50% duty cycle
-            random_value = (perlin_state->waveform_phase[instance] < 0.5f) ? 0.0f : 1.0f;
+            // Square wave LFO (shaped readout: waveform_phase offset + square_pw duty)
+            random_value = waveform_square_value(perlin_state, instance);
             break;
         }
 
@@ -275,21 +324,20 @@ float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, flo
         }
 
         case RAND_TYPE_SAW: {
-            // Sawtooth wave LFO: unipolar ramp from 0 to 1
-            random_value = perlin_state->waveform_phase[instance];
+            // Sawtooth wave LFO (shaped readout: waveform_phase offset + saw_skew)
+            random_value = waveform_saw_value(perlin_state, instance);
             break;
         }
 
         case RAND_TYPE_SINE: {
-            // Sine wave LFO: map to unipolar 0 to 1
-            float phase_radians = perlin_state->waveform_phase[instance] * 2.0f * M_PI;
-            random_value = (sinf(phase_radians) + 1.0f) * 0.5f;
+            // Sine wave LFO, unipolar 0 to 1 (shaped readout: waveform_phase offset)
+            random_value = waveform_sine_value(perlin_state, instance);
             break;
         }
 
         case RAND_TYPE_SQUARE: {
-            // Square wave LFO: bipolar switching at 50% duty cycle
-            random_value = (perlin_state->waveform_phase[instance] < 0.5f) ? 0.0f : 1.0f;
+            // Square wave LFO (shaped readout: waveform_phase offset + square_pw duty)
+            random_value = waveform_square_value(perlin_state, instance);
             break;
         }
 
@@ -341,14 +389,13 @@ float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, flo
 // uses) — only when a rand connection exists, i.e. behavior the user opted into.
 float mod_source_value(perlin_state_t *ps, int source) {
     if (source >= MOD_SRC_SINE1 && source <= MOD_SRC_SINE4) {
-        float phase_radians = ps->waveform_phase[source - MOD_SRC_SINE1] * 2.0f * M_PI;
-        return (sinf(phase_radians) + 1.0f) * 0.5f;
+        return waveform_sine_value(ps, source - MOD_SRC_SINE1);
     }
     if (source >= MOD_SRC_SAW1 && source <= MOD_SRC_SAW4) {
-        return ps->waveform_phase[source - MOD_SRC_SAW1];
+        return waveform_saw_value(ps, source - MOD_SRC_SAW1);
     }
     if (source >= MOD_SRC_SQUARE1 && source <= MOD_SRC_SQUARE4) {
-        return (ps->waveform_phase[source - MOD_SRC_SQUARE1] < 0.5f) ? 0.0f : 1.0f;
+        return waveform_square_value(ps, source - MOD_SRC_SQUARE1);
     }
     if (source >= MOD_SRC_PERLIN1 && source <= MOD_SRC_PERLIN4) {
         int i = source - MOD_SRC_PERLIN1;
@@ -772,6 +819,13 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     // Start at different phases for decorrelation
     for (int i = 0; i < 4; i++) {
         sched->perlin_state.waveform_phase[i] = (float)i * 0.25f;  // 0.0, 0.25, 0.5, 0.75
+    }
+
+    // SOURCE SHAPE defaults = the historical readouts, bit-identically:
+    // no readout phase offset, 50% square duty, saw = plain ramp up.
+    // (waveform_phase_offset / saw_skew are already 0 from the memset.)
+    for (int i = 0; i < 4; i++) {
+        sched->perlin_state.square_pw[i] = 0.5f;
     }
 
     // MOD MATRIX: the memset above zeroed mod_matrix[]/mod_conn_count (inert) and the envelope

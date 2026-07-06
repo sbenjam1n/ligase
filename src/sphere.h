@@ -58,6 +58,10 @@ typedef struct {
     float boundary_max_z;
     float elasticity;        // Bounce coefficient (0.0-1.0)
     int enable_collision;    // Enable boundary collision detection
+    float spin_rate;         // SOURCE SHAPE: velocity-vector rotation rate about the
+                             // y-axis, radians/sim-second (-10..10, default 0 = off).
+                             // Energy-neutral curl: |v| is preserved, so it cannot
+                             // blow up and composes with damping/elasticity/kick.
 } sphere_state_t;
 
 // @endregion:ligase_pd.utils.random.sphere.state
@@ -112,6 +116,10 @@ void sphere_set_elasticity(sphere_state_t *sphere, float elasticity);
 
 // Enable/disable collision detection
 void sphere_set_collision_enabled(sphere_state_t *sphere, int enabled);
+
+// Set spin rate (velocity-vector rotation about the y-axis, clamped to -10..10;
+// 0 = off -> the update is bit-identical to the spinless sim)
+void sphere_set_spin(sphere_state_t *sphere, float spin_rate);
 
 // @endregion:ligase_pd.utils.random.sphere.parameters
 

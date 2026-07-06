@@ -5372,6 +5372,54 @@ static void ligase_noise_freq_4(ligase_t *x, t_floatarg freq) {
     post("ligase~: Noise frequency scale 4 set to %.3f", freq);
 }
 
+// @region:ligase_pd.core.waveform_shape Waveform Readout Shaping (SOURCE SHAPE)
+// waveform_phase / square_pw / saw_skew shape how sine/saw/square READ the shared
+// per-instance phase accumulator (grain.c waveform_* helpers); the phase ADVANCE is
+// untouched, so sineN/sawN/squareN stay phase-locked siblings. Values are clamped to
+// their documented ranges — the same clamps morph_restore_generators applies on recall.
+// All three are snapshot state since capture schema v4 (selection-tree group "sources").
+
+// Set readout phase offset (0-1) for a waveform instance's sine/saw/square readouts
+static void ligase_waveform_phase(ligase_t *x, t_floatarg instance, t_floatarg offset) {
+    int inst = (int)instance;
+    if (inst < 1 || inst > 4) {
+        pd_error(x, "ligase~: waveform_phase instance must be 1-4");
+        return;
+    }
+    if (offset < 0.0f) offset = 0.0f;
+    if (offset > 1.0f) offset = 1.0f;
+    x->scheduler->perlin_state.waveform_phase_offset[inst - 1] = offset;
+    post("ligase~: Waveform %d readout phase offset set to %.3f", inst, offset);
+}
+
+// Set square pulse width / high-duty fraction (0.05-0.95) for a waveform instance
+static void ligase_square_pw(ligase_t *x, t_floatarg instance, t_floatarg pw) {
+    int inst = (int)instance;
+    if (inst < 1 || inst > 4) {
+        pd_error(x, "ligase~: square_pw instance must be 1-4");
+        return;
+    }
+    if (pw < 0.05f) pw = 0.05f;
+    if (pw > 0.95f) pw = 0.95f;
+    x->scheduler->perlin_state.square_pw[inst - 1] = pw;
+    post("ligase~: Square %d pulse width set to %.3f", inst, pw);
+}
+
+// Set saw skew (0-1) for a waveform instance: 0 = ramp up, 0.5 = triangle, 1 = ramp down
+static void ligase_saw_skew(ligase_t *x, t_floatarg instance, t_floatarg skew) {
+    int inst = (int)instance;
+    if (inst < 1 || inst > 4) {
+        pd_error(x, "ligase~: saw_skew instance must be 1-4");
+        return;
+    }
+    if (skew < 0.0f) skew = 0.0f;
+    if (skew > 1.0f) skew = 1.0f;
+    x->scheduler->perlin_state.saw_skew[inst - 1] = skew;
+    post("ligase~: Saw %d skew set to %.3f", inst, skew);
+}
+
+// @endregion:ligase_pd.core.waveform_shape
+
 // @endregion:ligase_pd.core.params.range
 
 // @region:ligase_pd.core.nbody N-Body Parameter Control Methods
@@ -5468,6 +5516,52 @@ static void ligase_lorenz_reset(ligase_t *x, t_floatarg instance) {
     }
     lorenz_reset(&x->scheduler->perlin_state.lorenz[inst - 1]);
     post("ligase~: Lorenz attractor %d reset to initial state", inst);
+}
+
+// ── SOURCE SHAPE: Lorenz attractor parameters (schema v4) ───────────────────
+// Raw sigma/rho/beta setters, clamped so the fixed-dt Forward Euler integrator stays
+// bounded; the divergence flush in lorenz_update remains the backstop, and lorenz_reset
+// recovers any degenerate orbit (e.g. rho low enough to settle on the fixed point).
+// Snapshot state since capture schema v4 (selection-tree group "sources").
+
+// Set sigma (1-20, default 10) for a specific Lorenz instance
+static void ligase_lorenz_sigma(ligase_t *x, t_floatarg instance, t_floatarg value) {
+    int inst = (int)instance;
+    if (inst < 1 || inst > 4) {
+        pd_error(x, "ligase~: lorenz_sigma instance must be 1-4");
+        return;
+    }
+    if (value < 1.0f) value = 1.0f;
+    if (value > 20.0f) value = 20.0f;
+    x->scheduler->perlin_state.lorenz[inst - 1].sigma = value;
+    post("ligase~: Lorenz %d sigma set to %.3f", inst, value);
+}
+
+// Set rho (1-60, default 28) for a specific Lorenz instance — the chaos knob:
+// ~<24 settles toward a fixed point, 28 = the classic attractor, higher = wilder
+static void ligase_lorenz_rho(ligase_t *x, t_floatarg instance, t_floatarg value) {
+    int inst = (int)instance;
+    if (inst < 1 || inst > 4) {
+        pd_error(x, "ligase~: lorenz_rho instance must be 1-4");
+        return;
+    }
+    if (value < 1.0f) value = 1.0f;
+    if (value > 60.0f) value = 60.0f;
+    x->scheduler->perlin_state.lorenz[inst - 1].rho = value;
+    post("ligase~: Lorenz %d rho set to %.3f", inst, value);
+}
+
+// Set beta (0.5-8, default 8/3) for a specific Lorenz instance
+static void ligase_lorenz_beta(ligase_t *x, t_floatarg instance, t_floatarg value) {
+    int inst = (int)instance;
+    if (inst < 1 || inst > 4) {
+        pd_error(x, "ligase~: lorenz_beta instance must be 1-4");
+        return;
+    }
+    if (value < 0.5f) value = 0.5f;
+    if (value > 8.0f) value = 8.0f;
+    x->scheduler->perlin_state.lorenz[inst - 1].beta = value;
+    post("ligase~: Lorenz %d beta set to %.3f", inst, value);
 }
 
 // Set output mode for a specific N-body instance
@@ -5587,6 +5681,50 @@ static void ligase_sphere_mode(ligase_t *x, t_floatarg instance, t_floatarg mode
         "Velocity X", "Velocity Y", "Velocity Z", "Velocity Magnitude"
     };
     post("ligase~: Sphere %d output mode set to %d (%s)", inst, m, mode_names[m]);
+}
+
+// ── SOURCE SHAPE: sphere spin + random kick (schema v4 / event) ─────────────
+
+// Set spin rate (-10..10, default 0) for a specific sphere instance: rotates the
+// VELOCITY vector about the y-axis by spin*dt per sim update — an energy-neutral curl
+// (|v| preserved), so it composes with damping/elasticity/kick and reads as orbit
+// (audible as a periodic stereo sweep under pan_mode 2). Snapshot state since capture
+// schema v4 (selection-tree group "sources"); spin 0 keeps the sim bit-identical.
+static void ligase_sphere_spin(ligase_t *x, t_floatarg instance, t_floatarg rate) {
+    int inst = (int)instance;
+    if (inst < 1 || inst > 4) {
+        pd_error(x, "ligase~: sphere_spin instance must be 1-4");
+        return;
+    }
+    sphere_set_spin(&x->scheduler->perlin_state.sphere[inst - 1], rate);   // clamps -10..10
+    post("ligase~: Sphere %d spin set to %.3f",
+         inst, x->scheduler->perlin_state.sphere[inst - 1].spin_rate);
+}
+
+// Fire the existing kick with a RANDOM unit direction x strength (0-50) — the panel
+// KICK! gesture. An EVENT, not state: deliberately not captured by snapshots.
+static void ligase_sphere_kick_rand(ligase_t *x, t_floatarg instance, t_floatarg strength) {
+    int inst = (int)instance;
+    if (inst < 1 || inst > 4) {
+        pd_error(x, "ligase~: sphere_kick_rand instance must be 1-4");
+        return;
+    }
+    if (strength < 0.0f) strength = 0.0f;
+    if (strength > 50.0f) strength = 50.0f;
+    // Random unit direction: rejection-sample the unit ball (control thread, libc rand();
+    // sphere_kick normalizes the direction, so only the direction matters here).
+    float dx = 1.0f, dy = 0.0f, dz = 0.0f, len2 = 1.0f;
+    for (int tries = 0; tries < 16; tries++) {
+        float rx = (float)rand() / (float)RAND_MAX * 2.0f - 1.0f;
+        float ry = (float)rand() / (float)RAND_MAX * 2.0f - 1.0f;
+        float rz = (float)rand() / (float)RAND_MAX * 2.0f - 1.0f;
+        len2 = rx * rx + ry * ry + rz * rz;
+        if (len2 > 1e-4f && len2 <= 1.0f) { dx = rx; dy = ry; dz = rz; break; }
+        len2 = 1.0f;   // rejection: fall back to +x if every try degenerates
+    }
+    sphere_kick(&x->scheduler->perlin_state.sphere[inst - 1], dx, dy, dz, strength);
+    post("ligase~: Sphere %d random kick, strength %.2f (dir %.2f %.2f %.2f)",
+         inst, strength, dx, dy, dz);
 }
 
 // @endregion:ligase_pd.core.sphere
@@ -6779,6 +6917,30 @@ enum {                              // discrete offsets from MORPH_GEN_DISCRETE_
     MGD_COUNT               = 12
 };
 
+// ── SOURCE SHAPE params — schema v4 ─────────────────────────────────────────
+// The generators' SHAPE params join the snapshot: appended after the v3-used scalar
+// slots, so every v3 scalar index is unchanged. All in the "sources" selection-tree
+// group. (sphere_kick_rand is an EVENT, not state — deliberately not captured.)
+#define MORPH_GEN4_SCALAR_BASE  MORPH_SCALAR_USED_V3     /* 61 */
+enum {                              // scalar offsets from MORPH_GEN4_SCALAR_BASE
+    MG4_WAVEFORM_PHASE = 0,         // waveform_phase_1..4 (readout phase offset 0-1)
+    MG4_SQUARE_PW      = 4,         // square_pw_1..4 (0.05-0.95)
+    MG4_SAW_SKEW       = 8,         // saw_skew_1..4 (0-1)
+    MG4_LORENZ_SIGMA   = 12,        // lorenz_sigma_1..4 (1-20)
+    MG4_LORENZ_RHO     = 16,        // lorenz_rho_1..4 (1-60)
+    MG4_LORENZ_BETA    = 20,        // lorenz_beta_1..4 (0.5-8)
+    MG4_SPHERE_SPIN    = 24,        // sphere_spin_1..4 (-10..10)
+    MG4_COUNT          = 28
+};
+
+// Clamp helper for the v4 restores: maps non-finite input (a hand-edited/corrupt text
+// import) to the LOW bound instead of letting a NaN through the two-sided compare.
+static inline float morph_clamp_finite(float v, float lo, float hi) {
+    if (!(v >= lo)) return lo;   // catches v < lo AND NaN
+    if (v > hi) return hi;
+    return v;
+}
+
 static void morph_capture_generators(ligase_t *x, morph_snapshot_t *snap) {
     if (!x->scheduler) return;
     perlin_state_t *ps = &x->scheduler->perlin_state;
@@ -6797,6 +6959,17 @@ static void morph_capture_generators(ligase_t *x, morph_snapshot_t *snap) {
         d[MGD_SPHERE_MODE + i]         = ps->sphere_output_mode[i];
     }
     g[MGS_ENV_FOLLOW_MS] = ps->env_follow_ms;
+    // schema v4: SOURCE SHAPE params (message-set state, never a sim's momentary position)
+    float *g4 = &snap->scalars[MORPH_GEN4_SCALAR_BASE];
+    for (int i = 0; i < 4; i++) {
+        g4[MG4_WAVEFORM_PHASE + i] = ps->waveform_phase_offset[i];
+        g4[MG4_SQUARE_PW + i]      = ps->square_pw[i];
+        g4[MG4_SAW_SKEW + i]       = ps->saw_skew[i];
+        g4[MG4_LORENZ_SIGMA + i]   = ps->lorenz[i].sigma;
+        g4[MG4_LORENZ_RHO + i]     = ps->lorenz[i].rho;
+        g4[MG4_LORENZ_BETA + i]    = ps->lorenz[i].beta;
+        g4[MG4_SPHERE_SPIN + i]    = ps->sphere[i].spin_rate;
+    }
 }
 
 // Restore writes back through the SAME limits the message setters enforce (sphere
@@ -6836,6 +7009,18 @@ static void morph_restore_generators(ligase_t *x, const morph_snapshot_t *snap) 
         float sr = (x->sample_rate > 0) ? (float)x->sample_rate : 48000.0f;
         ps->env_follow_ms = ms;
         ps->env_follow_coeff = (ms > 0.0f) ? expf(-1.0f / (ms * 0.001f * sr)) : 0.0f;
+    }
+    // schema v4: SOURCE SHAPE params, back through the setters' clamps (sphere_set_spin
+    // clamps internally; the rest mirror the message setters' ranges exactly).
+    const float *g4 = &snap->scalars[MORPH_GEN4_SCALAR_BASE];
+    for (int i = 0; i < 4; i++) {
+        ps->waveform_phase_offset[i] = morph_clamp_finite(g4[MG4_WAVEFORM_PHASE + i], 0.0f, 1.0f);
+        ps->square_pw[i]             = morph_clamp_finite(g4[MG4_SQUARE_PW + i], 0.05f, 0.95f);
+        ps->saw_skew[i]              = morph_clamp_finite(g4[MG4_SAW_SKEW + i], 0.0f, 1.0f);
+        ps->lorenz[i].sigma          = morph_clamp_finite(g4[MG4_LORENZ_SIGMA + i], 1.0f, 20.0f);
+        ps->lorenz[i].rho            = morph_clamp_finite(g4[MG4_LORENZ_RHO + i], 1.0f, 60.0f);
+        ps->lorenz[i].beta           = morph_clamp_finite(g4[MG4_LORENZ_BETA + i], 0.5f, 8.0f);
+        sphere_set_spin(&ps->sphere[i], morph_clamp_finite(g4[MG4_SPHERE_SPIN + i], -10.0f, 10.0f));
     }
 }
 
@@ -6917,7 +7102,11 @@ static void morph_restore(ligase_t *x, const morph_snapshot_t *snap) {
     morph_restore_scales(x, snap);
 }
 
-// included[] index layout: ranges [0..44], scalars [45..45+63], discretes [45+64..].
+// included[] index layout: ranges [0..44], scalars [45..45+95], discretes [45+96..].
+// NOTE: growing MORPH_SCALAR_COUNT (64->96 for schema v4) SHIFTED the discrete indices
+// this layout exports (in text "exclude" lines): old files wrote discretes from base
+// 45+64=109, this build writes them from 45+96=141. morph_import remaps old-layout
+// indices by file version so v1-v3 exclude lines keep selecting the same fields.
 #define MORPH_INC_SCALAR(i)   (MORPH_RANGE_COUNT + (i))
 #define MORPH_INC_DISCRETE(i) (MORPH_RANGE_COUNT + MORPH_SCALAR_COUNT + (i))
 
@@ -6959,8 +7148,9 @@ static void morph_mask_excluded(ligase_t *x, morph_snapshot_t *b) {
 // (snapbuf_set / snapbuf_get / snapbuf_dump) all iterate THIS table, so the text schema
 // and the expander vocabulary cannot diverge (the plan's no-schema-duplication rule).
 // TABLE ORDER == FILE ORDER: the v1/v2 fields first, in their original file order, then
-// the schema-v3 generator fields appended at the end (`since` = 3). Importing an old file
-// skips fields newer than the file's version — they keep their pre-filled current values.
+// the schema-v3 generator fields (`since` = 3), then the schema-v4 SOURCE SHAPE fields
+// (`since` = 4), each appended at the end of their era. Importing an old file skips
+// fields newer than the file's version — they keep their pre-filled current values.
 enum { MF_RANGE, MF_SCALAR, MF_DISCRETE, MF_SCALE };
 typedef struct {
     const char   *name;    // logical field name (the snapbuf_set/get vocabulary)
@@ -6974,6 +7164,7 @@ typedef struct {
 #define MD(nm, i)    { nm, MF_DISCRETE, (i), 1 }
 #define MS3(nm, off) { nm, MF_SCALAR,   MORPH_GEN_SCALAR_BASE + (off), 3 }
 #define MD3(nm, off) { nm, MF_DISCRETE, MORPH_GEN_DISCRETE_BASE + (off), 3 }
+#define MS4(nm, off) { nm, MF_SCALAR,   MORPH_GEN4_SCALAR_BASE + (off), 4 }
 static const morph_field_t morph_fields[] = {
     // (a) the 45 modulation bands — morph_collect_ranges order; names = the
     //     get_param_range_by_name vocabulary + "_range"
@@ -7044,16 +7235,32 @@ static const morph_field_t morph_fields[] = {
     MD3("nbody_mode_3", MGD_NBODY_MODE + 2), MD3("nbody_mode_4", MGD_NBODY_MODE + 3),
     MD3("sphere_mode_1", MGD_SPHERE_MODE + 0), MD3("sphere_mode_2", MGD_SPHERE_MODE + 1),
     MD3("sphere_mode_3", MGD_SPHERE_MODE + 2), MD3("sphere_mode_4", MGD_SPHERE_MODE + 3),
+    // (f) schema v4 — SOURCE SHAPE params, appended
+    MS4("waveform_phase_1", MG4_WAVEFORM_PHASE + 0), MS4("waveform_phase_2", MG4_WAVEFORM_PHASE + 1),
+    MS4("waveform_phase_3", MG4_WAVEFORM_PHASE + 2), MS4("waveform_phase_4", MG4_WAVEFORM_PHASE + 3),
+    MS4("square_pw_1", MG4_SQUARE_PW + 0), MS4("square_pw_2", MG4_SQUARE_PW + 1),
+    MS4("square_pw_3", MG4_SQUARE_PW + 2), MS4("square_pw_4", MG4_SQUARE_PW + 3),
+    MS4("saw_skew_1", MG4_SAW_SKEW + 0), MS4("saw_skew_2", MG4_SAW_SKEW + 1),
+    MS4("saw_skew_3", MG4_SAW_SKEW + 2), MS4("saw_skew_4", MG4_SAW_SKEW + 3),
+    MS4("lorenz_sigma_1", MG4_LORENZ_SIGMA + 0), MS4("lorenz_sigma_2", MG4_LORENZ_SIGMA + 1),
+    MS4("lorenz_sigma_3", MG4_LORENZ_SIGMA + 2), MS4("lorenz_sigma_4", MG4_LORENZ_SIGMA + 3),
+    MS4("lorenz_rho_1", MG4_LORENZ_RHO + 0), MS4("lorenz_rho_2", MG4_LORENZ_RHO + 1),
+    MS4("lorenz_rho_3", MG4_LORENZ_RHO + 2), MS4("lorenz_rho_4", MG4_LORENZ_RHO + 3),
+    MS4("lorenz_beta_1", MG4_LORENZ_BETA + 0), MS4("lorenz_beta_2", MG4_LORENZ_BETA + 1),
+    MS4("lorenz_beta_3", MG4_LORENZ_BETA + 2), MS4("lorenz_beta_4", MG4_LORENZ_BETA + 3),
+    MS4("sphere_spin_1", MG4_SPHERE_SPIN + 0), MS4("sphere_spin_2", MG4_SPHERE_SPIN + 1),
+    MS4("sphere_spin_3", MG4_SPHERE_SPIN + 2), MS4("sphere_spin_4", MG4_SPHERE_SPIN + 3),
 };
 #undef MR
 #undef MS
 #undef MD
 #undef MS3
 #undef MD3
+#undef MS4
 #define MORPH_FIELD_COUNT ((int)(sizeof(morph_fields) / sizeof(morph_fields[0])))
 
 // The walker IS the schema: its field count must equal the morph.h schema counts
-// (45 ranges + 61 scalars + 42 discretes + 2 scale lists). Fails the build if the
+// (45 ranges + 89 scalars + 42 discretes + 2 scale lists). Fails the build if the
 // table and the header drift apart.
 _Static_assert(sizeof(morph_fields) / sizeof(morph_fields[0]) ==
                MORPH_RANGE_COUNT + MORPH_SCALAR_USED + MORPH_DISCRETE_USED + 2,
@@ -7344,12 +7551,15 @@ static int morph_set_included(ligase_t *x, const char *name, int on) {
         for (unsigned i = 0; i < sizeof(rs)/sizeof(rs[0]); i++) R(rs[i]);
         for (int i = 21; i <= 31; i++) S(i);   // the FX scalar bases
         return 1; }
-    if (!strcmp(name, "sources")) {       // generator/weather params (schema v3):
-        // noise_freq_1..4, env_follow_ms, sphere damping/elasticity, nbody G/damping/
-        // epsilon/pump(+interval), nbody/sphere output modes. `morph_exclude sources`
-        // restores the pre-v3 global-weather behavior (rates stay live across recalls).
+    if (!strcmp(name, "sources")) {       // generator/weather params (schema v3 + v4):
+        // v3: noise_freq_1..4, env_follow_ms, sphere damping/elasticity, nbody G/damping/
+        // epsilon/pump(+interval), nbody/sphere output modes. v4 adds the SOURCE SHAPE
+        // params (waveform_phase/square_pw/saw_skew, lorenz sigma/rho/beta, sphere_spin,
+        // all x4). `morph_exclude sources` restores the pre-v3 global-weather behavior
+        // (rates AND shapes stay live across recalls).
         for (int i = 0; i < MGS_COUNT; i++) S(MORPH_GEN_SCALAR_BASE + i);
         for (int i = 0; i < MGD_COUNT; i++) D(MORPH_GEN_DISCRETE_BASE + i);
+        for (int i = 0; i < MG4_COUNT; i++) S(MORPH_GEN4_SCALAR_BASE + i);
         return 1; }
     #undef R
     #undef S
@@ -7469,9 +7679,11 @@ static void morph_step(ligase_t *x, int n) {
 // surface (points + cursor + route). A magic+version+size header rejects incompatible files
 // (a struct-layout change bumps sizeof, so old files are refused rather than read as garbage).
 #define MORPH_FILE_MAGIC   0x4D4F5250u   /* 'MORP' */
-#define MORPH_FILE_VERSION 2u   /* v2: morph_state_t grew for schema v3 (generator params +
-                                   MORPH_DISCRETE_COUNT 32->48); v1 files are refused with a
-                                   clear error — re-export as text from the writing build. */
+#define MORPH_FILE_VERSION 3u   /* v3: morph_state_t grew for schema v4 (SOURCE SHAPE params +
+                                   MORPH_SCALAR_COUNT 64->96). v2 grew it for schema v3
+                                   (generator params + MORPH_DISCRETE_COUNT 32->48). Older
+                                   binary files are refused with a clear error — re-export
+                                   as text from the writing build, morph_import here. */
 
 static void ligase_morph_save(ligase_t *x, t_symbol *s) {
     if (!x->morph) return;
@@ -7749,8 +7961,18 @@ static void ligase_morph_import(ligase_t *x, t_symbol *s) {
         } else if (strcmp(tok, "cursor") == 0) {
             float cx, cy; if (fscanf(f, "%g %g", &cx, &cy) == 2) { m->cursor_x = cx; m->cursor_y = cy; }
         } else if (strcmp(tok, "exclude") == 0) {        // selection tree (v2): excluded included[] indices
+            // COMPAT: v1-v3 files were exported under the OLD included[] layout
+            // (MORPH_SCALAR_COUNT was 64, so discrete indices started at 45+64=109);
+            // v4 grew the scalar block to 96, shifting the discrete base to 141.
+            // Remap old-layout discrete indices so old exclude lines keep selecting
+            // the same fields. (Range/scalar indices are unshifted — the scalar block
+            // only grew at its tail, which old files never referenced.)
             int idx;
-            while (fscanf(f, "%d", &idx) == 1) if (idx >= 0 && idx < MORPH_INCLUDE_COUNT) m->included[idx] = 0;
+            while (fscanf(f, "%d", &idx) == 1) {
+                if (ver < 4 && idx >= MORPH_RANGE_COUNT + MORPH_SCALAR_COUNT_V3)
+                    idx += MORPH_SCALAR_COUNT - MORPH_SCALAR_COUNT_V3;
+                if (idx >= 0 && idx < MORPH_INCLUDE_COUNT) m->included[idx] = 0;
+            }
         } else { bad = 1; break; }   // unknown directive
     }
     fclose(f);
@@ -8197,6 +8419,10 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_noise_freq_2, gensym("noise_freq_2"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_noise_freq_3, gensym("noise_freq_3"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_noise_freq_4, gensym("noise_freq_4"), A_DEFFLOAT, 0);
+    // SOURCE SHAPE — waveform readout shaping (schema v4)
+    class_addmethod(ligase_class, (t_method)ligase_waveform_phase, gensym("waveform_phase"), A_DEFFLOAT, A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_square_pw, gensym("square_pw"), A_DEFFLOAT, A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_saw_skew, gensym("saw_skew"), A_DEFFLOAT, A_DEFFLOAT, 0);
     // N-body parameter control methods
     class_addmethod(ligase_class, (t_method)ligase_nbody_epsilon, gensym("nbody_epsilon"), A_DEFFLOAT, A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_nbody_damping, gensym("nbody_damping"), A_DEFFLOAT, A_DEFFLOAT, 0);
@@ -8205,6 +8431,10 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_nbody_reset, gensym("nbody_reset"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_perlin_reset, gensym("perlin_reset"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_lorenz_reset, gensym("lorenz_reset"), A_DEFFLOAT, 0);
+    // SOURCE SHAPE — Lorenz attractor parameters (schema v4)
+    class_addmethod(ligase_class, (t_method)ligase_lorenz_sigma, gensym("lorenz_sigma"), A_DEFFLOAT, A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_lorenz_rho, gensym("lorenz_rho"), A_DEFFLOAT, A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_lorenz_beta, gensym("lorenz_beta"), A_DEFFLOAT, A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_nbody_mode, gensym("nbody_mode"), A_DEFFLOAT, A_DEFFLOAT, 0);
     // Sphere physics simulation control methods
     class_addmethod(ligase_class, (t_method)ligase_sphere_kick, gensym("sphere_kick"), A_GIMME, 0);
@@ -8212,6 +8442,9 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_sphere_elasticity, gensym("sphere_elasticity"), A_DEFFLOAT, A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_sphere_reset, gensym("sphere_reset"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_sphere_mode, gensym("sphere_mode"), A_DEFFLOAT, A_DEFFLOAT, 0);
+    // SOURCE SHAPE — sphere spin (schema v4) + random kick (event)
+    class_addmethod(ligase_class, (t_method)ligase_sphere_spin, gensym("sphere_spin"), A_DEFFLOAT, A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_sphere_kick_rand, gensym("sphere_kick_rand"), A_DEFFLOAT, A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_mode, gensym("pitch_mode"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_semitones, gensym("pitch_semitones"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_fine, gensym("pitch_fine"), A_DEFFLOAT, 0);
