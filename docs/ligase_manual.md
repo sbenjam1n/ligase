@@ -111,6 +111,20 @@ Zero values from unconnected inlets do not overwrite stored parameters.
 
 4. Bang - Grain onset (every N grains, set via grain_bang_rate)
 
+5. Float - modout1 (generator send, see PARAMETER RANGES & MODULATION)
+
+6. Float - modout2
+
+7. Float - modout3
+
+8. Float - modout4
+
+9. List - State query output (see QUERY STATE)
+
+10. Signal - scope_x~ (scope tap X; see SCOPE)
+
+11. Signal - scope_y~ (scope tap Y; see SCOPE)
+
 # MESSAGES
 
 File Operations
@@ -350,6 +364,15 @@ matrix_disconnect <source> <dest> - Disable a connection (kept; re-connect re-en
 matrix_clear - Remove all connections (matrix inert)
 matrix_dump - Post current connections to the console
 env_follow_ms <0-60000> - Envelope follower release time in ms (default 30; 0 = instant)
+
+Scope (signal outlets 10/11; see SCOPE)
+
+scope_tap <family> [inst 1-4] - Route a source to the scope outlets. Families:
+  sine|saw|square|perlin|rand|folw (Y = readout, X = 2 Hz sweep ramp),
+  lorenz|nbody|sphere (X/Y = the sim's x/z plane — the butterfly / orbits),
+  grain (the GRAIN CONSTELLATION, one grain per sample), grainsum (cloud
+  amplitude silhouette + sweep). Default: lorenz 1. A monitor — never captured
+  by snapshots, never morphed.
 
 Noise Frequency
 
@@ -2817,6 +2840,66 @@ Does not reset N-body physics parameters (epsilon, damping, etc.)
 Defaults
 
 All parameter ranges initialized to: min: 0.0, max: 1.0, rand_type: RAND_TYPE_RAND (instance 1), enabled: 0 (disabled). All noise_frequency_scale defaults to 1.0.
+
+# SCOPE
+
+The last two outlets (10 = scope_x~, 11 = scope_y~) are a pair of audio-rate signal
+taps for VISUALIZING the modulation sources and the grain cloud. Feed them into an XY
+oscilloscope — plugdata's [oscilloscope~], any external scope, or hardware via a
+DC-coupled interface — and the engine's most visual objects become visible: the Lorenz
+butterfly, sphere orbits, n-body dances, and a live constellation of every sounding
+grain. All values are bipolar, scaled to ±1.
+
+Select what the pair carries with one message:
+
+scope_tap <family> [inst]
+
+  sine | saw | square | perlin | rand [inst 1-4]
+      Y = that generator's readout (the SAME shaped readout the modulation
+      system uses, so waveform_phase / square_pw / saw_skew show on screen);
+      X = an internal sweep ramp. rand shows the generator's last emitted
+      value without disturbing its sequence.
+  folw
+      Y = the input envelope follower (mono mix); X = sweep. Watch what the
+      matrix's env_mono source hears.
+  lorenz [inst]
+      X = the attractor's x-axis, Y = its z-axis: THE BUTTERFLY. This is the
+      power-on default (lorenz 1).
+  nbody [inst]
+      X/Y = body 1's x/z position (the "planet" — the readable orbit in every
+      stock configuration).
+  sphere [inst]
+      X/Y = the sphere's x/z position. sphere_spin draws circles; kicks and
+      bounces draw what they sound like.
+  grain
+      The GRAIN CONSTELLATION (the default grain view; below).
+  grainsum
+      Y = the summed loudness of all active grains — the cloud's amplitude
+      silhouette, soft-scaled with tanh(sum/4) so a few full-scale grains sit
+      mid-screen and dense clouds saturate toward 1; X = sweep.
+
+[inst] is the generator instance 1-4 (default 1; folw/grain/grainsum take none).
+
+THE GRAIN CONSTELLATION (scope_tap grain). The scope scans the active grain pool
+round-robin, ONE GRAIN PER OUTPUT SAMPLE — a Vectrex-style vector-display refresh:
+
+  X = the grain's current position within its splice, normalized to ±1
+  Y = its instantaneous envelope value x amplitude (its loudness right now)
+
+On an XY display the whole granular engine appears at once as a cloud of dots: the
+horizontal spread IS the position scatter (grainstart / organize / spray), the height
+IS the envelope shape, the density IS voices/IOT — and it breathes with the music.
+Poly chords show multiple position clusters; one-shot tails thin out and sink; stolen
+voices blink. With no grains active the beam parks at center (0,0).
+
+Rate semantics: generator taps are sample-and-hold — the generators advance per grain
+trigger (tied to IOT), so their values genuinely step; the scope shows exactly the
+staircase the engine modulates with. The X sweep ramp runs at a fixed, readable 2 Hz.
+The constellation and the audio-rate ramp are true per-sample signals.
+
+The scope routing is a MONITOR, not voice state: like the matrix pins, scope_tap is
+never captured by snapshots, never morphed, and absent from the export vocabulary.
+Outlets appended last: every pre-scope patch is untouched.
 
 # MODULATION MATRIX
 
