@@ -6,21 +6,45 @@ W, H = 1914, 1096
 MAINW = 1520   # right edge of the main panel case
 parts = []
 
-# ---------- palette (EMS-ish: charcoal panel, warm legends, colored caps) ----------
-PANEL   = "#26292e"
-CASE    = "#121316"
-LINE    = "#5c6167"
-LEGEND  = "#e9e5d9"
-MUTED   = "#9aa0a6"
-HOLE    = "#0c0d10"
+# ---------- palette (minimalist-luxury chromecore Buchla: brushed aluminum, chrome
+# domes on colored skirts, graphite type, bronze accents) ----------
+PANEL   = "url(#brushed)"
+CASE    = "url(#caseEdge)"
+PANEL_FLAT = "#d3d5d8"          # solid stand-in where a flat panel color is needed
+LINE    = "#a4a9ae"             # hairlines
+LEGEND  = "#26282b"             # graphite type
+MUTED   = "#71767c"
+HOLE    = "#111316"
+BRONZE  = "#8a6d3b"             # the accent voice (was amber-on-dark)
+INSET   = "url(#insetPlate)"    # recessed dark beds (matrix, pads, meters)
 CAP = {
-    "white":  "#e9e5d9",
-    "green":  "#5a9e6a",
-    "blue":   "#5480b4",
-    "yellow": "#d9a83c",
-    "red":    "#b8493f",
-    "grey":   "#7c828a",
+    "white":  "#ece8da",
+    "green":  "#4f9860",
+    "blue":   "#3b66b5",
+    "yellow": "#d9a23a",
+    "red":    "#c04a38",
+    "grey":   "#787f88",
 }
+DEFS = """<defs>
+<linearGradient id="brushed" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#dfe1e3"/><stop offset="0.35" stop-color="#cfd1d4"/>
+  <stop offset="0.7" stop-color="#d6d8da"/><stop offset="1" stop-color="#c6c8cb"/>
+</linearGradient>
+<linearGradient id="caseEdge" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#b8bbbf"/><stop offset="0.5" stop-color="#8e9296"/>
+  <stop offset="1" stop-color="#a7aaae"/>
+</linearGradient>
+<radialGradient id="chromeDome" cx="0.35" cy="0.3" r="0.85">
+  <stop offset="0" stop-color="#fbfcfd"/><stop offset="0.45" stop-color="#d4d7da"/>
+  <stop offset="0.8" stop-color="#8f9498"/><stop offset="1" stop-color="#b7babd"/>
+</radialGradient>
+<linearGradient id="chromeBezel" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#f2f3f4"/><stop offset="1" stop-color="#a6aaae"/>
+</linearGradient>
+<linearGradient id="insetPlate" x1="0" y1="0" x2="0" y2="1">
+  <stop offset="0" stop-color="#15161a"/><stop offset="1" stop-color="#232529"/>
+</linearGradient>
+</defs>"""
 
 def esc(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -35,32 +59,35 @@ def text(x, y, s, size=10, fill=LEGEND, anchor="middle", weight="normal", ls=Non
 def badge(x, y, label, kind="in"):
     """Small inlet/message badge centered at x,y."""
     w = 8 + 5.4 * len(label)
-    fill = "#33383f" if kind == "in" else "#3a3126"
-    stroke = "#6f7680" if kind == "in" else "#8a7648"
-    col = "#cdd3da" if kind == "in" else "#d9c48a"
+    fill = "#2b2e32" if kind == "in" else "#e9e2cd"
+    stroke = "#585d63" if kind == "in" else "#b5a878"
+    col = "#eceade" if kind == "in" else "#6b5f35"
     parts.append(f'<rect x="{x-w/2:.1f}" y="{y-7}" width="{w:.1f}" height="12" rx="3" fill="{fill}" stroke="{stroke}" stroke-width="0.7"/>')
     text(x, y + 2.5, label, size=7.5, fill=col, weight="bold")
 
 def knob(x, y, name, rng, inlet=None, cap="white", pos=0.5, small=False, name2=None):
+    """Buchla-luxe: colored SKIRT disc + chrome dome cap + skirt pointer."""
     r  = 12 if small else 17
-    rc = 6  if small else 9
-    # tick arc marks
+    # tick marks (hairline)
     for f in (0.0, 0.5, 1.0):
         a = math.radians(-225 + 270 * f)
         x1, y1 = x + (r+3)*math.cos(a), y + (r+3)*math.sin(a)
         x2, y2 = x + (r+6)*math.cos(a), y + (r+6)*math.sin(a)
-        parts.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{MUTED}" stroke-width="1"/>')
-    parts.append(f'<circle cx="{x}" cy="{y}" r="{r}" fill="#17191c" stroke="{LINE}" stroke-width="1.4"/>')
-    parts.append(f'<circle cx="{x}" cy="{y}" r="{rc}" fill="{CAP[cap]}"/>')
+        parts.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="{MUTED}" stroke-width="0.8"/>')
+    col = CAP[cap]
+    parts.append(f'<circle cx="{x}" cy="{y+0.8}" r="{r}" fill="#00000022"/>')  # soft drop shadow
+    parts.append(f'<circle cx="{x}" cy="{y}" r="{r}" fill="{col}" stroke="#4d5157" stroke-width="1.1"/>')
+    parts.append(f'<circle cx="{x}" cy="{y}" r="{r*0.60:.1f}" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>')
     a = math.radians(-225 + 270 * pos)
-    px, py = x + (r-2)*math.cos(a), y + (r-2)*math.sin(a)
-    cx2, cy2 = x + rc*0.4*math.cos(a), y + rc*0.4*math.sin(a)
-    parts.append(f'<line x1="{cx2:.1f}" y1="{cy2:.1f}" x2="{px:.1f}" y2="{py:.1f}" stroke="#111214" stroke-width="2.2" stroke-linecap="round"/>')
+    px, py = x + (r-1.2)*math.cos(a), y + (r-1.2)*math.sin(a)
+    ix, iy = x + (r*0.66)*math.cos(a), y + (r*0.66)*math.sin(a)
+    ptr = "#f4f1e8" if cap in ("green","blue","red","grey") else "#26282b"
+    parts.append(f'<line x1="{ix:.1f}" y1="{iy:.1f}" x2="{px:.1f}" y2="{py:.1f}" stroke="{ptr}" stroke-width="1.8" stroke-linecap="round"/>')
     ty = y + r + 13
-    text(x, ty, name, size=8.5 if not small else 8, weight="bold")
+    text(x, ty, name, size=8.5 if not small else 8, weight="bold", ls="0.4")
     if name2:
         ty += 9
-        text(x, ty, name2, size=8.5 if not small else 8, weight="bold")
+        text(x, ty, name2, size=8.5 if not small else 8, weight="bold", ls="0.4")
     text(x, ty + 9, rng, size=6.8, fill=MUTED)
     if inlet:
         kind = "in" if inlet.startswith("IN") else "msg"
@@ -69,12 +96,12 @@ def knob(x, y, name, rng, inlet=None, cap="white", pos=0.5, small=False, name2=N
 def switch(x, y, w, labels, sel=0, title=None, inlet=None):
     """Horizontal n-pos slide switch centered at x,y (w total width)."""
     n = len(labels)
-    parts.append(f'<rect x="{x-w/2}" y="{y-5}" width="{w}" height="10" rx="5" fill="{HOLE}" stroke="{LINE}" stroke-width="1"/>')
+    parts.append(f'<rect x="{x-w/2}" y="{y-5}" width="{w}" height="10" rx="5" fill="{INSET}" stroke="#8d9297" stroke-width="0.8"/>')
     step = w / n
     for i, lab in enumerate(labels):
         cx = x - w/2 + step*(i+0.5)
         if i == sel:
-            parts.append(f'<circle cx="{cx:.1f}" cy="{y}" r="6.5" fill="{LEGEND}" stroke="#111214" stroke-width="1"/>')
+            parts.append(f'<circle cx="{cx:.1f}" cy="{y}" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>')
         text(cx, y + 17, lab, size=6.8, fill=MUTED)
     if title:
         text(x, y - 12, title, size=8, weight="bold")
@@ -82,32 +109,35 @@ def switch(x, y, w, labels, sel=0, title=None, inlet=None):
         badge(x + w/2 + 18, y, inlet, "in" if inlet.startswith("IN") else "msg")
 
 def button(x, y, label, w=52, lit=False):
-    fill = "#43321f" if lit else "#1a1c1f"
-    parts.append(f'<rect x="{x-w/2}" y="{y-9}" width="{w}" height="18" rx="4" fill="{fill}" stroke="{LINE}" stroke-width="1.2"/>')
-    text(x, y + 3, label, size=7.5, weight="bold")
+    fill = "#e8c47c" if lit else "url(#chromeBezel)"
+    stroke = "#a8863c" if lit else "#8d9195"
+    parts.append(f'<rect x="{x-w/2}" y="{y-8.5}" width="{w}" height="17" rx="8.5" fill="{fill}" stroke="{stroke}" stroke-width="0.9"/>')
+    text(x, y + 3, label, size=7.5, weight="bold", fill="#26282b")
 
 def toggle(x, y, label, on=False):
-    parts.append(f'<rect x="{x-13}" y="{y-8}" width="26" height="16" rx="8" fill="{HOLE}" stroke="{LINE}" stroke-width="1"/>')
+    parts.append(f'<rect x="{x-13}" y="{y-8}" width="26" height="16" rx="8" fill="{INSET}" stroke="#8d9297" stroke-width="0.8"/>')
     cx = x + 6 if on else x - 6
-    parts.append(f'<circle cx="{cx}" cy="{y}" r="6" fill="{CAP["green"] if on else CAP["grey"]}"/>')
+    parts.append(f'<circle cx="{cx}" cy="{y}" r="6" fill="{CAP["green"] if on else "url(#chromeDome)"}" stroke="#6f7479" stroke-width="0.6"/>')
     text(x, y + 20, label, size=7, fill=MUTED)
 
-def jack(x, y, label, sub=None):
-    parts.append(f'<circle cx="{x}" cy="{y}" r="8" fill="{HOLE}" stroke="#767c83" stroke-width="2"/>')
-    parts.append(f'<circle cx="{x}" cy="{y}" r="3" fill="#000"/>')
+def jack(x, y, label, sub=None, col="blue"):
+    parts.append(f'<circle cx="{x}" cy="{y}" r="8.5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>')
+    parts.append(f'<circle cx="{x}" cy="{y}" r="5.5" fill="{CAP[col]}"/>')
+    parts.append(f'<circle cx="{x}" cy="{y}" r="2.2" fill="{HOLE}"/>')
     text(x, y + 20, label, size=7.5, weight="bold")
     if sub: text(x, y + 29, sub, size=6.5, fill=MUTED)
 
 def strip(x, y, w, h, title, color):
-    parts.append(f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="6" fill="none" stroke="{LINE}" stroke-width="1"/>')
-    tw = 10 + 6.4 * len(title)
-    parts.append(f'<rect x="{x+12}" y="{y-7}" width="{tw:.0f}" height="14" fill="{PANEL}"/>')
-    parts.append(f'<circle cx="{x+19}" cy="{y}" r="3" fill="{CAP[color]}"/>')
-    text(x + 27, y + 3.5, title, size=9, anchor="start", weight="bold", ls="1.5")
+    """Minimalist: one hairline rule + a colored chip + tracked-out title. No box."""
+    parts.append(f'<circle cx="{x+8}" cy="{y}" r="3" fill="{CAP[color]}" stroke="#4d5157" stroke-width="0.8"/>')
+    text(x + 16, y + 3.5, title, size=8.5, anchor="start", weight="bold", ls="2.2")
+    tw = 24 + 7.4 * len(title)
+    parts.append(f'<line x1="{x+tw:.0f}" y1="{y}" x2="{x+w}" y2="{y}" stroke="{LINE}" stroke-width="0.7"/>')
 
 def led_display(x, y, digits, label=None, w=64, h=32, ghost="88", fs=26):
     """Amber LED numeric display (segment-ghost style), centered at x,y."""
-    parts.append(f'<rect x="{x-w/2}" y="{y-h/2}" width="{w}" height="{h}" rx="4" fill="#0a0705" stroke="#4a4038" stroke-width="1.4"/>')
+    parts.append(f'<rect x="{x-w/2-2}" y="{y-h/2-2}" width="{w+4}" height="{h+4}" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>')
+    parts.append(f'<rect x="{x-w/2}" y="{y-h/2}" width="{w}" height="{h}" rx="3" fill="#0a0705"/>')
     dy = fs * 0.35
     parts.append(f'<text x="{x}" y="{y+dy:.0f}" font-family="Courier New, monospace" font-size="{fs}" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">{esc(ghost)}</text>')
     parts.append(f'<text x="{x}" y="{y+dy:.0f}" font-family="Courier New, monospace" font-size="{fs}" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">{esc(digits)}</text>')
@@ -121,24 +151,25 @@ def quant_group(x, y, title, badge_note, badge_amt, note_pos=0.55, amt_pos=0.6):
     knob(x + 56, y, "AMOUNT", "0 – 1", badge_amt, "grey", amt_pos, small=True)
 
 def screw(x, y):
-    parts.append(f'<circle cx="{x}" cy="{y}" r="6" fill="#33373c" stroke="#0e0f11" stroke-width="1"/>')
-    parts.append(f'<line x1="{x-3.5}" y1="{y-3.5}" x2="{x+3.5}" y2="{y+3.5}" stroke="#0e0f11" stroke-width="1.6"/>')
+    parts.append(f'<circle cx="{x}" cy="{y}" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>')
+    parts.append(f'<line x1="{x-3}" y1="{y-3}" x2="{x+3}" y2="{y+3}" stroke="#6b7075" stroke-width="1.2"/>')
 
 # ---------- case + panel ----------
+parts.append(DEFS)
 parts.append(f'<rect width="{W}" height="{H}" fill="{CASE}"/>')
-parts.append(f'<rect x="14" y="14" width="{MAINW-28}" height="{H-28}" rx="14" fill="{PANEL}" stroke="#3a3e44" stroke-width="2"/>')
+parts.append(f'<rect x="14" y="14" width="{MAINW-28}" height="{H-28}" rx="14" fill="{PANEL}" stroke="#9ba0a5" stroke-width="1.2"/>')
 for sx in (34, MAINW-34):
     for sy in (34, H-34):
         screw(sx, sy)
 
 # ---------- header ----------
-text(52, 52, "ligase~", size=26, anchor="start", weight="bold", ls="1")
-text(168, 52, "GRANULAR TAPE SYNTHESIZER", size=11, anchor="start", fill=MUTED, ls="3")
-text(168, 66, "SYNTHI-STYLE CONTROL SURFACE — Pd PROTOTYPE MOCKUP", size=8, anchor="start", fill=MUTED, ls="2")
-jack(560, 50, "IN L", "IN 1 · bang = clock")
-jack(625, 50, "IN R", "IN 2")
-jack(692, 50, "OUT L")
-jack(748, 50, "OUT R")
+text(52, 52, "ligase~", size=25, anchor="start", weight="normal", ls="5")
+text(214, 52, "GRANULAR TAPE SYNTHESIZER", size=10.5, anchor="start", fill=MUTED, ls="3")
+text(214, 66, "SYNTHI-STYLE CONTROL SURFACE", size=8, anchor="start", fill=MUTED, ls="2")
+jack(560, 50, "IN L", "IN 1 · bang = clock", col="blue")
+jack(625, 50, "IN R", "IN 2", col="blue")
+jack(692, 50, "OUT L", col="red")
+jack(748, 50, "OUT R", col="red")
 
 LX, LW = 44, 726   # left column
 
@@ -178,7 +209,7 @@ knob(LX+192, ky, "SCAN", "0 – 8", "IN 7", "green", 0.45)
 quant_group(LX+252, ky, "QUANTIZE", "MSG", "MSG")
 text(LX+280, ky+46, "quantize · quant", 6.5, MUTED)
 toggle(LX+382, ky-10, "CLK-ADV QUANT", on=False)
-text(LX+382, ky+26, "clock: EXTERNAL", 7, "#d9c48a", weight="bold")
+text(LX+382, ky+26, "clock: EXTERNAL", 7, BRONZE, weight="bold")
 text(LX+382, ky+36, "bang → IN 1", 6.5, MUTED)
 
 SPX = LX + 466
@@ -287,7 +318,7 @@ gx = MX + 58
 for j, d in enumerate(dsts):
     text(gx + j*CELL + CELL/2 + 2, MY + 46, d, size=7, fill=LEGEND, anchor="start", rotate=-62)
 gy = MY + 54
-parts.append(f'<rect x="{gx-4}" y="{gy-4}" width="{MW+8}" height="{MHh+8}" rx="4" fill="#1b1d21" stroke="{LINE}" stroke-width="1.2"/>')
+parts.append(f'<rect x="{gx-4}" y="{gy-4}" width="{MW+8}" height="{MHh+8}" rx="4" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
 pins = {(3,0):"white", (15,4):"white", (8,7):"white", (9,13):"green", (5,15):"white", (13,3):"green", (0,11):"white", (8,17):"white", (0,21):"green"}
 for i, s in enumerate(srcs):
     text(gx - 10, gy + i*CELL + CELL/2 + 2.5, s, size=7, fill=LEGEND, anchor="end")
@@ -298,10 +329,10 @@ for i, s in enumerate(srcs):
             parts.append(f'<circle cx="{cx}" cy="{cy}" r="6.5" fill="{col}" stroke="#0d0e10" stroke-width="1.2"/>')
             parts.append(f'<circle cx="{cx}" cy="{cy}" r="2" fill="#0d0e10"/>')
         else:
-            parts.append(f'<circle cx="{cx}" cy="{cy}" r="3.4" fill="{HOLE}" stroke="#3c4046" stroke-width="0.8"/>')
+            parts.append(f'<circle cx="{cx}" cy="{cy}" r="3.4" fill="{HOLE}" stroke="#3e4247" stroke-width="0.8"/>')
 text(gx + MW/2, gy + MHh + 20, "16 × 22 panel subset — full 44 sources × 26 destinations (incl. modout 1-4) reachable by message", size=7, fill=MUTED)
 parts.append(f'<line x1="{gx + 16*CELL}" y1="{gy-4}" x2="{gx + 16*CELL}" y2="{gy+MHh+4}" stroke="#4a4f55" stroke-width="1" stroke-dasharray="3,3"/>')
-text(gx + 16*CELL + 3*CELL, gy - 66, "PER-GRAIN (v1.5)", size=7, fill="#d9c48a", weight="bold")
+text(gx + 16*CELL + 3*CELL, gy - 66, "PER-GRAIN (v1.5)", size=7, fill=BRONZE, weight="bold")
 text(gx + MW/2, gy + MHh + 31, "sources: LFO ×4 · perlin ×4 · lorenz ×4 · nbody ×4 · sphere ×4 · rand ×4 · pattern 0-7 · input env follower · per-grain cols apply at trigger, never write the knobs", size=7, fill=MUTED)
 
 # ---------- RIGHT-MIDDLE: MOD SOURCES (shared generators = the matrix rows) ----------
@@ -325,24 +356,24 @@ text(lx, ly,    "A    SIN/SAW/SQR: PHASE   PERL: FREQ   LRNZ: SIGMA   NBDY: G   
 text(lx, ly+10, "B    SAW: SKEW   SQR: PULSE WIDTH   LRNZ: RHO (chaos)   NBDY: DAMP   SPHR: ELAST", 6.4, MUTED, "start")
 text(lx, ly+20, "C    LRNZ: BETA   NBDY: EPSILON   SPHR: SPIN        D    NBDY: PUMP amt (hold = interval)   SPHR: KICK strength", 6.4, MUTED, "start")
 text(lx, ly+30, "RATE = IOT x scale (sources breathe with grain density; GLOBAL per instance)  ·  KICK = sphere_kick impulse  ·  RESET per family", 6.4, MUTED, "start")
-text(MSX+636, ly+30, "all captured — schema v4", 6.4, "#d9c48a", "end")
+text(MSX+636, ly+30, "all captured — schema v4", 6.4, BRONZE, "end")
 
 # ---------- RIGHT-BOTTOM: JOYSTICK (morph) ----------
 JX, JY, JS = 812, 760, 216
 strip(JX-14, JY-36, JS+220, 268, "MORPH METASURFACE — JOYSTICK", "green")
-parts.append(f'<rect x="{JX}" y="{JY}" width="{JS}" height="{JS}" rx="6" fill="#1b1d21" stroke="{LINE}" stroke-width="1.2"/>')
+parts.append(f'<rect x="{JX}" y="{JY}" width="{JS}" height="{JS}" rx="6" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
 for f in (0.25, 0.5, 0.75):
-    parts.append(f'<line x1="{JX+JS*f}" y1="{JY}" x2="{JX+JS*f}" y2="{JY+JS}" stroke="#2e3136" stroke-width="0.8"/>')
-    parts.append(f'<line x1="{JX}" y1="{JY+JS*f}" x2="{JX+JS}" y2="{JY+JS*f}" stroke="#2e3136" stroke-width="0.8"/>')
+    parts.append(f'<line x1="{JX+JS*f}" y1="{JY}" x2="{JX+JS*f}" y2="{JY+JS}" stroke="#33363b" stroke-width="0.8"/>')
+    parts.append(f'<line x1="{JX}" y1="{JY+JS*f}" x2="{JX+JS}" y2="{JY+JS*f}" stroke="#33363b" stroke-width="0.8"/>')
 snaps = [(0.18,0.2,"A"),(0.82,0.24,"B"),(0.25,0.8,"C"),(0.74,0.72,"D")]
 for fx, fy, lab in snaps:
     sxp, syp = JX+JS*fx, JY+JS*fy
-    parts.append(f'<circle cx="{sxp}" cy="{syp}" r="7" fill="#33383f" stroke="{CAP["yellow"]}" stroke-width="1.5"/>')
+    parts.append(f'<circle cx="{sxp}" cy="{syp}" r="7" fill="#2b2e32" stroke="{CAP["yellow"]}" stroke-width="1.5"/>')
     text(sxp, syp+3, lab, size=7.5, weight="bold", fill=CAP["yellow"])
 cxp, cyp = JX+JS*0.55, JY+JS*0.45
-parts.append(f'<line x1="{cxp-11}" y1="{cyp}" x2="{cxp+11}" y2="{cyp}" stroke="{LEGEND}" stroke-width="1.4"/>')
-parts.append(f'<line x1="{cxp}" y1="{cyp-11}" x2="{cxp}" y2="{cyp+11}" stroke="{LEGEND}" stroke-width="1.4"/>')
-parts.append(f'<circle cx="{cxp}" cy="{cyp}" r="5" fill="none" stroke="{LEGEND}" stroke-width="1.4"/>')
+parts.append(f'<line x1="{cxp-11}" y1="{cyp}" x2="{cxp+11}" y2="{cyp}" stroke="#f2efe6" stroke-width="1.4"/>')
+parts.append(f'<line x1="{cxp}" y1="{cyp-11}" x2="{cxp}" y2="{cyp+11}" stroke="#f2efe6" stroke-width="1.4"/>')
+parts.append(f'<circle cx="{cxp}" cy="{cyp}" r="5" fill="none" stroke="#f2efe6" stroke-width="1.4"/>')
 badge(JX+40, JY+JS+14, "IN 23", "in"); text(JX+76, JY+JS+17, "X", 8, LEGEND, "start", "bold")
 badge(JX+124, JY+JS+14, "IN 24", "in"); text(JX+160, JY+JS+17, "Y", 8, LEGEND, "start", "bold")
 bx = JX + JS + 58
@@ -358,12 +389,12 @@ text(bx, JY+226, "morph_cursor 1 = CV", 6.8, MUTED)
 VX, VY = 1220, 760
 strip(VX-14, VY-36, 270, 268, "MONITOR", "white")
 for ch, off in (("L", 0), ("R", 34)):
-    parts.append(f'<rect x="{VX+off}" y="{VY}" width="20" height="170" rx="3" fill="#101114" stroke="{LINE}" stroke-width="1"/>')
+    parts.append(f'<rect x="{VX+off}" y="{VY}" width="20" height="170" rx="3" fill="{INSET}" stroke="#84888c" stroke-width="0.8"/>')
     segs = 12
     lit = 8 if ch == "L" else 7
     for i in range(segs):
         yy = VY + 166 - i*13.5
-        col = "#2f3338"
+        col = "#2c2f34"
         if i < lit: col = CAP["green"] if i < 9 else (CAP["yellow"] if i < 11 else CAP["red"])
         parts.append(f'<rect x="{VX+off+3}" y="{yy-9}" width="14" height="9" fill="{col}"/>')
     text(VX+off+10, VY+184, ch, 8, LEGEND, weight="bold")
@@ -375,17 +406,17 @@ text(VX+130, VY+134, "1/2 audio · 3 note-change", 7, MUTED)
 text(VX+130, VY+146, "4 grain bang · 5 splice end", 7, MUTED)
 text(VX+130, VY+158, "9 state / param reports", 7, MUTED)
 text(VX+130, VY+186, "pattern events: message-driven", 7, MUTED)
-text(VX+130, VY+198, "pattern event grain [ 1(3,8) ]", 7, "#d9c48a")
+text(VX+130, VY+198, "pattern event grain [ 1(3,8) ]", 7, BRONZE)
 
 # ---------- XPNDR sidecar module (snapshot expander — edit buffer) ----------
 XL = MAINW + 14          # sidecar case left
 XW = W - XL - 14         # sidecar case width
-parts.append(f'<rect x="{XL}" y="14" width="{XW}" height="{H-28}" rx="14" fill="{PANEL}" stroke="#3a3e44" stroke-width="2"/>')
+parts.append(f'<rect x="{XL}" y="14" width="{XW}" height="{H-28}" rx="14" fill="{PANEL}" stroke="#9ba0a5" stroke-width="1.2"/>')
 for sxx in (XL+20, XL+XW-20):
     for syy in (34, H-34):
         screw(sxx, syy)
 XC = XL + XW/2           # sidecar center x
-text(XL+38, 52, "XPNDR", size=22, anchor="start", weight="bold", ls="2")
+text(XL+38, 52, "XPNDR", size=21, anchor="start", weight="normal", ls="5")
 text(XL+38, 68, "SNAPSHOT EXPANDER — EDIT BUFFER", size=8, anchor="start", fill=MUTED, ls="1.5")
 
 xy = 92; xh = 104
@@ -431,7 +462,7 @@ text(XL+72, cky+22, "snapbuf_store", 6.5, MUTED)
 text(XL+150, cky+22, "snapbuf_apply", 6.5, MUTED)
 text(XL+232, cky+22, "hold = momentary", 6.5, MUTED)
 text(XL+308, cky+22, "compare", 6.5, MUTED)
-text(XC, cky+42, "edits are COLD — ASSIGN commits; AUDITION borrows the live voice and reverts exactly", 7.2, "#d9c48a", weight="bold")
+text(XC, cky+42, "edits are COLD — ASSIGN commits; AUDITION borrows the live voice and reverts exactly", 7.2, BRONZE, weight="bold")
 
 xy += 100 + 18
 text(XL+38, xy, "MESSAGES", 8, MUTED, "start", "bold", ls="1.5")
@@ -445,7 +476,7 @@ for i, ln in enumerate([
     text(XL+38, xy+14+i*11, ln, 7, MUTED, "start")
 text(XL+38, xy+14+5*11+8, "STORE to a placed slot reshapes the morph field next block —", 6.8, MUTED, "start")
 text(XL+38, xy+14+5*11+18, "deliberate act, never a knob side-effect. AUDITION reverts exact; ASSIGN mid-audition commits.", 6.8, MUTED, "start")
-text(XL+38, xy+14+5*11+38, "Pd prototype: own canvas · speaks only snapbuf_* · parses outlet 9.", 6.8, "#d9c48a", "start")
+text(XL+38, xy+14+5*11+38, "Pd prototype: own canvas · speaks only snapbuf_* · parses outlet 9.", 6.8, BRONZE, "start")
 text(XL+XW-24, H-58, "Plans/snapshot_expander.md", 7, MUTED, "end")
 
 # ---------- footer ----------
