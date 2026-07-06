@@ -27,6 +27,19 @@ cd docs/ui && python3 gen_panel.py   # silkscreen (byte-identical wrapper)
   alongside the panel; don't open it at the same time as the embedded `[pd
   xpndr]` window expecting independent state — they share receive names.
 
+## Installing in plugdata — the `.plugdata` bundle
+
+`make bundle` builds **`dist/ligase.plugdata`** (deterministic; run it on each
+platform whose external you want included — a Mac build adds
+`ligase~.pd_darwin` next to `.pd_linux`). Drag the file into plugdata
+**standalone** (≥ 0.9.2): it installs as `Patches/ligase/` in the library —
+panel + expander + this README + `ligase.conf` + the external(s), which load
+from the package's own directory (conf included: `max_grains` is read from
+the external's directory). Standalone path only — the plugin (VST/AU) build
+needs ligase compiled in (`Plans/vst_plugin.md`). macOS note: Gatekeeper
+quarantines *downloaded* unsigned binaries; a locally built bundle is
+unaffected, and plugdata itself warns on quarantined installs.
+
 ## Opening in plugdata
 
 Open `pd/ligase_panel.pd` in plugdata (or vanilla Pd ≥ 0.54) with the compiled

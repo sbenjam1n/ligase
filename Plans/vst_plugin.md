@@ -2,7 +2,10 @@
 
 **Owner:** SLB
 **Date:** 2026-07-05
-**Status:** PLANNED (GATE A — owner decisions below; recommendations flagged [R])
+**Status:** PLANNED (GATE A — owner decisions below; recommendations flagged [R]).
+**GATE A.2 (license) DEFERRED by owner 2026-07-06** ("I can set the license later, no one
+is using it but us right now") — personal-use builds are unaffected; the decision must land
+before any *distribution* of a combined plugdata/VST3 build. Not a blocker for v1 build work.
 **Tracked in:** `QUEUE.md` §4a (prototyping/UI/VST arc, Seq 71)
 **Related:** `Plans/pd_panel_prototype.md` (the panel patch = this plan's v1 GUI),
 `docs/modulation_layers.md` (the state model that becomes the preset system),

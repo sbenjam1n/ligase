@@ -130,16 +130,16 @@ this is the "where we are / how to continue" digest._
   PATTERNS section. Pattern tests: `tests/pattern/`; morph: `tests/morph/`.)
 
 ## Immediate next steps
-1. **`.plugdata` bundle** (`Plans/pd_panel_prototype.md` Step 5, owner-approved): emit_bundle /
-   `make bundle` → `ligase.plugdata` (panel patches + README + conf + both platform
-   externals); container layout must be checked against plugdata's loader; drag-drop install
-   is the owner-machine test.
-2. Owner hands-on gate: open `pd/ligase_panel.pd` in plugdata on the Mac (feel test — knob
-   ranges, matrix workflow, scope hookup per `pd/README.md`); findings become layout-data edits.
-3. Owner ear-test round on the new features (list above) + the expander workflow feel (AC6)
+1. Owner hands-on gate (plan Step 6): on the Mac, `make && make bundle` (adds
+   `ligase~.pd_darwin`), drag `dist/ligase.plugdata` into plugdata standalone, feel test
+   (knob ranges, matrix workflow, scope hookup per the package README); findings become
+   layout-data edits. Step 5 itself is DONE (Seq 78: loader-matched, deterministic,
+   install-simulated on Linux).
+2. Owner ear-test round on the new features (list above) + the expander workflow feel (AC6)
    — file findings as new B-items.
-4. `Plans/vst_plugin.md` GATE A: the LICENSE decision (GPL-2-only vs "or later") is the owner's.
-5. Parked ideas: source-rates-as-matrix-destinations (matrix-on-matrix; matrix plan's domain);
+3. `Plans/vst_plugin.md` GATE A: license decision DEFERRED by owner (Seq 77) — re-raise only
+   at distribution time; v1 build work is unblocked whenever the owner wants it.
+4. Parked ideas: source-rates-as-matrix-destinations (matrix-on-matrix; matrix plan's domain);
    expander v1.1 = audition + A/B compare pair; morph FX bases completeness; §4 build-naming
    cleanup (only when cutting a release); `make manual` when the owner asks (much accumulated).
 
