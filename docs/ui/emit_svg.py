@@ -470,17 +470,22 @@ def _hole(px, py):
     parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3.4" fill="{HOLE}" stroke="#3e4247" stroke-width="0.8"/>')
 
 # ===== SEQ / SCALE block (top; beds on the rails, control columns inside) =====
+# Geometry + generators live in panel_layout (SEQ_TONE/SEQ_TIME/SEQ_GRID); the ring pins,
+# polygon overlays, euclid ring and grid pins stay bespoke but pull every coordinate from
+# that data. The knobs/switches/buttons/toggles are SEQ_* CONTROLS records drawn via the
+# same draw_* adapters as every other section.
 strip(XL, 92, 340, 0, "TONE CIRCLE — SCALE", "yellow")
 strip(1858, 92, 196, 0, "SLOTS / COMMIT", "white")
 strip(2064, 92, 340, 0, "TIME CIRCLE — PATTERN", "green")
 
 # --- TONE bed + controls ---
-parts.append(f'<rect x="{XL}" y="110" width="216" height="216" rx="6" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
-tcx, tcy, TCR = 1616, 218, 78
+_tb = L.SEQ_TONE["bed"]
+parts.append(f'<rect x="{_tb[0]}" y="{_tb[1]}" width="{_tb[2]}" height="{_tb[3]}" rx="6" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
+tcx, tcy, TCR = L.SEQ_TONE["cx"], L.SEQ_TONE["cy"], L.SEQ_TONE["r"]
 parts.append(f'<circle cx="{tcx}" cy="{tcy}" r="{TCR}" fill="none" stroke="#33363b" stroke-width="0.8"/>')
-_order = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
-_wt = {"C", "D", "E", "F#", "G#", "A#"}
-_ax3 = ["C", "E", "G#"]
+_order = L.SEQ_TONE["order"]
+_wt = L.SEQ_TONE["whole_tone"]
+_ax3 = L.SEQ_TONE["axis3"]
 _tp = {}
 for _i, _n in enumerate(_order):
     _a = math.radians(-90 + _i * 30)
@@ -494,36 +499,38 @@ for _i, _n in enumerate(_order):
     text(tcx + (TCR+16)*math.cos(_la), tcy + (TCR+16)*math.sin(_la) + 2.5, _n, 7,
          "#b9bec4" if _n in _wt else "#5b6066", "middle", "bold" if _n in _wt else "normal")
 text(1616, 340, "pin = pitch class · GREEN = axis tonic", 6.5, MUTED)
-switch(1786, 130, 104, ["CHRO", "5THS", "W-T"], 0, "RING ORDER")
-knob(1786, 184, "ROOT", "rotate = transpose", None, "white", 0.0)
-knob(1758, 248, "MODE", "home degree", None, "grey", 0.0, small=True)
-knob(1814, 248, "AXIS", "1·2·3·4·6", None, "yellow", 0.62, small=True)
-knob(1786, 308, "PRESET", "MAJ – AUG", None, "yellow", 0.3, small=True)
+draw_switch("seq_ring_order")
+draw_knob("seq_root")
+draw_knob("seq_mode")
+draw_knob("seq_axis")
+draw_knob("seq_preset")
 
 # --- SLOTS / COMMIT (mirror column) ---
 text(BCTR, 116, "SCALE SLOTS", 8, LEGEND, "middle", "bold", "1.5")
 for _i in range(16):
-    _r, _cc = divmod(_i, 4)
-    button(1887 + _cc * 46, 134 + _r * 22, chr(ord("A") + _i), 40, lit=(_i == 0))
-button(BCTR, 224, "AXIS → SLOTS", 96)
+    draw_button(f"seq_slot_{chr(ord('A') + _i)}")
+draw_button("seq_axis_slots")
 text(BCTR, 242, "AXIS 3 = the Giant Steps tonic cycle", 6.5, BRONZE)
-_led_line(BCTR, 266, 188, "pattern pitch_scale_slot [ 0 1 2 ]", 7.0)
+_ro = _svg("seq_readout")
+_led_line(_ro["x"], _ro["y"], _ro["w"], _ro["s"], _ro["fs"])
 text(BCTR, 286, "DEST", 7.5, LEGEND, "middle", "bold")
-switch(BCTR, 300, 140, ["GRAIN", "SMEAR", "BOTH"], 2, None)
-button(1906, 334, "APPLY", 52, lit=True)
-toggle(1972, 332, "REV", on=False)
-knob(2024, 328, "ALT", "", None, "grey", 0.15, small=True)
+draw_switch("seq_dest")
+draw_button("seq_apply")
+draw_toggle("seq_rev")
+draw_knob("seq_alt")
 
 # --- TIME bed + controls ---
-parts.append(f'<rect x="2188" y="110" width="216" height="216" rx="6" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
-ucx, ucy = 2296, 218
+_ub = L.SEQ_TIME["bed"]
+parts.append(f'<rect x="{_ub[0]}" y="{_ub[1]}" width="{_ub[2]}" height="{_ub[3]}" rx="6" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
+ucx, ucy = L.SEQ_TIME["cx"], L.SEQ_TIME["cy"]
 parts.append(f'<circle cx="{ucx}" cy="{ucy}" r="{TCR}" fill="none" stroke="#33363b" stroke-width="0.8"/>')
+_steps, _ek = L.SEQ_TIME["steps"], L.SEQ_TIME["euclid_k"]
 _on = set(); _acc = 0
-for _i in range(8):
-    _acc += 3
-    if _acc >= 8: _acc -= 8; _on.add(_i)
+for _i in range(_steps):
+    _acc += _ek
+    if _acc >= _steps: _acc -= _steps; _on.add(_i)
 _ep = []
-for _i in range(8):
+for _i in range(_steps):
     _a = math.radians(-90 + _i * 45)
     _ep.append((ucx + TCR*math.cos(_a), ucy + TCR*math.sin(_a), _i in _on))
 parts.append('<polygon points="' + " ".join(f"{p[0]:.1f},{p[1]:.1f}" for p in _ep if p[2]) + '" fill="none" stroke="#79c98b" stroke-width="1.4" stroke-opacity="0.9"/>')
@@ -535,17 +542,17 @@ for _i, (_px, _py, _o) in enumerate(_ep):
     text(ucx + (TCR+16)*math.cos(_la), ucy + (TCR+16)*math.sin(_la) + 2.5, str(_i+1), 7,
          "#b9bec4" if _o else "#5b6066")
 text(2296, 340, "pin = onset · euclid (3,8) on the cycle clock", 6.5, MUTED)
-switch(2126, 130, 104, ["EVNT", "MOD", "PTCH", "SMR"], 0, "TARGET")
-knob(2126, 184, "K", "pulses", None, "white", 0.4)
-knob(2098, 248, "N", "steps", None, "grey", 0.5, small=True)
-knob(2154, 248, "ROT", "rotate", None, "grey", 0.2, small=True)
-knob(2126, 308, "SLOT", "1 – 8", None, "grey", 0.1, small=True)
+draw_switch("seq_time_target")
+draw_knob("seq_k")
+draw_knob("seq_n")
+draw_knob("seq_rot")
+draw_knob("seq_time_slot")
 
 # --- PATTERN GRID (full region width; matrix idiom) ---
 strip(XL, 358, XW, 0, "PATTERN GRID — 8 SLOTS × 16 STEPS", "blue")
-_gx, _gy = 1522, 378
+_gx, _gy = L.SEQ_GRID["ox"], L.SEQ_GRID["oy"]
 parts.append(f'<rect x="{_gx-4}" y="{_gy-4}" width="{16*23+8}" height="{8*23+8}" rx="4" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
-_demo = {(0,0),(0,4),(0,8),(0,12),(2,0),(2,3),(2,6),(2,10),(2,13),(5,2),(5,9)}
+_demo = L.SEQ_GRID["demo"]
 for _r in range(8):
     text(_gx - 12, _gy + _r*23 + 14, str(_r), 7, LEGEND, "end")
     for _cc in range(16):
@@ -555,12 +562,13 @@ for _cc in range(0, 16, 4):
     parts.append(f'<line x1="{_gx+_cc*23}" y1="{_gy-4}" x2="{_gx+_cc*23}" y2="{_gy+184+4}" stroke="#4a4f55" stroke-width="0.8" stroke-dasharray="3,3"/>')
 text(1940, 384, "SLOT TARGET — XPNDR ADDRESSING", 8, LEGEND, "start", "bold", "1.2")
 AXC2 = 2172
-switch(AXC2, 418, 300, ["GRAIN", "TAPE", "DELAY", "FILTR", "SMEAR", "ENV", "PITCH", "SPACE"], 3, None)
+draw_switch("seq_grid_page")
 text(AXC2, 406, "PAGE", 7, LEGEND, "middle", "bold")
-switch(AXC2, 462, 300, ["1", "2", "3", "4", "5", "6", "7", "8"], 0, None)
+draw_switch("seq_grid_param")
 text(AXC2, 450, "PARAM", 7, LEGEND, "middle", "bold")
-knob(1990, 516, "VALUE", "step level", None, "white", 0.42, small=True)
-_led_line(2172, 516, 250, "pattern moog_cutoff [ 0.2 0.8 .. ]", 8)
+draw_knob("seq_grid_value")
+_gr = _svg("seq_grid_readout")
+_led_line(_gr["x"], _gr["y"], _gr["w"], _gr["s"], _gr["fs"])
 text(AXC2, 552, "row target = any snapbuf field · EVNT kinds via TARGET · pin = step at VALUE (the DEPTH-at-pin rule)", 6.5, MUTED)
 
 # ===== SNAPSHOT EXPANDER (bottom; paired columns, MONITOR in the right corner) =====

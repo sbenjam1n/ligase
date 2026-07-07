@@ -273,6 +273,73 @@ CONTROLS = [
        note="duplicate of LEVEL (inlet 21); left unwired in the patch — two line~ writers on one signal inlet would SUM"),
     _c("bank_mix", "knob", dict(x=2295, y=954, name="BANK MIX", rng="0 – 1", inlet="MSG", cap="grey", pos=0.0, small=True),
        ("msg", "smear_bank_mix"), lo=0.0, hi=1.0, default=0.0, init_send=False),
+
+    # ---------- SEQ / SCALE (the harmonic + notation sidecar; wired in [pd seq]) ----------
+    # All records are cold-editing citizens (init_send=False): the circles/grid edit a
+    # panel-side buffer, APPLY/SEQ/grid-pins are the only realtime touchpoints. svg=None on
+    # the ring/grid pins -> drawn bespoke from SEQ_TONE/SEQ_GRID (positions pulled from data).
+    # -- TONE CIRCLE: 12 ring toggles = pitch classes 0-11. The WORKING ring starts BLANK
+    # (all off) so "click the pitch classes you want" composes exactly that set; the SVG
+    # silkscreen still draws the whole-tone example (SEQ_TONE["whole_tone"], independent). --
+    *[_c(f"seq_ring_{i}", "toggle", None, ("special", "seq_ring"),
+         lo=0, hi=1, default=0, init_send=False,
+         note=f"pitch class {i}; RING ORDER is a pure display projection (message = same)")
+      for i in range(12)],
+    _c("seq_ring_order", "switch", dict(x=1786, y=130, w=104, labels=["CHRO", "5THS", "W-T"], sel=0, title="RING ORDER"),
+       ("special", "seq_ring_order"), lo=0, hi=2, default=0, init_send=False,
+       note="display projection only; does not enter the composed scale message"),
+    _c("seq_root", "knob", dict(x=1786, y=184, name="ROOT", rng="rotate = transpose", cap="white", pos=0.0),
+       ("special", "seq_root"), lo=-24, hi=24, default=0, init_send=False, note="-> scale_root (cold until APPLY)"),
+    _c("seq_mode", "knob", dict(x=1758, y=248, name="MODE", rng="home degree", cap="grey", pos=0.0, small=True),
+       ("special", "seq_mode"), lo=0, hi=11, default=0, init_send=False, note="-> scale_rotate (cold until APPLY)"),
+    _c("seq_axis", "knob", dict(x=1814, y=248, name="AXIS", rng="1·2·3·4·6", cap="yellow", pos=0.62, small=True),
+       ("special", "seq_axis"), lo=0, hi=4, default=2, init_send=False, note="index into SEQ_AXES; 2 = axis 3 (Giant Steps)"),
+    _c("seq_preset", "knob", dict(x=1786, y=308, name="PRESET", rng="MAJ – AUG", cap="yellow", pos=0.3, small=True),
+       ("special", "seq_preset"), lo=0, hi=5, default=0, init_send=False, note="index into SEQ_PRESETS; lights the ring"),
+
+    # -- SLOTS / COMMIT --
+    *[_c(f"seq_slot_{chr(ord('A')+i)}", "button",
+         dict(x=1887 + (i % 4) * 46, y=134 + (i // 4) * 22, label=chr(ord("A") + i), w=40, lit=(i == 0)),
+         ("special", "seq_slot"), lo=0, hi=1, default=0, init_send=False)
+      for i in range(16)],
+    _c("seq_axis_slots", "button", dict(x=1956, y=224, label="AXIS → SLOTS", w=96),
+       ("special", "seq_axis_slots"), init_send=False, note="writes the shape at each axis rotation into slots 0..n-1 (pitch_scale_to)"),
+    _c("seq_readout", "readout", dict(x=1956, y=266, w=188, s="pattern pitch_scale_slot [ 0 1 2 ]", fs=7.0),
+       ("special", "seq_readout"), init_send=False, note="live SENDS readout (truth in labeling)"),
+    _c("seq_dest", "switch", dict(x=1956, y=300, w=140, labels=["GRAIN", "SMEAR", "BOTH"], sel=2, title=None),
+       ("special", "seq_dest"), lo=0, hi=2, default=2, init_send=False, note="routes pitch_scale vs smear_pitch_scale"),
+    _c("seq_apply", "button", dict(x=1906, y=334, label="APPLY", w=52, lit=True),
+       ("special", "seq_apply"), init_send=False, note="commits the cold scale/root/mode buffer to the engine"),
+    _c("seq_rev", "toggle", dict(x=1972, y=332, label="REV", on=False),
+       ("special", "seq_rev"), lo=0, hi=1, default=0, init_send=False, note="retrograde the SEQ slot progression"),
+    _c("seq_alt", "knob", dict(x=2024, y=328, name="ALT", rng="", cap="grey", pos=0.15, small=True),
+       ("special", "seq_alt"), lo=0, hi=8, default=0, init_send=False, note="<> alternation depth of the slot string"),
+
+    # -- TIME CIRCLE --
+    _c("seq_time_target", "switch", dict(x=2126, y=130, w=104, labels=["EVNT", "MOD", "PTCH", "SMR"], sel=0, title="TARGET"),
+       ("special", "seq_time_target"), lo=0, hi=3, default=0, init_send=False, note="index into SEQ_TIME_TARGETS"),
+    _c("seq_k", "knob", dict(x=2126, y=184, name="K", rng="pulses", cap="white", pos=0.4),
+       ("special", "seq_k"), lo=0, hi=16, default=3, init_send=False, note="euclid pulses"),
+    _c("seq_n", "knob", dict(x=2098, y=248, name="N", rng="steps", cap="grey", pos=0.5, small=True),
+       ("special", "seq_n"), lo=1, hi=16, default=8, init_send=False, note="euclid steps"),
+    _c("seq_rot", "knob", dict(x=2154, y=248, name="ROT", rng="rotate", cap="grey", pos=0.2, small=True),
+       ("special", "seq_rot"), lo=0, hi=15, default=0, init_send=False, note="euclid rotation"),
+    _c("seq_time_slot", "knob", dict(x=2126, y=308, name="SLOT", rng="1 – 8", cap="grey", pos=0.1, small=True),
+       ("special", "seq_time_slot"), lo=1, hi=8, default=1, init_send=False, note="pattern slot for the euclid arm"),
+
+    # -- PATTERN GRID (8 slots x 16 steps) + SLOT TARGET (XPNDR addressing) --
+    *[_c(f"seq_grid_{r}_{cc}", "toggle", None, ("special", "seq_grid"),
+         lo=0, hi=1, default=0, init_send=False)
+      for r in range(8) for cc in range(16)],
+    _c("seq_grid_page", "switch",
+       dict(x=2172, y=418, w=300, labels=["GRAIN", "TAPE", "DELAY", "FILTR", "SMEAR", "ENV", "PITCH", "SPACE"], sel=3, title=None),
+       ("special", "seq_grid_page"), lo=0, hi=7, default=3, init_send=False, note="reuses XPNDR PAGE addressing for the row target"),
+    _c("seq_grid_param", "switch", dict(x=2172, y=462, w=300, labels=["1", "2", "3", "4", "5", "6", "7", "8"], sel=0, title=None),
+       ("special", "seq_grid_param"), lo=0, hi=7, default=0, init_send=False, note="reuses XPNDR PARAM addressing"),
+    _c("seq_grid_value", "knob", dict(x=1990, y=516, name="VALUE", rng="step level", cap="white", pos=0.42, small=True),
+       ("special", "seq_grid_value"), lo=0.0, hi=1.0, default=0.5, init_send=False, note="pin writes the step at this level (DEPTH-at-pin)"),
+    _c("seq_grid_readout", "readout", dict(x=2172, y=516, w=250, s="pattern moog_cutoff [ 0.2 0.8 .. ]", fs=8),
+       ("special", "seq_grid_readout"), init_send=False, note="live SENDS readout for the grid row"),
 ]
 
 CONTROL_BY_ID = {c["id"]: c for c in CONTROLS}
@@ -409,6 +476,65 @@ DIST_PRESETS = {
     8: ["distortion 1", "dist_waveshaper_mode 4", "dist_pregain 8",
         "dist_poly_c1 1", "dist_poly_c2 0.8", "dist_poly_c3 0.6"],
 }
+
+
+# ---------- SEQ / SCALE sidecar — geometry + generators AS DATA ----------
+# The band (Seq 84-87, owner-approved) is drawn from THIS data: the tone/time rings and
+# the pattern grid stay bespoke in emit_svg.py but pull every coordinate from here (the
+# matrix/joystick idiom) so nothing can drift. The SEQ_* CONTROLS records above carry the
+# lgR_<id> receive symbols + bindings; emit_pd.py wires them in the [pd seq] canvas.
+SEQ_TONE = dict(
+    bed=(1508, 110, 216, 216),                        # 216x216 bed (joystick/scope twin)
+    cx=1616, cy=218, r=78,
+    order=["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"],
+    whole_tone={"C", "D", "E", "F#", "G#", "A#"},     # default lit scale (regular hexagon)
+    axis3=["C", "E", "G#"],                            # green axis-tonic overlay (AXIS 3)
+)
+SEQ_TIME = dict(
+    bed=(2188, 110, 216, 216),
+    cx=2296, cy=218, r=78,
+    steps=8, euclid_k=3,                              # euclid (3,8) demo onset ring
+)
+SEQ_GRID = dict(
+    ox=1522, oy=378, rows=8, cols=16, cell=23,
+    demo={(0, 0), (0, 4), (0, 8), (0, 12), (2, 0), (2, 3), (2, 6),
+          (2, 10), (2, 13), (5, 2), (5, 9)},          # silkscreen demo pins
+)
+
+# POLYGON PRESET knob positions -> named pitch-class sets (panel-side, like DIST_PRESETS).
+# A preset LIGHTS the 12 ring toggles; the ring cascade then composes the same scale.
+SEQ_PRESETS = ["MAJ", "MIN", "PENT", "W-T", "OCTA", "AUG"]
+SEQ_PRESET_PCS = {
+    0: [0, 2, 4, 5, 7, 9, 11],        # MAJ  major
+    1: [0, 2, 3, 5, 7, 8, 10],        # MIN  natural minor
+    2: [0, 2, 4, 7, 9],               # PENT major pentatonic
+    3: [0, 2, 4, 6, 8, 10],           # W-T  whole tone (Messiaen mode 1)
+    4: [0, 1, 3, 4, 6, 7, 9, 10],     # OCTA octatonic H-W (Messiaen mode 2)
+    5: [0, 3, 4, 7, 8, 11],           # AUG  augmented
+}
+
+# AXIS knob positions -> symmetry divisor; AXIS->SLOTS writes the shape at each rotation
+# (interval = 12/divisor) into slots 0..n-1 via pitch_scale_to. AXIS 3 (thirds) = the
+# Giant Steps tonic cycle C-E-G#; AXIS 4 = the minor-third/diminished cycle.
+SEQ_AXES = [1, 2, 3, 4, 6]
+SEQ_AXIS_SHIFTS = {
+    1: [0],
+    2: [0, 6],
+    3: [0, 4, 8],
+    4: [0, 3, 6, 9],
+    6: [0, 2, 4, 6, 8, 10],
+}
+
+# TIME circle TARGET switch -> pattern target token for `pattern <target> [ ... ]`.
+SEQ_TIME_TARGETS = ["event grain", "moog_cutoff", "pitch", "smear_pitch"]  # EVNT MOD PTCH SMR
+
+# Euclid (k,n) presets — panel-side, the DIST_PRESETS idiom (a preset = a compact-notation
+# token). K x N select a preset; the arm sends `pattern <target> <v>(k,n)` (the engine's
+# Bjorklund euclid suffix, src/ligase~.c ligase_pattern). Vanilla Pd cannot build a
+# comma-bearing atom dynamically, so the tokens are static message boxes selected by K*100+N.
+SEQ_EUCLID_PRESETS = [(1, 4), (2, 4), (3, 4), (2, 8), (3, 8), (4, 8),
+                      (5, 8), (3, 16), (4, 16), (5, 16), (7, 16), (9, 16)]
+SEQ_EUCLID_DEFAULT = (3, 8)     # fallback when K x N matches no preset
 
 
 def controls_with_bind(kind):

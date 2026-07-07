@@ -3554,6 +3554,44 @@ without a subfield reports all 8 values in export order.
 - snapbuf_from_live inherits capture transparency: with the matrix wobbling a destination, the
   buffer records the knob value (the tracked base), never base+offset.
 
+# TONE / TIME CIRCLE (THE SEQ / SCALE SIDECAR)
+
+The harmonic + notation control surface (`pd/ligase_seq.pd`, embedded as `[pd seq]` in the
+panel; `Plans/seq_scale_sidecar.md`). A scale is a polygon on the pitch-class ring; a rhythm
+is the same polygon on the cycle ring — both are point-sets you PIN. Nothing here is a new
+engine message: the circles/grid compose the existing `pitch_scale`, `scale_root`,
+`scale_rotate`, `pitch_scale_to`, `pitch_scale_slot`, and `pattern` vocabulary (and the
+`smear_*` mirrors), so every gesture is scriptable through its `lgR_<id>` receive.
+
+## TONE CIRCLE (scale input, cold-edit)
+
+- The 12 ring toggles are pitch classes 0–11; toggling them composes the whole-list scale.
+  RING ORDER (CHRO / 5THS / W-T) is a pure display projection — the same set of pins always
+  sends the same scale.
+- ROOT → `scale_root` (transpose), MODE → `scale_rotate` (modal offset), POLYGON PRESET
+  (MAJ MIN PENT W-T OCTA AUG) lights the ring with a named scale.
+- The circle edits COLD. **APPLY** commits `pitch_scale …`, `scale_root …`, `scale_rotate …`,
+  routed by **DEST** (GRAIN / SMEAR / BOTH). Audible in PITCH MODE = SCALE.
+
+## SLOTS + AXIS→SLOTS (the Coltrane-changes generator)
+
+- Slots A–P select the live scale slot (`pitch_scale_slot`). **AXIS→SLOTS** writes the
+  composed shape into slot 0 (`pitch_scale_to`) and arms the axis cycle by sequencing the
+  root: with AXIS = 3 it arms `pattern scale_root [ 0 4 8 ]` — the Giant Steps three-key
+  tonic cycle, from three knob gestures. REV = retrograde, ALT = `<>` alternation form.
+
+## TIME CIRCLE (pattern input)
+
+- K / N select a euclid preset; the arm sends `pattern <target> <v>(k,n)` to the TARGET
+  (EVNT event · MOD a param · PTCH pitch · SMR smear pitch). The engine expands the
+  Bjorklund rhythm on the cycle clock (drive the clock with bangs to the left inlet).
+
+## PATTERN GRID (8 × 16 step sequencer)
+
+- A pin writes its step at the VALUE knob's level (the matrix DEPTH-at-pin rule):
+  `pattern <field> [ v v … ]`. The row target reuses the Snapshot-Expander PAGE × PARAM
+  field addressing.
+
 # QUERY STATE
 
 Export and inspect ligase~ state via outlet 9.

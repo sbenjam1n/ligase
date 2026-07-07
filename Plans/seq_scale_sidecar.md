@@ -2,11 +2,37 @@
 
 **Owner:** SLB
 **Date:** 2026-07-06
-**Status:** APPROVED — GATE A cleared at ALL recommendations (owner 2026-07-06: "create the
-execution plans with all recommendations"; layout symmetry directive applied — see mockup).
-Build not started. **Depends on `Plans/harmonic_layer.md` Steps 1–2** (slots, root/rotate);
-the circle input itself works against the existing `pitch_scale`/`smear_pitch_scale`
-messages, but AXIS→SLOTS and SEQ need the slot engine.
+**Status:** ✅ **DONE + headless-verified (2026-07-06, Seq 89).** All five steps built and
+independently re-verified by the orchestrator. Step 1 SVG **byte-identical** (the silkscreen
+folded into `panel_layout.py` SEQ_* records with zero pixel drift). Wiring against the real
+harmonic engine, driven through `lgR_seq_*` and read back via `snapbuf`: tone-circle ring→scale
+composes the exact clicked set (major `0 2 4 5 7 9 11`, pentatonic `0 2 4 7 9` from a fresh load —
+not order-dependent; pin-OFF re-composes; POLYGON PRESET lights+composes; DEST-routed; cold-edit +
+APPLY per the expander rule); AXIS→SLOTS arms the Giant Steps cycle (`pattern scale_root [ 0 4 8 ]`);
+Euclid K/N→`1(3,8)`/`1(5,16)` TARGET-routed; grid pins→`pattern <field> [ … ]` at the VALUE level
+with XPNDR PAGE×PARAM addressing. Regression exact everywhere; `src/` untouched; all three patches
+(`ligase_panel.pd` embedding `[pd seq]`, standalone `ligase_seq.pd`, `ligase_xpndr.pd`) load
+headless zero-error; `ligase_seq.pd` joins the `.plugdata` bundle. **Review caught + fixed a
+composition defect** before commit: the complementary-spigot cascade's pass-through gates were only
+initialized on pin toggle, so clicking only the ON pins (the realistic case) dead-ended to an empty
+scale — fixed by a load-time gate-init loadbang + ring PD default all-OFF (SVG unaffected). Owner
+plugdata feel-test remains. Two as-built engine-gap seams recorded below (B-item candidates).
+**Depended on `Plans/harmonic_layer.md` Steps 1–2** (slots, root/rotate) — satisfied at Seq 85.
+
+## As-built engine-gap seams (B-item candidates — surfaced, NOT worked around in `src/`)
+
+1. **Euclid ROT knob is visual-only.** The engine's euclid mini-notation suffix is `(k,n)` with no
+   rotation parameter, so the TIME CIRCLE **ROT** knob repositions the ring display and keeps its
+   `lgR_seq_rot` hook but does not alter the sent token. An engine `(k,n,rot)` token would let ROT
+   rotate the emitted rhythm.
+2. **AXIS→SLOTS uses `scale_root` sequencing, not per-slot literal transposition.** The plan's
+   literal form (write the axis rotations into slots A/B/C via `pitch_scale_to`, arm `pattern
+   pitch_scale_slot [ 0 1 2 ]`) needs element-wise degree transposition, which requires `[vexpr]` —
+   not compiled into vanilla Pd (`[expr]` works, `[vexpr]` fails to create). The build instead
+   sequences `scale_root` (`pattern scale_root [ 0 4 8 ]`), the engine's own "the polygon spins with
+   scale_root" model — the identical Coltrane cycle via registered messages. A Pd-toolchain
+   constraint, not an engine defect; restorable if `vexpr` or an engine "transpose slot by N"
+   message becomes available.
 **Mockup → INTEGRATED (owner revision 2026-07-06, Seq 83: "align items in expander
 section, seq/scale can go below these… hopefully this is the final panel change"):** the
 block now lives IN the main panel (`docs/ui/ligase_synthi_panel.svg`) — final geometry
