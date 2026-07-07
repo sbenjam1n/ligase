@@ -447,10 +447,12 @@ text(SDX + SDW/2, 990, "FOLW = the SOURCE SHAPE selection · GRAIN = constellati
 XL = 1508                # expander column left
 XW = 1886 - XL           # column width (to the panel's inner right edge)
 XC = XL + XW/2           # column center x
-parts.append(f'<line x1="{XL-12}" y1="42" x2="{XL-12}" y2="{H-56}" stroke="{LINE}" stroke-width="0.7"/>')
+parts.append(f'<line x1="{XL-12}" y1="42" x2="{XL-12}" y2="1030" stroke="{LINE}" stroke-width="0.7"/>')
 text(XL+24, 56, "SNAPSHOT EXPANDER", size=13, anchor="start", weight="normal", ls="4")
 text(XL+24, 70, "EDIT BUFFER — cold; ASSIGN is the only realtime touchpoint", size=7.5, anchor="start", fill=MUTED, ls="0.5")
 
+# Aligned rails (Seq 83): content left 1556 (LED edges), switch centers 1697,
+# right rail 1862 (buttons/toggles right-aligned), uniform 24px section gaps.
 xy = 92; xh = 104
 strip(XL+24, xy, XW-48, xh, "SNAPSHOT", "yellow")
 kxy = xy + 42
@@ -458,21 +460,21 @@ draw_led("xp_led")
 draw_knob("xp_slot")
 draw_button("xp_load")
 draw_button("xp_fromlive")
-text(XL+248, kxy+40, "snapbuf_load · snapbuf_from_live", 6.5, MUTED)
+text(XL+312, kxy+40, "snapbuf_load · snapbuf_from_live", 6.5, MUTED)
 
-xy += xh + 12
+xy += xh + 24
 strip(XL+24, xy, XW-48, 118, "ADDRESS — PAGE × PARAM", "white")
 draw_switch("xp_page")
 draw_switch("xp_param")
 
-xy += 118 + 12
+xy += 118 + 24
 strip(XL+24, xy, XW-48, 92, "VALUE", "white")
 draw_led("xp_value_led")
 draw_knob("xp_value")
 text(XL+290, xy+38, "snapbuf_get", 6.5, MUTED, "start")
 text(XL+290, xy+48, "snapbuf_set", 6.5, MUTED, "start")
 
-xy += 92 + 12
+xy += 92 + 24
 strip(XL+24, xy, XW-48, 168, "MODULATION BAND (of the addressed param)", "blue")
 bky = xy + 42
 draw_knob("xp_min")
@@ -483,7 +485,7 @@ draw_toggle("xp_invert")
 draw_switch("xp_source")
 draw_switch("xp_inst")
 
-xy += 168 + 12
+xy += 168 + 24
 strip(XL+24, xy, XW-48, 100, "COMMIT / AUDITION", "red")
 cky = xy + 38
 draw_button("xp_store")
@@ -491,40 +493,155 @@ draw_button("xp_assign")
 draw_button("xp_audition")
 draw_button("xp_compare")
 text(XL+72, cky+22, "snapbuf_store", 6.5, MUTED)
-text(XL+150, cky+22, "snapbuf_apply", 6.5, MUTED)
-text(XL+232, cky+22, "hold = momentary", 6.5, MUTED)
-text(XL+308, cky+22, "compare", 6.5, MUTED)
+text(XL+162, cky+22, "snapbuf_apply", 6.5, MUTED)
+text(XL+254, cky+22, "hold = momentary", 6.5, MUTED)
+text(XL+335, cky+22, "compare", 6.5, MUTED)
 text(XC, cky+42, "edits are COLD — ASSIGN commits; AUDITION borrows the live voice and reverts exactly", 7.2, BRONZE, weight="bold")
 
-# MONITOR moves under COMMIT (fills the column); see the relocated block below.
-VX2, VY2 = XL + 38, 782
-strip(VX2-14, VY2-36, XW-48, 268, "MONITOR", "white")
-for ch, off in (("L", 0), ("R", 34)):
-    parts.append(f'<rect x="{VX2+off}" y="{VY2}" width="20" height="170" rx="3" fill="{INSET}" stroke="#84888c" stroke-width="0.8"/>')
-    segs = 12
-    lit = 8 if ch == "L" else 7
-    for i in range(segs):
-        yy = VY2 + 166 - i*13.5
+# MONITOR — condensed (Seq 83): horizontal VU pair + inline knobs + 2-line legend
+xy += 100 + 24
+strip(XL+24, xy, XW-48, 128, "MONITOR", "white")
+vx, vy = 1556, xy + 26
+text(vx, vy - 6, "OUTPUT", 7.5, MUTED, "start")
+for ch, off, lit in (("L", 0, 8), ("R", 22, 7)):
+    parts.append(f'<rect x="{vx}" y="{vy+off}" width="150" height="14" rx="3" fill="{INSET}" stroke="#84888c" stroke-width="0.8"/>')
+    for i in range(12):
         col = "#2c2f34"
         if i < lit: col = CAP["green"] if i < 9 else (CAP["yellow"] if i < 11 else CAP["red"])
-        parts.append(f'<rect x="{VX2+off+3}" y="{yy-9}" width="14" height="9" fill="{col}"/>')
-    text(VX2+off+10, VY2+184, ch, 8, LEGEND, weight="bold")
-text(VX2+27, VY2-8, "OUTPUT", 8, MUTED)
+        parts.append(f'<rect x="{vx+4+i*12}" y="{vy+off+3}" width="9" height="8" fill="{col}"/>')
+    text(vx - 8, vy + off + 11, ch, 8, LEGEND, "end", "bold")
 draw_knob("master")
 draw_knob("bank_mix")
-text(VX2+185, VY2+120, "OUTLETS", 8, MUTED, weight="bold")
-text(VX2+185, VY2+134, "1/2 audio · 3 note-change", 7, MUTED)
-text(VX2+185, VY2+146, "4 grain bang · 5 splice end", 7, MUTED)
-text(VX2+185, VY2+158, "9 state / param reports", 7, MUTED)
-text(VX2+185, VY2+186, "pattern events: message-driven", 7, MUTED)
-text(VX2+185, VY2+198, "pattern event grain [ 1(3,8) ]", 7, BRONZE)
+text(vx, xy + 96, "OUTLETS  1/2 audio · 3 note · 4 grain bang · 5 splice end · 9 state · 10/11 scope_x~/y~", 6.8, MUTED, "start")
+text(vx, xy + 108, "pattern events: message-driven — pattern event grain [ 1(3,8) ]", 6.8, BRONZE, "start")
+
+# ---------- SEQ / SCALE band (Seq 83: full-width, below every column) ----------
+# Tone circle = scale-as-polygon input; time circle = the same geometry on the cycle
+# clock; commit column on the mirror between them; pattern grid in the matrix idiom.
+# Silkscreen-forward until Plans/seq_scale_sidecar.md builds the wiring (the band's
+# controls join CONTROLS as SEQ_* records at that plan's Step 1).
+parts.append(f'<line x1="40" y1="1046" x2="{W-40}" y2="1046" stroke="{LINE}" stroke-width="0.8"/>')
+by0 = 1064
+AMBER = "#f08a4b"
+
+def _led_line(x, y, w, s, fs=8.5):
+    parts.append(f'<rect x="{x-w/2-2}" y="{y-11}" width="{w+4}" height="22" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>')
+    parts.append(f'<rect x="{x-w/2}" y="{y-9}" width="{w}" height="18" rx="3" fill="#0a0705"/>')
+    parts.append(f'<text x="{x}" y="{y+3.5}" font-family="Courier New, monospace" font-size="{fs}" font-weight="bold" fill="{AMBER}" text-anchor="middle">{esc(s)}</text>')
+
+def _pin(px, py, cap="white"):
+    parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="6.5" fill="{CAP[cap]}" stroke="#0d0e10" stroke-width="1.2"/>')
+    parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="2" fill="#0d0e10"/>')
+
+def _hole(px, py):
+    parts.append(f'<circle cx="{px:.1f}" cy="{py:.1f}" r="3.4" fill="{HOLE}" stroke="#3e4247" stroke-width="0.8"/>')
+
+# --- TONE CIRCLE (bed left edge = LX rail; 216 = the joystick/scope module) ---
+strip(44, by0, 420, 300, "TONE CIRCLE — SCALE", "yellow")
+parts.append(f'<rect x="44" y="{by0+20}" width="216" height="216" rx="6" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
+tcx, tcy, TCR = 152, by0 + 128, 78
+parts.append(f'<circle cx="{tcx}" cy="{tcy}" r="{TCR}" fill="none" stroke="#33363b" stroke-width="0.8"/>')
+_order = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+_wt = {"C", "D", "E", "F#", "G#", "A#"}
+_ax3 = ["C", "E", "G#"]
+_tp = {}
+for _i, _n in enumerate(_order):
+    _a = math.radians(-90 + _i * 30)
+    _tp[_n] = (tcx + TCR * math.cos(_a), tcy + TCR * math.sin(_a))
+parts.append('<polygon points="' + " ".join(f"{_tp[n][0]:.1f},{_tp[n][1]:.1f}" for n in _order if n in _wt) + '" fill="none" stroke="#79c98b" stroke-width="1.4" stroke-opacity="0.9"/>')
+parts.append('<polygon points="' + " ".join(f"{_tp[n][0]:.1f},{_tp[n][1]:.1f}" for n in _ax3) + f'" fill="none" stroke="{BRONZE}" stroke-width="1.2" stroke-dasharray="4,3" stroke-opacity="0.95"/>')
+for _i, _n in enumerate(_order):
+    _px, _py = _tp[_n]
+    (_pin(_px, _py, "green" if _n in _ax3 else "white") if _n in _wt else _hole(_px, _py))
+    _la = math.radians(-90 + _i * 30)
+    text(tcx + (TCR+16)*math.cos(_la), tcy + (TCR+16)*math.sin(_la) + 2.5, _n, 7,
+         "#b9bec4" if _n in _wt else "#5b6066", "middle", "bold" if _n in _wt else "normal")
+text(152, by0 + 250, "pin = pitch class · WHITE = scale · GREEN = axis tonic", 6.5, MUTED)
+text(152, by0 + 260, "polygon stays in key under rotation", 6.5, BRONZE)
+switch(356, by0 + 44, 128, ["CHRO", "5THS", "W-T"], 0, "RING ORDER")
+knob(322, by0 + 104, "ROOT", "rotate = transpose", None, "white", 0.0)
+knob(396, by0 + 104, "MODE", "home degree", None, "grey", 0.0, small=True)
+knob(356, by0 + 162, "AXIS", "1·2·3·4·6", None, "yellow", 0.62, small=True)
+switch(356, by0 + 218, 170, ["MAJ", "MIN", "PENT", "W-T", "OCTA", "AUG"], 3, "POLYGON PRESET")
+
+# --- SLOTS / COMMIT (mirror column between the circles) ---
+strip(486, by0, 300, 330, "SLOTS / COMMIT", "white")
+CC = 636
+for _i, _lab in enumerate("ABCD"):
+    button(CC - 78 + _i * 52, by0 + 30, _lab, 40, lit=(_i == 0))
+for _r in range(2):
+    for _i in range(6):
+        button(CC - 95 + _i * 38, by0 + 54 + _r * 24, chr(ord("E") + _r * 6 + _i), 32)
+button(CC, by0 + 106, "AXIS → SLOTS", 96)
+text(CC, by0 + 124, "shape rotated by the AXIS interval → A/B/C  (AXIS 3 = Giant Steps)", 6.5, BRONZE)
+_led_line(CC, by0 + 146, 208, "pattern scale_slot [ 0 1 2 ]")
+text(CC, by0 + 164, "SEQ — slot progression on the cycle clock", 6.5, MUTED)
+switch(CC, by0 + 198, 140, ["GRAIN", "SMEAR", "BOTH"], 2, "DEST")
+toggle(521, by0 + 194, "REV", on=False)
+knob(751, by0 + 190, "ALT", "<> depth", None, "grey", 0.15, small=True)
+button(CC, by0 + 238, "APPLY", 56, lit=True)
+text(CC, by0 + 254, "circles edit COLD; APPLY commits (expander rule)", 6.5, MUTED)
+_led_line(CC, by0 + 278, 224, "pitch_scale 0 2 4 6 8 10")
+_led_line(CC, by0 + 304, 224, "pattern event grain [ 1(3,8) ]")
+text(CC, by0 + 322, "SENDS — the knobs write the code; readouts show the truth", 6.5, BRONZE)
+
+# --- TIME CIRCLE (216 bed, the twin) ---
+strip(808, by0, 420, 300, "TIME CIRCLE — PATTERN", "green")
+parts.append(f'<rect x="808" y="{by0+20}" width="216" height="216" rx="6" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
+ucx, ucy = 916, by0 + 128
+parts.append(f'<circle cx="{ucx}" cy="{ucy}" r="{TCR}" fill="none" stroke="#33363b" stroke-width="0.8"/>')
+_on = set(); _acc = 0
+for _i in range(8):
+    _acc += 3
+    if _acc >= 8: _acc -= 8; _on.add(_i)
+_ep = []
+for _i in range(8):
+    _a = math.radians(-90 + _i * 45)
+    _ep.append((ucx + TCR*math.cos(_a), ucy + TCR*math.sin(_a), _i in _on))
+parts.append('<polygon points="' + " ".join(f"{p[0]:.1f},{p[1]:.1f}" for p in _ep if p[2]) + '" fill="none" stroke="#79c98b" stroke-width="1.4" stroke-opacity="0.9"/>')
+_pa = math.radians(45)
+parts.append(f'<line x1="{ucx}" y1="{ucy}" x2="{ucx+TCR*math.cos(_pa):.1f}" y2="{ucy+TCR*math.sin(_pa):.1f}" stroke="{AMBER}" stroke-width="1.3"/>')
+for _i, (_px, _py, _o) in enumerate(_ep):
+    (_pin(_px, _py, "white") if _o else _hole(_px, _py))
+    _la = math.radians(-90 + _i * 45)
+    text(ucx + (TCR+16)*math.cos(_la), ucy + (TCR+16)*math.sin(_la) + 2.5, str(_i+1), 7,
+         "#b9bec4" if _o else "#5b6066")
+text(916, by0 + 250, "pin = onset · euclid (3,8) on the cycle clock", 6.5, MUTED)
+text(916, by0 + 260, "playhead sweeps once per pattern_cycle", 6.5, BRONZE)
+switch(1120, by0 + 44, 128, ["EVNT", "MOD", "PTCH", "SMR"], 0, "TARGET")
+knob(1086, by0 + 104, "K", "pulses", None, "white", 0.4)
+knob(1160, by0 + 104, "N", "steps", None, "grey", 0.5, small=True)
+knob(1120, by0 + 162, "ROT", "rotate", None, "grey", 0.2, small=True)
+switch(1120, by0 + 218, 170, ["1", "2", "3", "4", "5", "6", "7", "8"], 0, "SLOT")
+
+# --- PATTERN GRID (matrix idiom; bed left aligns with the addressing rail) ---
+strip(1252, by0, 618, 250, "PATTERN GRID — 8 SLOTS × 16 STEPS", "blue")
+_gx, _gy = 1266, by0 + 34
+parts.append(f'<rect x="{_gx-4}" y="{_gy-4}" width="{16*23+8}" height="{8*23+8}" rx="4" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
+_demo = {(0,0),(0,4),(0,8),(0,12),(2,0),(2,3),(2,6),(2,10),(2,13),(5,2),(5,9)}
+for _r in range(8):
+    text(_gx - 12, _gy + _r*23 + 14, str(_r), 7, LEGEND, "end")
+    for _cc in range(16):
+        _cx, _cy = _gx + _cc*23 + 11.5, _gy + _r*23 + 11.5
+        (_pin(_cx, _cy, "white") if (_r, _cc) in _demo else _hole(_cx, _cy))
+for _cc in range(0, 16, 4):
+    parts.append(f'<line x1="{_gx+_cc*23}" y1="{_gy-4}" x2="{_gx+_cc*23}" y2="{_gy+184+4}" stroke="#4a4f55" stroke-width="0.8" stroke-dasharray="3,3"/>')
+text(_gx + 184, by0 + 234, "pin = step at the VALUE knob's level (the DEPTH-at-pin rule) · row = slot · quarters marked", 6.8, MUTED)
+text(1765, by0 + 30, "SLOT TARGET — XPNDR ADDRESSING", 7.5, LEGEND, "middle", "bold", "1")
+switch(1765, by0 + 58, 210, ["GRAIN", "TAPE", "DELAY", "FILTR", "SMEAR", "ENV", "PITCH", "SPACE"], 3, None)
+text(1765, by0 + 46, "PAGE", 7, LEGEND, "middle", "bold")
+switch(1765, by0 + 112, 210, ["1", "2", "3", "4", "5", "6", "7", "8"], 0, None)
+text(1765, by0 + 100, "PARAM", 7, LEGEND, "middle", "bold")
+knob(1690, by0 + 168, "VALUE", "step level", None, "white", 0.42, small=True)
+_led_line(1800, by0 + 168, 140, "pattern moog_cutoff [ .. ]", 7.5)
+text(1765, by0 + 206, "row target = any snapbuf field · EVNT kinds via TARGET", 6.5, MUTED)
 
 # ---------- footer ----------
 fy = H - 44
 parts.append(f'<line x1="40" y1="{fy-14}" x2="{W-40}" y2="{fy-14}" stroke="{LINE}" stroke-width="0.8"/>')
 text(46, fy, "Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save", size=8, fill=MUTED, anchor="start")
 text(46, fy+14, "BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix & param_range)", size=8, fill=MUTED, anchor="start")
-text(W-46, fy+14, "ligase~ — QUEUE Seq 70 feature set", size=8, fill=MUTED, anchor="end")
+text(W-46, fy+14, "ligase~ — QUEUE Seq 83 chassis (SEQ/SCALE band silkscreen-forward until Plans/seq_scale_sidecar.md builds)", size=8, fill=MUTED, anchor="end")
 
 
 def render():

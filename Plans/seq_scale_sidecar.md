@@ -7,9 +7,13 @@ execution plans with all recommendations"; layout symmetry directive applied —
 Build not started. **Depends on `Plans/harmonic_layer.md` Steps 1–2** (slots, root/rotate);
 the circle input itself works against the existing `pitch_scale`/`smear_pitch_scale`
 messages, but AXIS→SLOTS and SEQ need the slot engine.
-**Mockup:** `docs/ui/ligase_seq_panel.svg` (generator `docs/ui/gen_seq_mockup.py` — a
-plan-stage artifact; at Step 1 the layout folds into `panel_layout.py` and the standalone
-generator is RETIRED, same discipline as the main panel).
+**Mockup → INTEGRATED (owner revision 2026-07-06, Seq 83: "align items in expander
+section, seq/scale can go below these… hopefully this is the final panel change"):** the
+band now lives IN the main panel (`docs/ui/ligase_synthi_panel.svg`, H 1096→1464, drawn by
+`emit_svg.py` below every column; the standalone `gen_seq_mockup.py`/`ligase_seq_panel.svg`
+are deleted). It is silkscreen-forward until this plan's build wires it; at Step 1 the
+band's controls join `panel_layout.py` as `SEQ_*` records and the bespoke drawing code
+becomes data-driven like every other section.
 **Tracked in:** `QUEUE.md` §4a (harmonic/notation arc, Seq 80)
 **Related:** `Plans/pd_panel_prototype.md` (the emitters this extends),
 `Plans/snapshot_expander.md` (the XPNDR sidecar idiom + cold-edit/commit philosophy this
@@ -102,8 +106,10 @@ knobs, LED bezels verbatim from the shared drawing idiom):
 
 ## GATE A — owner decisions (ALL cleared at [R], 2026-07-06)
 
-1. ✅ **Standalone sidecar canvas** (`pd/ligase_seq.pd`), not main-panel real estate;
-   main panel unchanged in v1.
+1. ✅→**REVISED by owner (Seq 83):** the band is **integrated into the main panel**
+   (below all columns; chassis grew to 1914×1464). The pd emission still produces BOTH a
+   `[pd seq]` subpatch in `ligase_panel.pd` AND standalone `pd/ligase_seq.pd` over the
+   buses (the XPNDR precedent) — the surface is one chassis, the canvas stays reusable.
 2. ✅ **Cold edit + explicit APPLY** (expander rule); readouts live while cold.
 3. ✅ **Pin-at-VALUE** grid policy (the matrix DEPTH-at-pin rule).
 4. ✅ **Ring orders CHRO/5THS/W-T** as a pure panel-side remap.
