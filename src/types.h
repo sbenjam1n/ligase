@@ -480,6 +480,15 @@ typedef enum {
     MOD_DEST_AMPLITUDE,        // "amplitude"     [0, 2]
     MOD_DEST_PAN,              // "pan"           [0, 1]
     MOD_DEST_PITCH_FINE,       // "pitch_fine"    semitones [-0.5, 0.5] (±50 cents)
+    // --- HARMONIC LAYER per-block tier (appended AFTER the per-grain block so the
+    //     SPEED..PITCH_FINE contiguity the mod_grain_sum[] cache depends on is untouched;
+    //     applied once per block in ligase_update_inlets, STEPPED where noted) ---
+    MOD_DEST_SCALE_ROOT,             // "scale_root"             semitones [-24, 24] (grain dest)
+    MOD_DEST_SMEAR_SCALE_ROOT,       // "smear_scale_root"       semitones [-24, 24] (smear dest)
+    MOD_DEST_PITCH_SCALE_SLOT,       // "pitch_scale_slot"       STEPPED: rounds to slot 0-15
+    MOD_DEST_SMEAR_PITCH_SCALE_SLOT, // "smear_pitch_scale_slot" STEPPED: rounds to slot 0-15
+    MOD_DEST_SCALE_ROTATE,           // "scale_rotate"           STEPPED: degrees (wrap at lookup)
+    MOD_DEST_SMEAR_SCALE_ROTATE,     // "smear_scale_rotate"     STEPPED: degrees (wrap at lookup)
     MOD_DEST_COUNT
 } mod_dest_t;
 
@@ -520,11 +529,39 @@ typedef struct {
     int count;                          // Number of notes in scale
 } pitch_scale_t;
 
+// HARMONIC LAYER (Plans/harmonic_layer.md) — scale SLOTS: sixteen addressable scales
+// per pitch destination (A-P; A-D = the primary row, E-P = two six-slot banks).
+// Slot 0 IS the legacy scale: the active `scale` field below stays the single thing
+// every lookup site reads, and slot selection COPIES slots[active] into it (a lookup-
+// table swap — inherently click-free; grains in flight keep their frozen increment).
+// Invariant: scale == slots[slot_active] (every writer maintains it).
+#define PITCH_SCALE_SLOTS 16
+
+// D4 SCALE-BLEND table — the morph blend's stochastic source-pick rule: during a blend,
+// semitone values are NEVER interpolated; each grain (grain dest) / each block (smear dest)
+// picks its degree from ONE contributing snapshot's scale with probability proportional to
+// the kernel weights. WRITTEN by morph_apply_at's blend branch (count published LAST, the
+// pattern_table_t barrier); READ at grain trigger / in the smear per-block resolver.
+// count == 0 => inactive => the single-scale path runs verbatim (backward compat).
+#define SCALE_BLEND_MAX 16   // heaviest-weight contributors kept (weights renormalize via cum_w)
+typedef struct {
+    int           count;                      // 0 => no blend active (publish barrier)
+    pitch_scale_t scales[SCALE_BLEND_MAX];    // contributor scale copies (counts inside)
+    float         cum_w[SCALE_BLEND_MAX];     // cumulative kernel weights; [count-1] = total
+} scale_blend_t;
+
 typedef struct {
     pitch_mode_t mode;           // Current pitch mode (OFF = use speed directly)
     float semitones;             // Fixed semitone shift (PITCH_MODE_SEMITONES)
     param_range_t semitone_range; // Semitone range for PITCH_MODE_RANGE
-    pitch_scale_t scale;         // Scale for PITCH_MODE_SCALE
+    pitch_scale_t scale;         // ACTIVE scale (== slots[slot_active]) — the single field
+                                 // every lookup site reads (PITCH_MODE_SCALE / PATTERN)
+    // HARMONIC LAYER — slots + root/rotate (all zero/defaults => engine bit-identical):
+    pitch_scale_t slots[PITCH_SCALE_SLOTS]; // scale slots A-P; slot 0 = the legacy scale
+    int   slot_active;           // active slot index 0-15 (default 0)
+    float scale_root;            // D2: semitone offset applied AFTER degree lookup, clamp +/-24
+    int   scale_root_quant;      // D2: 1 = round the APPLIED offset to integer semitones (default 1)
+    int   scale_rotate;          // D3: degree-index offset, wraps into the scale (no octave carry)
     int midi_note;               // Current MIDI note (PITCH_MODE_MIDI, 0-127)
     int midi_enabled;            // Whether MIDI input is active
     float last_semitone;         // Last semitone value used (for change detection)
@@ -555,7 +592,15 @@ typedef struct {
     int   ref_note;       // reference note (default 69 = A4 -> 440 Hz, standard A440 MIDI tuning)
     int   pattern_slot;   // perlin_state.pattern[] slot for SMEAR_PITCH_PATTERN; -1 = none
     int   midi_channel;   // which MIDI channel routes here (used by P2; stored, unused in P1)
-    pitch_scale_t   scale;          // for SMEAR_PITCH_SCALE (degree -> semitone)
+    pitch_scale_t   scale;          // ACTIVE scale for SMEAR_PITCH_SCALE / PATTERN and the
+                                    // resonator BANK (bank size/tuning) — == slots[slot_active]
+    // HARMONIC LAYER — slots + root/rotate, mirroring pitch_control_t (defaults inert):
+    pitch_scale_t   slots[PITCH_SCALE_SLOTS]; // scale slots A-P; slot 0 = the legacy scale
+    int   slot_active;              // active slot index 0-15 (default 0)
+    float scale_root;               // semitone offset AFTER degree lookup (also shifts the bank), +/-24
+    int   scale_root_quant;         // 1 = round the applied offset (default 1)
+    int   scale_rotate;             // degree-index offset with wrap (SCALE pick + PATTERN stepper;
+                                    // NOT the bank — rotating a static bank reorders voices, same pitch set)
     param_range_t   semitone_range; // for SMEAR_PITCH_SCALE random source
     float last_hz;        // last applied Hz (precedence/override bookkeeping + state dump)
     float semitone_fine;  // P3: base fine-tune offset, SEMITONES (+/-0.5 = +/-50 cents); default 0
@@ -821,6 +866,27 @@ typedef struct scheduler {
     param_range_t smear_stages_range;        // Smear allpass stages / depth (0-48)
     param_range_t smear_feedback_range;      // Smear global feedback (-0.99-0.99)
     param_range_t smear_pitch_fine_range;    // P3: modulatable smear fine-tune, SEMITONES (per block)
+
+    // HARMONIC LAYER modulation targets (per-block; stepped where noted). These six ranges
+    // exist so the pattern system (`pattern pitch_scale_slot [ 0 1 2 ]`) and param_range
+    // reach the harmonic layer through the standard vocabulary. Deliberately NOT captured
+    // by snapshots (MORPH_RANGE_COUNT stays 45 — the D6 walker captures the harmonic
+    // SCALARS/DISCRETES/slot lists instead); defaults [0,1] disabled so pattern degrees
+    // pass through 1:1 on attach.
+    param_range_t pitch_scale_slot_range;        // "pitch_scale_slot"       stepped 0-15
+    param_range_t smear_pitch_scale_slot_range;  // "smear_pitch_scale_slot" stepped 0-15
+    param_range_t scale_root_range;              // "scale_root"             semitones +/-24
+    param_range_t smear_scale_root_range;        // "smear_scale_root"       semitones +/-24
+    param_range_t scale_rotate_range;            // "scale_rotate"           stepped degrees
+    param_range_t smear_scale_rotate_range;      // "smear_scale_rotate"     stepped degrees
+
+    // D4 scale-blend tables (see scale_blend_t) + a DEDICATED pick seed so the per-grain
+    // source-pick never perturbs the four shared rand_seed[] streams (a blend must not
+    // change unrelated RAND-sourced modulation sequences). Covered by the create memset;
+    // seed given an explicit non-zero default in scheduler_create.
+    scale_blend_t scale_blend;         // grain destination (per-grain pick at trigger)
+    scale_blend_t smear_scale_blend;   // smear destination (per-block pick in the resolver)
+    unsigned int  scale_blend_seed;
 
     // Perlin noise state
     perlin_state_t perlin_state;

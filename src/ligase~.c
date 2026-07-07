@@ -64,7 +64,10 @@ extern void scheduler_trigger_grain(scheduler_t *sched, float position, float sp
 extern void scheduler_process(scheduler_t *sched, reel_t *reel, float *out_left, float *out_right, int blocksize);
 extern float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, float base_value);
 extern void pattern_eval_slot(perlin_state_t *perlin_state, int slot);
-extern float sample_scale_semitones(pitch_scale_t *scale, perlin_state_t *perlin_state, param_range_t *semitone_range);
+extern float sample_scale_semitones(const pitch_scale_t *scale, perlin_state_t *perlin_state, param_range_t *semitone_range, int rotate);
+// Harmonic layer helpers (grain.c): applied (quantized) root offset; D4 blend source-pick
+extern float scale_root_applied(float root, int quant);
+extern const pitch_scale_t *scale_blend_pick(const scale_blend_t *b, unsigned int *seed);
 // Modulation matrix helpers (grain.c): source id -> [0,1]; per-dest overlay sum; active scan
 extern float mod_source_value(perlin_state_t *ps, int source);
 extern float matrix_sum_for_dest(scheduler_t *sched, int dest);
@@ -165,7 +168,13 @@ typedef enum {
     SCOPE_TAP_NBODY,     // X = body 1 x-axis, Y = body 1 z-axis (orbits)
     SCOPE_TAP_SPHERE,    // X = sphere x, Y = sphere z (bounces, spin orbits, kicks)
     SCOPE_TAP_GRAIN,     // the GRAIN CONSTELLATION: pool round-robin, one grain/sample
-    SCOPE_TAP_GRAINSUM   // Y = soft-scaled sum of active grains' env*amp, X = sweep
+    SCOPE_TAP_GRAINSUM,  // Y = soft-scaled sum of active grains' env*amp, X = sweep
+    // HARMONIC LAYER families (Plans/harmonic_layer.md D5) — outlets 10/11 REUSED:
+    SCOPE_TAP_SCALE,     // the SCALE POLYGON: beam steps the active slot's pitch classes,
+                         // X = cos(2pi*pc/12), Y = sin(2pi*pc/12); instance 0=grain 1=smear.
+                         // Root/rotate/slot changes are visible live (the polygon spins/reshapes).
+    SCOPE_TAP_PATTERN    // a RUNNING PATTERN slot: X = cycle-phase ramp, Y = slot value (S/H)
+                         // — the pattern as a waveform, steps as plateaus; instance = slot 0-7
 } scope_tap_family_t;
 
 // Internal X sweep rate (Hz) for the 1D taps (sine/saw/square/perlin/rand/folw and
@@ -237,9 +246,12 @@ struct _ligase {
     // (ligase_scope_tap), perform-thread read; POD single-writer/single-reader, no locks.
     // Deliberately NOT captured by snapshots / the walker (docs/modulation_layers.md).
     int   scope_family;       // scope_tap_family_t; default SCOPE_TAP_LORENZ (the butterfly)
-    int   scope_instance;     // generator instance 0-3 (user-facing 1-4); default 0
+    int   scope_instance;     // generator instance 0-3 (user-facing 1-4); default 0.
+                              // Overloaded by the harmonic families: SCALE -> 0=grain 1=smear,
+                              // PATTERN -> slot 0-7 (each family clamps its own range)
     float scope_sweep_phase;  // internal X sweep ramp phase 0..1 (LIGASE_SCOPE_SWEEP_HZ)
     int   scope_grain_scan;   // constellation round-robin pool index (perform-owned)
+    int   scope_scale_step;   // SCALE-polygon degree stepper (perform-owned; one degree/sample)
 
     // Core components
     reel_t *reel;
@@ -526,6 +538,15 @@ static const mod_dest_bounds_t mod_dest_bounds[MOD_DEST_COUNT] = {
     [MOD_DEST_AMPLITUDE]       = {0.0f,     2.0f},
     [MOD_DEST_PAN]             = {0.0f,     1.0f},
     [MOD_DEST_PITCH_FINE]      = {-0.5f,    0.5f},
+    // HARMONIC LAYER per-block tier — roots clamp to the approved +/-24 st; slot rounds to
+    // 0-15; rotate is stepped with WRAP at the lookup sites, so its bounds only keep the
+    // intermediate float sane (any integer is musically valid after the wrap).
+    [MOD_DEST_SCALE_ROOT]             = {-24.0f,  24.0f},
+    [MOD_DEST_SMEAR_SCALE_ROOT]       = {-24.0f,  24.0f},
+    [MOD_DEST_PITCH_SCALE_SLOT]       = {0.0f,    15.0f},
+    [MOD_DEST_SMEAR_PITCH_SCALE_SLOT] = {0.0f,    15.0f},
+    [MOD_DEST_SCALE_ROTATE]           = {-128.0f, 128.0f},
+    [MOD_DEST_SMEAR_SCALE_ROTATE]     = {-128.0f, 128.0f},
 };
 
 // Clamp a matrix-modulated value to its destination's musical range. lo==hi==0 = no bounds
@@ -547,6 +568,26 @@ static inline float mod_dest_clamp(int dest, float v) {
 static inline float mod_track_base(ligase_t *x, int dest, float field_value) {
     if (field_value != x->mod_last_out[dest]) x->mod_base[dest] = field_value;
     return x->mod_base[dest];
+}
+
+// HARMONIC LAYER per-block value for a slot/root/rotate destination. Returns 0 when neither
+// the param_range band nor a matrix pin drives the dest this block (the caller leaves the
+// field untouched — the zero-message default path stays bit-identical), else writes the
+// modulated value to *out and returns a flag set: bit 0 = driven, bit 1 = matrix active
+// (the caller updates mod_last_out only on the matrix path, mirroring the other stanzas).
+// Self-read discipline: these fields are read back as their own base, so matrix-only drive
+// centres on the tracked base (mod_track_base) — never integrating block over block.
+static inline int harm_block_value(ligase_t *x, int dest, param_range_t *rr,
+                                   float field, float *out) {
+    int mx = matrix_dest_active(x->scheduler, dest);
+    if (!rr->enabled && !mx) return 0;
+    float base = rr->enabled
+               ? sample_param_range(rr, &x->scheduler->perlin_state, field)
+               : mod_track_base(x, dest, field);
+    float v = base;
+    if (mx) v = mod_dest_clamp(dest, v + matrix_sum_for_dest(x->scheduler, dest));
+    *out = v;
+    return 1 | (mx ? 2 : 0);
 }
 
 // @endregion:ligase_pd.pd_external.mod_matrix.apply
@@ -1155,6 +1196,62 @@ static void ligase_update_inlets(ligase_t *x,
         x->bencina_grainsize_current = sampled;
     }
 
+    // HARMONIC LAYER per-block apply — scale slot / root / rotate for BOTH pitch destinations.
+    // Runs BEFORE the smear pitch resolver below (so the smear side uses fresh values this
+    // block) and before ligase_process_grains (so grains triggered this block do too). Slot
+    // select is a lookup-table swap (slots[idx] -> the active scale) — inherently click-free;
+    // grains in flight keep their frozen increment. With no band enabled and no matrix pin
+    // every stanza is a no-op (bit-identical defaults).
+    {
+        scheduler_t *sch = x->scheduler;
+        pitch_control_t *hpc = &sch->pitch_control;
+        smear_pitch_control_t *hsp = &sch->smear_pitch_control;
+        float hv;
+        int hf;
+        // grain slot (STEPPED: rounds to 0-15)
+        if ((hf = harm_block_value(x, MOD_DEST_PITCH_SCALE_SLOT, &sch->pitch_scale_slot_range,
+                                   (float)hpc->slot_active, &hv)) != 0) {
+            int idx = (int)lroundf(hv);
+            if (idx < 0) idx = 0; else if (idx >= PITCH_SCALE_SLOTS) idx = PITCH_SCALE_SLOTS - 1;
+            if (idx != hpc->slot_active) { hpc->slot_active = idx; hpc->scale = hpc->slots[idx]; }
+            if (hf & 2) x->mod_last_out[MOD_DEST_PITCH_SCALE_SLOT] = (float)hpc->slot_active;
+        }
+        // smear slot (STEPPED)
+        if ((hf = harm_block_value(x, MOD_DEST_SMEAR_PITCH_SCALE_SLOT, &sch->smear_pitch_scale_slot_range,
+                                   (float)hsp->slot_active, &hv)) != 0) {
+            int idx = (int)lroundf(hv);
+            if (idx < 0) idx = 0; else if (idx >= PITCH_SCALE_SLOTS) idx = PITCH_SCALE_SLOTS - 1;
+            if (idx != hsp->slot_active) { hsp->slot_active = idx; hsp->scale = hsp->slots[idx]; }
+            if (hf & 2) x->mod_last_out[MOD_DEST_SMEAR_PITCH_SCALE_SLOT] = (float)hsp->slot_active;
+        }
+        // grain root (continuous semitones, clamp +/-24 — mirrors the message clamp)
+        if ((hf = harm_block_value(x, MOD_DEST_SCALE_ROOT, &sch->scale_root_range,
+                                   hpc->scale_root, &hv)) != 0) {
+            if (hv < -24.0f) hv = -24.0f; else if (hv > 24.0f) hv = 24.0f;
+            hpc->scale_root = hv;
+            if (hf & 2) x->mod_last_out[MOD_DEST_SCALE_ROOT] = hv;
+        }
+        // smear root
+        if ((hf = harm_block_value(x, MOD_DEST_SMEAR_SCALE_ROOT, &sch->smear_scale_root_range,
+                                   hsp->scale_root, &hv)) != 0) {
+            if (hv < -24.0f) hv = -24.0f; else if (hv > 24.0f) hv = 24.0f;
+            hsp->scale_root = hv;
+            if (hf & 2) x->mod_last_out[MOD_DEST_SMEAR_SCALE_ROOT] = hv;
+        }
+        // grain rotate (STEPPED: rounds to degrees; wrap happens at the lookup sites)
+        if ((hf = harm_block_value(x, MOD_DEST_SCALE_ROTATE, &sch->scale_rotate_range,
+                                   (float)hpc->scale_rotate, &hv)) != 0) {
+            hpc->scale_rotate = (int)lroundf(hv);
+            if (hf & 2) x->mod_last_out[MOD_DEST_SCALE_ROTATE] = (float)hpc->scale_rotate;
+        }
+        // smear rotate (STEPPED)
+        if ((hf = harm_block_value(x, MOD_DEST_SMEAR_SCALE_ROTATE, &sch->smear_scale_rotate_range,
+                                   (float)hsp->scale_rotate, &hv)) != 0) {
+            hsp->scale_rotate = (int)lroundf(hv);
+            if (hf & 2) x->mod_last_out[MOD_DEST_SMEAR_SCALE_ROTATE] = (float)hsp->scale_rotate;
+        }
+    }
+
     // Sample smear (allpass) parameters with range (if enabled). Sampled once per DSP block,
     // same as the other effect params, so smear_frequency/resonance/stages/feedback can be
     // driven by any modulation generator via param_range. grain_smear_t is opaque here and
@@ -1227,19 +1324,42 @@ static void ligase_update_inlets(ligase_t *x,
                         if (sp->midi_enabled) semitone = (float)(sp->note - sp->ref_note);
                         else                  have_note = 0;     // no note yet -> hold previous Hz
                         break;
-                    case SMEAR_PITCH_SCALE:
-                        semitone = sample_scale_semitones(&sp->scale,
-                                       &x->scheduler->perlin_state, &sp->semitone_range);
+                    case SMEAR_PITCH_SCALE: {
+                        // D4 morph scale-blend: the smear side picks its source scale ONCE
+                        // PER BLOCK (this stanza runs once per block); inactive -> the
+                        // active scale exactly as before. D3 rotate + D2 root as on the
+                        // grain side (root joins AFTER the degree lookup).
+                        const pitch_scale_t *sc = &sp->scale;
+                        if (x->scheduler->smear_scale_blend.count > 0) {
+                            const pitch_scale_t *bsc = scale_blend_pick(&x->scheduler->smear_scale_blend,
+                                                                        &x->scheduler->scale_blend_seed);
+                            if (bsc) sc = bsc;
+                        }
+                        semitone = sample_scale_semitones(sc,
+                                       &x->scheduler->perlin_state, &sp->semitone_range,
+                                       sp->scale_rotate);
+                        semitone += scale_root_applied(sp->scale_root, sp->scale_root_quant);
                         break;
+                    }
                     case SMEAR_PITCH_PATTERN: {
-                        int slot = sp->pattern_slot, count = sp->scale.count;
+                        int slot = sp->pattern_slot;
+                        const pitch_scale_t *sc = &sp->scale;      // D4: per-block source pick
+                        if (x->scheduler->smear_scale_blend.count > 0) {
+                            const pitch_scale_t *bsc = scale_blend_pick(&x->scheduler->smear_scale_blend,
+                                                                        &x->scheduler->scale_blend_seed);
+                            if (bsc) sc = bsc;
+                        }
+                        int count = sc->count;
                         pattern_table_t *pt = (slot >= 0 && slot < PATTERN_SLOTS)
                                               ? &x->scheduler->perlin_state.pattern[slot] : NULL;
                         if (pt && pt->step_count > 0 && count > 0 && !pt->cached_is_rest) {
                             int degree = (int)pt->cached_value;          // leaf value = scale degree
                             int idx = ((degree % count) + count) % count; // wrap (mirror grain PATTERN)
+                            if (sp->scale_rotate != 0)                    // D3: modal offset, wrap
+                                idx = ((idx + sp->scale_rotate) % count + count) % count;
                             int oct = (int)floorf((float)degree / (float)count);
-                            semitone = sp->scale.semitones[idx] + 12.0f * (float)oct;
+                            semitone = sc->semitones[idx] + 12.0f * (float)oct
+                                     + scale_root_applied(sp->scale_root, sp->scale_root_quant);
                         } else {
                             have_note = 0;                              // rest / not ready -> hold
                         }
@@ -1274,8 +1394,13 @@ static void ligase_update_inlets(ligase_t *x,
             int count = sp->scale.count;
             if (count > GRAIN_SMEAR_BANK_MAX_VOICES) count = GRAIN_SMEAR_BANK_MAX_VOICES;
             grain_smear_bank_set_count(x->smear_bank, count);
+            // D2: the applied smear root shifts the WHOLE bank (the chord transposes with the
+            // key). Slot switching retunes/resizes automatically — the bank re-reads sp->scale
+            // (the active slot) every block. rotate deliberately does NOT touch the bank (it
+            // would only reorder voices of an identical pitch set). Root 0 (default) adds 0.
+            float bank_root = scale_root_applied(sp->scale_root, sp->scale_root_quant);
             for (int vi = 0; vi < count; vi++) {
-                float semitone = sp->scale.semitones[vi] + sp->semitone_fine;   // P1 scale + P3 fine
+                float semitone = sp->scale.semitones[vi] + sp->semitone_fine + bank_root; // P1 scale + P3 fine + D2 root
                 float hz = sp->ref_hz * powf(2.0f, semitone / 12.0f);           // same formula as the resolver above
                 grain_smear_bank_set_voice_freq(x->smear_bank, vi, hz);
             }
@@ -2089,6 +2214,77 @@ static void ligase_scope_write(ligase_t *x, t_sample *sx, t_sample *sy, int n) {
         return;
     }
     perlin_state_t *ps = &sched->perlin_state;
+
+    // --- HARMONIC families first: they overload scope_instance beyond the 0-3 generator
+    //     range (SCALE: 0=grain 1=smear; PATTERN: slot 0-7), so they clamp their own.
+
+    // --- SCALE POLYGON (D5): one degree per sample around the pitch-class circle ---------
+    // X = cos(2pi*pc/12), Y = sin(2pi*pc/12) for each degree of the ACTIVE slot, with the
+    // APPLIED root included (the polygon spins with scale_root; slot switches reshape it).
+    // Every emitted point lies ON the unit circle at an active pitch class — nothing else.
+    if (x->scope_family == SCOPE_TAP_SCALE) {
+        int which = (x->scope_instance == 1) ? 1 : 0;      // 0 = grain dest, 1 = smear dest
+        const pitch_scale_t *sc;
+        float root;
+        if (which == 1) {
+            sc   = &sched->smear_pitch_control.scale;
+            root = scale_root_applied(sched->smear_pitch_control.scale_root,
+                                      sched->smear_pitch_control.scale_root_quant);
+        } else {
+            sc   = &sched->pitch_control.scale;
+            root = scale_root_applied(sched->pitch_control.scale_root,
+                                      sched->pitch_control.scale_root_quant);
+        }
+        int count = sc->count;
+        if (count <= 0) {                                  // no scale loaded -> beam parks at center
+            memset(sx, 0, sizeof(t_sample) * n);
+            memset(sy, 0, sizeof(t_sample) * n);
+            return;
+        }
+        int step = x->scope_scale_step;
+        if (step < 0 || step >= count) step = 0;
+        const float pc_to_rad = (float)(2.0 * M_PI / 12.0);
+        for (int i = 0; i < n; i++) {
+            step++;
+            if (step >= count) step = 0;
+            float st = sc->semitones[step] + root;
+            float pc12 = fmodf(st, 12.0f);
+            if (pc12 < 0.0f) pc12 += 12.0f;                // proper pitch class 0..12
+            float ang = pc12 * pc_to_rad;
+            sx[i] = cosf(ang);
+            sy[i] = sinf(ang);
+        }
+        x->scope_scale_step = step;
+        return;
+    }
+
+    // --- RUNNING PATTERN (D5): X = cycle-phase ramp, Y = the slot's current value (S/H) --
+    // The evaluator cache is the block's value (steps read as plateaus); X interpolates the
+    // cycle phase across the block so an XY scope draws the step silhouette left-to-right.
+    // The tap never writes the phase back — the cycle clock in ligase_perform owns it.
+    if (x->scope_family == SCOPE_TAP_PATTERN) {
+        int slot = x->scope_instance;
+        if (slot < 0) slot = 0; else if (slot >= PATTERN_SLOTS) slot = PATTERN_SLOTS - 1;
+        pattern_table_t *pt = &ps->pattern[slot];
+        if (pt->step_count <= 0) {                         // slot inactive -> park at center
+            memset(sx, 0, sizeof(t_sample) * n);
+            memset(sy, 0, sizeof(t_sample) * n);
+            return;
+        }
+        float yv = pt->cached_value * 2.0f - 1.0f;         // 0..1 -> +/-1 (S/H)
+        if (yv < -1.0f) yv = -1.0f; else if (yv > 1.0f) yv = 1.0f;  // pitch-degree slots may exceed 0..1
+        double phi = (double)ps->pattern_phase[slot];
+        double inc = (x->cycle_total_sec > 0.0 && x->sample_rate > 0)
+                   ? 1.0 / (x->cycle_total_sec * (double)x->sample_rate) : 0.0;
+        for (int i = 0; i < n; i++) {
+            sx[i] = (t_sample)(phi * 2.0 - 1.0);
+            sy[i] = yv;
+            phi += inc;
+            if (phi >= 1.0) phi -= 1.0;
+        }
+        return;
+    }
+
     int inst = x->scope_instance;
     if (inst < 0) inst = 0; else if (inst > 3) inst = 3;   // defensive; setter already clamps
 
@@ -2416,15 +2612,24 @@ null_ptr_error:
 
     // Pattern pitch trace (verification aid): log the APPLIED semitone whenever it changes, so the
     // degree->semitone wrap/octave is observable. Reads last_semitone after grains have triggered.
+    // Harmonic layer: the trace also covers PITCH_MODE_SCALE, so slot/root/rotate motion on the
+    // stochastic scale path is observable headless (debug-only; pattern_debug defaults 0).
     if (x->pattern_debug && x->scheduler &&
-        x->scheduler->pitch_control.mode == PITCH_MODE_PATTERN) {
+        (x->scheduler->pitch_control.mode == PITCH_MODE_PATTERN ||
+         x->scheduler->pitch_control.mode == PITCH_MODE_SCALE)) {
         float sem = x->scheduler->pitch_control.last_semitone;
         if (sem != x->pattern_pitch_last_printed) {
             x->pattern_pitch_last_printed = sem;
-            int psl = PATTERN_SLOTS - 1;
-            fprintf(stderr, "ligase~ pitch: degree %.0f -> semitone %.2f (cycle %ld)\n",
-                    x->scheduler->perlin_state.pattern[psl].cached_value, sem,
-                    x->scheduler->perlin_state.pattern_cycle_index[psl]);
+            if (x->scheduler->pitch_control.mode == PITCH_MODE_PATTERN) {
+                int psl = PATTERN_SLOTS - 1;
+                fprintf(stderr, "ligase~ pitch: degree %.0f -> semitone %.2f (cycle %ld)\n",
+                        x->scheduler->perlin_state.pattern[psl].cached_value, sem,
+                        x->scheduler->perlin_state.pattern_cycle_index[psl]);
+            } else {
+                fprintf(stderr, "ligase~ pitch: semitone %.2f (scale slot %d root %.2f)\n",
+                        sem, x->scheduler->pitch_control.slot_active,
+                        x->scheduler->pitch_control.scale_root);
+            }
         }
     }
     ligase_process_effects(x, out_left, out_right, n);
@@ -3398,9 +3603,11 @@ static void ligase_scope_tap(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
         { "sphere",   SCOPE_TAP_SPHERE,   1 },
         { "grain",    SCOPE_TAP_GRAIN,    0 },
         { "grainsum", SCOPE_TAP_GRAINSUM, 0 },
+        { "scale",    SCOPE_TAP_SCALE,    0 },   // arg is grain|smear (symbol), handled below
+        { "pattern",  SCOPE_TAP_PATTERN,  0 },   // arg is a pattern slot 0-7, handled below
     };
     if (argc < 1 || argv[0].a_type != A_SYMBOL) {
-        pd_error(x, "ligase~: scope_tap <sine|saw|square|perlin|rand|folw|lorenz|nbody|sphere|grain|grainsum> [inst 1-4]");
+        pd_error(x, "ligase~: scope_tap <sine|saw|square|perlin|rand|folw|lorenz|nbody|sphere|grain|grainsum> [inst 1-4] | scale [grain|smear] | pattern [slot 0-7]");
         return;
     }
     const char *name = argv[0].a_w.w_symbol->s_name;
@@ -3409,7 +3616,39 @@ static void ligase_scope_tap(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
         if (strcmp(name, taps[t].name) == 0) { found = t; break; }
     }
     if (found < 0) {
-        pd_error(x, "ligase~: scope_tap — unknown family '%s' (sine|saw|square|perlin|rand|folw|lorenz|nbody|sphere|grain|grainsum)", name);
+        pd_error(x, "ligase~: scope_tap — unknown family '%s' (sine|saw|square|perlin|rand|folw|lorenz|nbody|sphere|grain|grainsum|scale|pattern)", name);
+        return;
+    }
+    // HARMONIC families overload the instance slot (write order: instance FIRST, family
+    // second — same unsynchronized-reader discipline as the generic path below).
+    if (taps[found].family == SCOPE_TAP_SCALE) {
+        int which = 0;                                     // default: the grain destination
+        if (argc >= 2 && argv[1].a_type == A_SYMBOL) {
+            const char *d = argv[1].a_w.w_symbol->s_name;
+            if      (strcmp(d, "smear") == 0) which = 1;
+            else if (strcmp(d, "grain") != 0) {
+                pd_error(x, "ligase~: scope_tap scale — destination must be grain or smear");
+                return;
+            }
+        }
+        x->scope_instance = which;
+        x->scope_family = SCOPE_TAP_SCALE;
+        post("ligase~: scope tap = scale %s (outlets 10/11 — the scale polygon)",
+             which ? "smear" : "grain");
+        return;
+    }
+    if (taps[found].family == SCOPE_TAP_PATTERN) {
+        int slot = 0;
+        if (argc >= 2 && argv[1].a_type == A_FLOAT) {
+            slot = (int)argv[1].a_w.w_float;
+            if (slot < 0 || slot >= PATTERN_SLOTS) {
+                pd_error(x, "ligase~: scope_tap pattern — slot must be 0-%d", PATTERN_SLOTS - 1);
+                return;
+            }
+        }
+        x->scope_instance = slot;
+        x->scope_family = SCOPE_TAP_PATTERN;
+        post("ligase~: scope tap = pattern slot %d (outlets 10/11 — the running pattern)", slot);
         return;
     }
     int inst = 1;   // user-facing 1-4; omitted -> instance 1 (predictable default)
@@ -4690,7 +4929,83 @@ static void ligase_smear_pitch_scale(ligase_t *x, t_symbol *s, int argc, t_atom 
     x->scheduler->smear_pitch_control.scale.count = argc;
     for (int i = 0; i < argc; i++)
         x->scheduler->smear_pitch_control.scale.semitones[i] = argv[i].a_w.w_float;
+    // Harmonic layer: smear_pitch_scale writes the ACTIVE slot (slot 0 = the legacy scale
+    // when no slot message was ever sent) and ends any morph scale-blend pick.
+    x->scheduler->smear_pitch_control.slots[x->scheduler->smear_pitch_control.slot_active] =
+        x->scheduler->smear_pitch_control.scale;
+    x->scheduler->smear_scale_blend.count = 0;
     post("ligase~: smear pitch scale set with %d notes", argc);
+}
+
+// ── HARMONIC LAYER messages (smear destination) — mirror the grain-side set ─────────────
+
+// smear_pitch_scale_slot <0-15> : select the smear-side active slot. The resonator bank
+// retunes/resizes on the next block (it re-reads the active scale every block).
+static void ligase_smear_pitch_scale_slot(ligase_t *x, t_floatarg f) {
+    int idx = (int)f;
+    if (idx < 0 || idx >= PITCH_SCALE_SLOTS) {
+        pd_error(x, "ligase~: smear_pitch_scale_slot must be 0-%d", PITCH_SCALE_SLOTS - 1);
+        return;
+    }
+    smear_pitch_control_t *sp = &x->scheduler->smear_pitch_control;
+    sp->slot_active = idx;
+    sp->scale = sp->slots[idx];
+    x->scheduler->smear_scale_blend.count = 0;
+    post("ligase~: smear pitch scale slot %c selected (%d, %d notes)",
+         'A' + idx, idx, sp->scale.count);
+}
+
+// smear_pitch_scale_to <slot> <semitones...> : write a slot without selecting it (no
+// semitones = clear the slot). Validate-then-commit.
+static void ligase_smear_pitch_scale_to(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 1 || argv[0].a_type != A_FLOAT) {
+        pd_error(x, "ligase~: smear_pitch_scale_to requires <slot 0-%d> [semitones...]", PITCH_SCALE_SLOTS - 1);
+        return;
+    }
+    int slot = (int)argv[0].a_w.w_float;
+    if (slot < 0 || slot >= PITCH_SCALE_SLOTS) {
+        pd_error(x, "ligase~: smear_pitch_scale_to slot must be 0-%d", PITCH_SCALE_SLOTS - 1);
+        return;
+    }
+    int cnt = argc - 1;
+    if (cnt > MAX_SCALE_NOTES) {
+        pd_error(x, "ligase~: smear_pitch_scale_to accepts at most %d semitone values", MAX_SCALE_NOTES);
+        return;
+    }
+    for (int i = 0; i < cnt; i++) {
+        if (argv[1 + i].a_type != A_FLOAT) {
+            pd_error(x, "ligase~: smear_pitch_scale_to requires float values (slot preserved)");
+            return;
+        }
+    }
+    smear_pitch_control_t *sp = &x->scheduler->smear_pitch_control;
+    sp->slots[slot].count = cnt;
+    for (int i = 0; i < cnt; i++) sp->slots[slot].semitones[i] = argv[1 + i].a_w.w_float;
+    if (slot == sp->slot_active) sp->scale = sp->slots[slot];   // invariant: scale == slots[active]
+    post("ligase~: smear pitch scale slot %c written (%d notes%s)", 'A' + slot, cnt,
+         (slot == sp->slot_active) ? ", active" : "");
+}
+
+// smear_scale_root <semitones> : D2 root for the smear destination (also shifts the bank).
+static void ligase_smear_scale_root(ligase_t *x, t_floatarg st) {
+    if (!isfinite(st)) { pd_error(x, "ligase~: smear_scale_root must be finite"); return; }
+    if (st < -24.0f) st = -24.0f;
+    if (st >  24.0f) st =  24.0f;
+    x->scheduler->smear_pitch_control.scale_root = st;
+    post("ligase~: scale root %.2f semitones (smear dest%s)", st,
+         x->scheduler->smear_pitch_control.scale_root_quant ? ", quantized" : "");
+}
+
+static void ligase_smear_scale_root_quant(ligase_t *x, t_floatarg f) {
+    x->scheduler->smear_pitch_control.scale_root_quant = (f != 0.0f) ? 1 : 0;
+    post("ligase~: scale root quantize %s (smear dest)",
+         x->scheduler->smear_pitch_control.scale_root_quant ? "ON (in-key)" : "off (free drift)");
+}
+
+static void ligase_smear_scale_rotate(ligase_t *x, t_floatarg f) {
+    x->scheduler->smear_pitch_control.scale_rotate = (int)f;
+    post("ligase~: scale rotate %d degrees (smear dest)", (int)f);
 }
 
 // smear_pitch_rand_type <type> : stochastic generator for the SMEAR SCALE source (mirrors pitch_rand_type).
@@ -5080,6 +5395,14 @@ static param_range_t* get_param_range_by_name(ligase_t *x, const char *name) {
     if (strcmp(name, "pitch_fine") == 0) return &x->scheduler->pitch_control.pitch_fine_range;
     if (strcmp(name, "smear_pitch_fine") == 0) return &x->scheduler->smear_pitch_fine_range;
 
+    // Harmonic layer (slot select stepped 0-15, root +/-24 st, rotate stepped degrees)
+    if (strcmp(name, "pitch_scale_slot") == 0) return &x->scheduler->pitch_scale_slot_range;
+    if (strcmp(name, "smear_pitch_scale_slot") == 0) return &x->scheduler->smear_pitch_scale_slot_range;
+    if (strcmp(name, "scale_root") == 0) return &x->scheduler->scale_root_range;
+    if (strcmp(name, "smear_scale_root") == 0) return &x->scheduler->smear_scale_root_range;
+    if (strcmp(name, "scale_rotate") == 0) return &x->scheduler->scale_rotate_range;
+    if (strcmp(name, "smear_scale_rotate") == 0) return &x->scheduler->smear_scale_rotate_range;
+
     // Modulation outlets as first-class parameters
     if (strcmp(name, "modout1") == 0) return &x->modout1_range;
     if (strcmp(name, "modout2") == 0) return &x->modout2_range;
@@ -5202,6 +5525,13 @@ static const struct { const char *name; int id; } mod_dest_names[] = {
     { "amplitude",       MOD_DEST_AMPLITUDE },
     { "pan",             MOD_DEST_PAN },
     { "pitch_fine",      MOD_DEST_PITCH_FINE },
+    // Harmonic layer per-block tier (applied in ligase_update_inlets; slot/rotate stepped)
+    { "scale_root",             MOD_DEST_SCALE_ROOT },
+    { "smear_scale_root",       MOD_DEST_SMEAR_SCALE_ROOT },
+    { "pitch_scale_slot",       MOD_DEST_PITCH_SCALE_SLOT },
+    { "smear_pitch_scale_slot", MOD_DEST_SMEAR_PITCH_SCALE_SLOT },
+    { "scale_rotate",           MOD_DEST_SCALE_ROTATE },
+    { "smear_scale_rotate",     MOD_DEST_SMEAR_SCALE_ROTATE },
 };
 
 static int mod_source_from_name(const char *name) {
@@ -6134,8 +6464,89 @@ static void ligase_pitch_scale(ligase_t *x, t_symbol *s, int argc, t_atom *argv)
     for (int i = 0; i < argc; i++) {
         x->scheduler->pitch_control.scale.semitones[i] = argv[i].a_w.w_float;
     }
+    // Harmonic layer: pitch_scale writes the ACTIVE slot (full back-compat — with no slot
+    // messages ever sent, that is slot 0, the legacy scale). A live edit also ends any
+    // morph scale-blend pick (the user's scale wins until the next blend step repopulates).
+    x->scheduler->pitch_control.slots[x->scheduler->pitch_control.slot_active] =
+        x->scheduler->pitch_control.scale;
+    x->scheduler->scale_blend.count = 0;
 
     post("ligase~: pitch scale set with %d notes", argc);
+}
+
+// ── HARMONIC LAYER messages (grain destination) ─────────────────────────────
+
+// pitch_scale_slot <0-15> : select the grain-side active scale slot (A-P). A lookup-table
+// swap — click-free by construction (sounding grains keep their frozen increment).
+static void ligase_pitch_scale_slot(ligase_t *x, t_floatarg f) {
+    int idx = (int)f;
+    if (idx < 0 || idx >= PITCH_SCALE_SLOTS) {
+        pd_error(x, "ligase~: pitch_scale_slot must be 0-%d", PITCH_SCALE_SLOTS - 1);
+        return;
+    }
+    pitch_control_t *pc = &x->scheduler->pitch_control;
+    pc->slot_active = idx;
+    pc->scale = pc->slots[idx];
+    x->scheduler->scale_blend.count = 0;   // manual select overrides a blend's pick table
+    post("ligase~: pitch scale slot %c selected (%d, %d notes)",
+         'A' + idx, idx, pc->scale.count);
+}
+
+// pitch_scale_to <slot> <semitones...> : write a specific slot WITHOUT selecting it (the
+// progression/set-list workflow; the axis generator writes A-C through this). No semitones
+// = clear the slot (count 0; the text export then skips it). Validate-then-commit.
+static void ligase_pitch_scale_to(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
+    (void)s;
+    if (argc < 1 || argv[0].a_type != A_FLOAT) {
+        pd_error(x, "ligase~: pitch_scale_to requires <slot 0-%d> [semitones...]", PITCH_SCALE_SLOTS - 1);
+        return;
+    }
+    int slot = (int)argv[0].a_w.w_float;
+    if (slot < 0 || slot >= PITCH_SCALE_SLOTS) {
+        pd_error(x, "ligase~: pitch_scale_to slot must be 0-%d", PITCH_SCALE_SLOTS - 1);
+        return;
+    }
+    int cnt = argc - 1;
+    if (cnt > MAX_SCALE_NOTES) {
+        pd_error(x, "ligase~: pitch_scale_to accepts at most %d semitone values", MAX_SCALE_NOTES);
+        return;
+    }
+    for (int i = 0; i < cnt; i++) {
+        if (argv[1 + i].a_type != A_FLOAT) {
+            pd_error(x, "ligase~: pitch_scale_to requires float values (slot preserved)");
+            return;
+        }
+    }
+    pitch_control_t *pc = &x->scheduler->pitch_control;
+    pc->slots[slot].count = cnt;
+    for (int i = 0; i < cnt; i++) pc->slots[slot].semitones[i] = argv[1 + i].a_w.w_float;
+    if (slot == pc->slot_active) pc->scale = pc->slots[slot];   // invariant: scale == slots[active]
+    post("ligase~: pitch scale slot %c written (%d notes%s)", 'A' + slot, cnt,
+         (slot == pc->slot_active) ? ", active" : "");
+}
+
+// scale_root <semitones> : D2 transposition-as-a-destination, clamp +/-24 [approved R].
+// Applied AFTER degree lookup at the note->speed computation (the polygon rotates).
+static void ligase_scale_root(ligase_t *x, t_floatarg st) {
+    if (!isfinite(st)) { pd_error(x, "ligase~: scale_root must be finite"); return; }
+    if (st < -24.0f) st = -24.0f;
+    if (st >  24.0f) st =  24.0f;
+    x->scheduler->pitch_control.scale_root = st;
+    post("ligase~: scale root %.2f semitones (grain dest%s)", st,
+         x->scheduler->pitch_control.scale_root_quant ? ", quantized" : "");
+}
+
+// scale_root_quant <0|1> : 1 = round the APPLIED offset to integer semitones (default 1).
+static void ligase_scale_root_quant(ligase_t *x, t_floatarg f) {
+    x->scheduler->pitch_control.scale_root_quant = (f != 0.0f) ? 1 : 0;
+    post("ligase~: scale root quantize %s (grain dest)",
+         x->scheduler->pitch_control.scale_root_quant ? "ON (in-key)" : "off (free drift)");
+}
+
+// scale_rotate <n> : D3 modal interchange — degree-index offset with wrap (no octave carry).
+static void ligase_scale_rotate(ligase_t *x, t_floatarg f) {
+    x->scheduler->pitch_control.scale_rotate = (int)f;
+    post("ligase~: scale rotate %d degrees (grain dest)", (int)f);
 }
 
 // --- CHORDAL POLY voice-pool helpers (control thread only; read lock-free by perform) ---
@@ -6814,6 +7225,7 @@ static void *ligase_new(void) {
     x->scope_instance = 0;
     x->scope_sweep_phase = 0.0f;
     x->scope_grain_scan = 0;
+    x->scope_scale_step = 0;
 
     // Initialize components
     x->reel = reel_create();
@@ -7314,6 +7726,113 @@ static void morph_restore_generators(ligase_t *x, const morph_snapshot_t *snap) 
     }
 }
 
+// ── HARMONIC LAYER params — schema v5 ────────────────────────────────────────
+// Scale slots (16 x 2 dests), active-slot indices, scale_root (+quant) and scale_rotate
+// join the snapshot. Scalars append after the v4-used slots (89..90) and discretes after
+// the v4-used slots (42..47) — every v1-v4 index is unchanged, and neither capacity grew
+// (91 <= MORPH_SCALAR_COUNT 96; 48 == MORPH_DISCRETE_COUNT 48), so the included[] layout
+// is stable: NO exclude-index remap this time. Exclude-group: all of these join the
+// existing pitch-side groups (grain -> "pitch", smear -> "smear_pitch"), NOT "sources".
+#define MORPH_HARM_SCALAR_BASE   MORPH_SCALAR_USED_V4    /* 89 */
+enum {                              // scalar offsets from MORPH_HARM_SCALAR_BASE
+    MH_SCALE_ROOT_G = 0,            // grain scale_root (semitones; lerps on blend — the
+                                    //   one harmonic field that IS musical to glide)
+    MH_SCALE_ROOT_S = 1,            // smear scale_root
+    MH_SCALAR_COUNT = 2
+};
+#define MORPH_HARM_DISCRETE_BASE MORPH_DISCRETE_USED_V4  /* 42 */
+enum {                              // discrete offsets from MORPH_HARM_DISCRETE_BASE
+    MH_SLOT_G = 0,                  // grain active slot 0-15 (argmax step on blend)
+    MH_SLOT_S,                      // smear active slot
+    MH_QUANT_G,                     // grain scale_root_quant 0|1
+    MH_QUANT_S,                     // smear scale_root_quant
+    MH_ROTATE_G,                    // grain scale_rotate (degrees, wrap at lookup)
+    MH_ROTATE_S,                    // smear scale_rotate
+    MH_DISCRETE_COUNT
+};
+
+// R3 capture transparency for the harmonic destinations: whenever a matrix pin actively
+// drives one of these self-read fields (and its range is disabled — the matrix-only path
+// where mod_track_base is live), capture the TRACKED BASE, never this block's wobble.
+// Mirrors the scanrate special-case in morph_capture, non-mutating read discipline included.
+static float harm_capture_base(ligase_t *x, int dest, const param_range_t *rr, float field) {
+    if (x->scheduler && matrix_dest_active(x->scheduler, dest) && !rr->enabled)
+        return (field != x->mod_last_out[dest]) ? field : x->mod_base[dest];
+    return field;
+}
+
+static void morph_capture_harmonics(ligase_t *x, morph_snapshot_t *snap) {
+    if (!x->scheduler) return;
+    scheduler_t *s = x->scheduler;
+    pitch_control_t *pc = &s->pitch_control;
+    smear_pitch_control_t *sp = &s->smear_pitch_control;
+    float *g = &snap->scalars[MORPH_HARM_SCALAR_BASE];
+    int   *d = &snap->discretes[MORPH_HARM_DISCRETE_BASE];
+    g[MH_SCALE_ROOT_G] = harm_capture_base(x, MOD_DEST_SCALE_ROOT,
+                                           &s->scale_root_range, pc->scale_root);
+    g[MH_SCALE_ROOT_S] = harm_capture_base(x, MOD_DEST_SMEAR_SCALE_ROOT,
+                                           &s->smear_scale_root_range, sp->scale_root);
+    d[MH_SLOT_G]   = (int)lroundf(harm_capture_base(x, MOD_DEST_PITCH_SCALE_SLOT,
+                                  &s->pitch_scale_slot_range, (float)pc->slot_active));
+    d[MH_SLOT_S]   = (int)lroundf(harm_capture_base(x, MOD_DEST_SMEAR_PITCH_SCALE_SLOT,
+                                  &s->smear_pitch_scale_slot_range, (float)sp->slot_active));
+    d[MH_QUANT_G]  = pc->scale_root_quant;
+    d[MH_QUANT_S]  = sp->scale_root_quant;
+    d[MH_ROTATE_G] = (int)lroundf(harm_capture_base(x, MOD_DEST_SCALE_ROTATE,
+                                  &s->scale_rotate_range, (float)pc->scale_rotate));
+    d[MH_ROTATE_S] = (int)lroundf(harm_capture_base(x, MOD_DEST_SMEAR_SCALE_ROTATE,
+                                  &s->smear_scale_rotate_range, (float)sp->scale_rotate));
+    for (int i = 0; i < PITCH_SCALE_SLOTS; i++) {
+        snap->pitch_scale_slot_counts[i] = pc->slots[i].count;
+        memcpy(snap->pitch_scale_slots[i], pc->slots[i].semitones,
+               sizeof(snap->pitch_scale_slots[i]));
+        snap->smear_pitch_scale_slot_counts[i] = sp->slots[i].count;
+        memcpy(snap->smear_pitch_scale_slots[i], sp->slots[i].semitones,
+               sizeof(snap->smear_pitch_scale_slots[i]));
+    }
+}
+
+// Restore through the same limits the message setters enforce (root +/-24 finite-clamped,
+// slot 0-15, quant 0|1, counts 0..MAX_SCALE_NOTES). Runs per block during a route — no post()s.
+static void morph_restore_harmonics(ligase_t *x, const morph_snapshot_t *snap) {
+    if (!x->scheduler) return;
+    pitch_control_t *pc = &x->scheduler->pitch_control;
+    smear_pitch_control_t *sp = &x->scheduler->smear_pitch_control;
+    const float *g = &snap->scalars[MORPH_HARM_SCALAR_BASE];
+    const int   *d = &snap->discretes[MORPH_HARM_DISCRETE_BASE];
+    pc->scale_root = morph_clamp_finite(g[MH_SCALE_ROOT_G], -24.0f, 24.0f);
+    sp->scale_root = morph_clamp_finite(g[MH_SCALE_ROOT_S], -24.0f, 24.0f);
+    int sg = d[MH_SLOT_G];
+    if (sg < 0) sg = 0; else if (sg >= PITCH_SCALE_SLOTS) sg = PITCH_SCALE_SLOTS - 1;
+    pc->slot_active = sg;
+    int ss = d[MH_SLOT_S];
+    if (ss < 0) ss = 0; else if (ss >= PITCH_SCALE_SLOTS) ss = PITCH_SCALE_SLOTS - 1;
+    sp->slot_active = ss;
+    pc->scale_root_quant = (d[MH_QUANT_G] != 0);
+    sp->scale_root_quant = (d[MH_QUANT_S] != 0);
+    pc->scale_rotate = d[MH_ROTATE_G];   // any int is valid — the lookup sites wrap
+    sp->scale_rotate = d[MH_ROTATE_S];
+    for (int i = 0; i < PITCH_SCALE_SLOTS; i++) {
+        int cg = snap->pitch_scale_slot_counts[i];
+        if (cg < 0) cg = 0; else if (cg > MAX_SCALE_NOTES) cg = MAX_SCALE_NOTES;
+        pc->slots[i].count = cg;
+        memcpy(pc->slots[i].semitones, snap->pitch_scale_slots[i],
+               sizeof(pc->slots[i].semitones));
+        int cs = snap->smear_pitch_scale_slot_counts[i];
+        if (cs < 0) cs = 0; else if (cs > MAX_SCALE_NOTES) cs = MAX_SCALE_NOTES;
+        sp->slots[i].count = cs;
+        memcpy(sp->slots[i].semitones, snap->smear_pitch_scale_slots[i],
+               sizeof(sp->slots[i].semitones));
+    }
+    // Invariant repair: the ACTIVE slot mirrors the legacy active-scale fields, which
+    // morph_restore_scales wrote just before this. For a v5 snapshot they were already
+    // equal at capture (no-op); for a v1-v4 import (whose slot fields kept the template's
+    // values) this lands the old file's scale in the active slot — the documented
+    // "slot-0 semantics = the legacy scale" compat rule.
+    pc->slots[pc->slot_active] = pc->scale;
+    sp->slots[sp->slot_active] = sp->scale;
+}
+
 // Full snapshot capture: bands + scalar bases + discretes + scale lists.
 // (FX-shadow scalars are added in step 2b-2.)
 static void morph_capture(ligase_t *x, morph_snapshot_t *snap) {
@@ -7358,6 +7877,7 @@ static void morph_capture(ligase_t *x, morph_snapshot_t *snap) {
     snap->discretes[in + 1] = (int)x->scheduler->pitch_control.mode;
     morph_capture_generators(x, snap);   // schema v3: sources/weather params
     morph_capture_scales(x, snap);
+    morph_capture_harmonics(x, snap);    // schema v5: scale slots + root/rotate
 }
 
 static void morph_restore(ligase_t *x, const morph_snapshot_t *snap) {
@@ -7390,6 +7910,14 @@ static void morph_restore(ligase_t *x, const morph_snapshot_t *snap) {
     x->scheduler->pitch_control.mode = (pitch_mode_t)snap->discretes[in + 1];
     morph_restore_generators(x, snap);   // schema v3: sources/weather params
     morph_restore_scales(x, snap);
+    morph_restore_harmonics(x, snap);    // schema v5: slots + root/rotate (+ active-slot sync)
+    // D4: any single-source restore ends a scale blend. The blend branch of morph_apply_at
+    // repopulates the tables AFTER calling this, so an active blend keeps its pick tables;
+    // every other restore path (recall, snapbuf_apply, exact hit, import) goes single-scale.
+    if (x->scheduler) {
+        x->scheduler->scale_blend.count = 0;
+        x->scheduler->smear_scale_blend.count = 0;
+    }
 }
 
 // included[] index layout: ranges [0..44], scalars [45..45+95], discretes [45+96..].
@@ -7423,13 +7951,20 @@ static void morph_mask_excluded(ligase_t *x, morph_snapshot_t *b) {
         if (!inc[MORPH_INC_SCALAR(s)]) b->scalars[s] = cur.scalars[s];
     for (int d = 0; d < MORPH_DISCRETE_COUNT; d++)
         if (!inc[MORPH_INC_DISCRETE(d)]) b->discretes[d] = cur.discretes[d];
-    if (!inc[MORPH_INC_DISCRETE(29)]) {   // pitch mode -> keep the grain pitch scale
+    if (!inc[MORPH_INC_DISCRETE(29)]) {   // pitch mode -> keep the grain pitch scale + its slots
         b->pitch_scale_count = cur.pitch_scale_count;
         memcpy(b->pitch_scale, cur.pitch_scale, sizeof(b->pitch_scale));
+        memcpy(b->pitch_scale_slots, cur.pitch_scale_slots, sizeof(b->pitch_scale_slots));
+        memcpy(b->pitch_scale_slot_counts, cur.pitch_scale_slot_counts,
+               sizeof(b->pitch_scale_slot_counts));
     }
-    if (!inc[MORPH_INC_DISCRETE(23)]) {   // smear source -> keep the smear pitch scale
+    if (!inc[MORPH_INC_DISCRETE(23)]) {   // smear source -> keep the smear pitch scale + its slots
         b->smear_pitch_scale_count = cur.smear_pitch_scale_count;
         memcpy(b->smear_pitch_scale, cur.smear_pitch_scale, sizeof(b->smear_pitch_scale));
+        memcpy(b->smear_pitch_scale_slots, cur.smear_pitch_scale_slots,
+               sizeof(b->smear_pitch_scale_slots));
+        memcpy(b->smear_pitch_scale_slot_counts, cur.smear_pitch_scale_slot_counts,
+               sizeof(b->smear_pitch_scale_slot_counts));
     }
 }
 
@@ -7441,11 +7976,12 @@ static void morph_mask_excluded(ligase_t *x, morph_snapshot_t *b) {
 // the schema-v3 generator fields (`since` = 3), then the schema-v4 SOURCE SHAPE fields
 // (`since` = 4), each appended at the end of their era. Importing an old file skips
 // fields newer than the file's version — they keep their pre-filled current values.
-enum { MF_RANGE, MF_SCALAR, MF_DISCRETE, MF_SCALE };
+enum { MF_RANGE, MF_SCALAR, MF_DISCRETE, MF_SCALE, MF_SCALE_SLOT };
 typedef struct {
     const char   *name;    // logical field name (the snapbuf_set/get vocabulary)
     unsigned char kind;    // MF_*
-    unsigned char idx;     // ranges[idx] / scalars[idx] / discretes[idx]; MF_SCALE: 0=pitch 1=smear
+    unsigned char idx;     // ranges[idx] / scalars[idx] / discretes[idx]; MF_SCALE: 0=pitch 1=smear;
+                           // MF_SCALE_SLOT: 0-15 = grain slots A-P, 16-31 = smear slots A-P
     unsigned char since;   // text schema version that introduced this field
 } morph_field_t;
 
@@ -7455,6 +7991,9 @@ typedef struct {
 #define MS3(nm, off) { nm, MF_SCALAR,   MORPH_GEN_SCALAR_BASE + (off), 3 }
 #define MD3(nm, off) { nm, MF_DISCRETE, MORPH_GEN_DISCRETE_BASE + (off), 3 }
 #define MS4(nm, off) { nm, MF_SCALAR,   MORPH_GEN4_SCALAR_BASE + (off), 4 }
+#define MS5(nm, off) { nm, MF_SCALAR,   MORPH_HARM_SCALAR_BASE + (off), 5 }
+#define MD5(nm, off) { nm, MF_DISCRETE, MORPH_HARM_DISCRETE_BASE + (off), 5 }
+#define MSL(nm, i)   { nm, MF_SCALE_SLOT, (i), 5 }
 static const morph_field_t morph_fields[] = {
     // (a) the 45 modulation bands — morph_collect_ranges order; names = the
     //     get_param_range_by_name vocabulary + "_range"
@@ -7540,6 +8079,24 @@ static const morph_field_t morph_fields[] = {
     MS4("lorenz_beta_3", MG4_LORENZ_BETA + 2), MS4("lorenz_beta_4", MG4_LORENZ_BETA + 3),
     MS4("sphere_spin_1", MG4_SPHERE_SPIN + 0), MS4("sphere_spin_2", MG4_SPHERE_SPIN + 1),
     MS4("sphere_spin_3", MG4_SPHERE_SPIN + 2), MS4("sphere_spin_4", MG4_SPHERE_SPIN + 3),
+    // (g) schema v5 — HARMONIC LAYER: root/quant/rotate/active-slot, then the 32 scale
+    //     slots A-P per destination (empty slots write count-only in the text export)
+    MS5("scale_root", MH_SCALE_ROOT_G), MS5("smear_scale_root", MH_SCALE_ROOT_S),
+    MD5("pitch_scale_slot", MH_SLOT_G), MD5("smear_pitch_scale_slot", MH_SLOT_S),
+    MD5("scale_root_quant", MH_QUANT_G), MD5("smear_scale_root_quant", MH_QUANT_S),
+    MD5("scale_rotate", MH_ROTATE_G), MD5("smear_scale_rotate", MH_ROTATE_S),
+    MSL("pitch_scale_a", 0),  MSL("pitch_scale_b", 1),  MSL("pitch_scale_c", 2),
+    MSL("pitch_scale_d", 3),  MSL("pitch_scale_e", 4),  MSL("pitch_scale_f", 5),
+    MSL("pitch_scale_g", 6),  MSL("pitch_scale_h", 7),  MSL("pitch_scale_i", 8),
+    MSL("pitch_scale_j", 9),  MSL("pitch_scale_k", 10), MSL("pitch_scale_l", 11),
+    MSL("pitch_scale_m", 12), MSL("pitch_scale_n", 13), MSL("pitch_scale_o", 14),
+    MSL("pitch_scale_p", 15),
+    MSL("smear_pitch_scale_a", 16), MSL("smear_pitch_scale_b", 17), MSL("smear_pitch_scale_c", 18),
+    MSL("smear_pitch_scale_d", 19), MSL("smear_pitch_scale_e", 20), MSL("smear_pitch_scale_f", 21),
+    MSL("smear_pitch_scale_g", 22), MSL("smear_pitch_scale_h", 23), MSL("smear_pitch_scale_i", 24),
+    MSL("smear_pitch_scale_j", 25), MSL("smear_pitch_scale_k", 26), MSL("smear_pitch_scale_l", 27),
+    MSL("smear_pitch_scale_m", 28), MSL("smear_pitch_scale_n", 29), MSL("smear_pitch_scale_o", 30),
+    MSL("smear_pitch_scale_p", 31),
 };
 #undef MR
 #undef MS
@@ -7547,14 +8104,30 @@ static const morph_field_t morph_fields[] = {
 #undef MS3
 #undef MD3
 #undef MS4
+#undef MS5
+#undef MD5
+#undef MSL
 #define MORPH_FIELD_COUNT ((int)(sizeof(morph_fields) / sizeof(morph_fields[0])))
 
 // The walker IS the schema: its field count must equal the morph.h schema counts
-// (45 ranges + 89 scalars + 42 discretes + 2 scale lists). Fails the build if the
-// table and the header drift apart.
+// (45 ranges + 91 scalars + 48 discretes + 2 scale lists + 32 scale slots). Fails the
+// build if the table and the header drift apart.
 _Static_assert(sizeof(morph_fields) / sizeof(morph_fields[0]) ==
-               MORPH_RANGE_COUNT + MORPH_SCALAR_USED + MORPH_DISCRETE_USED + 2,
+               MORPH_RANGE_COUNT + MORPH_SCALAR_USED + MORPH_DISCRETE_USED + 2 +
+               MORPH_SCALE_SLOT_FIELDS,
                "morph_fields[] disagrees with the morph.h schema counts");
+// The harmonic appends must exactly fill the declared capacities (the included[] layout
+// depends on the counts staying put).
+_Static_assert(MORPH_HARM_SCALAR_BASE + MH_SCALAR_COUNT == MORPH_SCALAR_USED,
+               "harmonic scalar block disagrees with MORPH_SCALAR_USED");
+_Static_assert(MORPH_HARM_DISCRETE_BASE + MH_DISCRETE_COUNT == MORPH_DISCRETE_USED,
+               "harmonic discrete block disagrees with MORPH_DISCRETE_USED");
+_Static_assert(MORPH_DISCRETE_USED <= MORPH_DISCRETE_COUNT,
+               "harmonic discretes overflow MORPH_DISCRETE_COUNT");
+// The snapshot's slot arrays are dimensioned [16] in morph.h and the walker carries 32
+// MF_SCALE_SLOT entries — growing the engine's slot count requires growing all three.
+_Static_assert(PITCH_SCALE_SLOTS == 16 && MORPH_SCALE_SLOT_FIELDS == 2 * PITCH_SCALE_SLOTS,
+               "PITCH_SCALE_SLOTS / snapshot slot arrays / walker entries out of sync");
 
 // Band subfield order == the export column order.
 static const char *const morph_range_subs[8] =
@@ -7607,6 +8180,16 @@ static float *morph_snap_scale(morph_snapshot_t *s, int which, int **count) {
     return s->smear_pitch_scale;
 }
 
+// Scale-SLOT access by walker idx (0-15 = grain slots A-P, 16-31 = smear slots A-P).
+static float *morph_snap_scale_slot(morph_snapshot_t *s, int which, int **count) {
+    if (which < 16) {
+        *count = &s->pitch_scale_slot_counts[which];
+        return s->pitch_scale_slots[which];
+    }
+    *count = &s->smear_pitch_scale_slot_counts[which - 16];
+    return s->smear_pitch_scale_slots[which - 16];
+}
+
 static int morph_snap_id(ligase_t *x, const char *who, int argc, t_atom *argv) {
     int id = (argc >= 1 && argv[0].a_type == A_FLOAT) ? (int)atom_getfloat(&argv[0]) : -1;
     if (id < 0 || id >= MORPH_MAX_SNAPSHOTS) {
@@ -7653,11 +8236,51 @@ static void ligase_snapshot_clear(ligase_t *x, t_symbol *s, int argc, t_atom *ar
     post("ligase~: snapshot %d cleared", id);
 }
 
+// ── D4 scale-blend fill: publish the contributing scales + kernel weights ────
+// Populates one scheduler-side blend table from the placed snapshots' ACTIVE scale lists
+// so the pick sites (per-grain at trigger, per-block in the smear resolver) can choose a
+// SOURCE scale weight-proportionally — semitone values are never interpolated. Keeps the
+// SCALE_BLEND_MAX heaviest contributors (weights renormalize through the cum_w prefix
+// total). count is published LAST (the pattern_table_t barrier). Contributors with empty
+// scales are kept — picking one reproduces that snapshot's "no scale" voice faithfully.
+static void morph_scale_blend_fill(scale_blend_t *bt, const morph_state_t *m,
+                                   const float *w, int n, int smear) {
+    int order[MORPH_MAX_SNAPSHOTS];
+    for (int i = 0; i < n; i++) order[i] = i;
+    if (n > SCALE_BLEND_MAX) {
+        // partial selection sort: move the SCALE_BLEND_MAX largest weights to the front
+        for (int k = 0; k < SCALE_BLEND_MAX; k++) {
+            int best = k;
+            for (int j = k + 1; j < n; j++) if (w[order[j]] > w[order[best]]) best = j;
+            int t = order[k]; order[k] = order[best]; order[best] = t;
+        }
+    }
+    int keep = (n < SCALE_BLEND_MAX) ? n : SCALE_BLEND_MAX;
+    bt->count = 0;                                    // republish barrier: table off while filling
+    float cum = 0.0f;
+    for (int k = 0; k < keep; k++) {
+        int i = order[k];
+        const morph_snapshot_t *sn = &m->snaps[m->points[i].snap_id];
+        int cnt = smear ? sn->smear_pitch_scale_count : sn->pitch_scale_count;
+        if (cnt < 0) cnt = 0; else if (cnt > MAX_SCALE_NOTES) cnt = MAX_SCALE_NOTES;
+        bt->scales[k].count = cnt;
+        memcpy(bt->scales[k].semitones,
+               smear ? sn->smear_pitch_scale : sn->pitch_scale,
+               (size_t)cnt * sizeof(float));
+        cum += w[i];
+        bt->cum_w[k] = cum;
+    }
+    bt->count = keep;                                 // publish LAST
+}
+
 // ── The blend: apply the interpolated patch at cursor (cx,cy) ────────────────
 // Continuous fields (range min/max/base_value/slew + all scalars) = IDW weighted sum;
 // discrete fields (range enabled/rand_type/rand_instance/invert, the discretes, the scale
-// lists) = the argmax-weight snapshot's value. An exact hit reproduces that snapshot
-// verbatim (no overshoot). The blended snapshot is applied through morph_restore.
+// lists AND the v5 scale slots) = the argmax-weight snapshot's value. An exact hit
+// reproduces that snapshot verbatim (no overshoot). The blended snapshot is applied
+// through morph_restore; the D4 scale-blend tables are then (re)populated so the ACTIVE
+// scale is a stochastic source-pick rather than the argmax hard switch (semitones are
+// never interpolated — see docs/modulation_layers.md "scale fields").
 // (Selection tree / per-field morph_include is a v1.1 refinement — included[] defaults all-on.)
 static void morph_apply_at(ligase_t *x, float cx, float cy) {
     morph_state_t *m = x->morph;
@@ -7705,12 +8328,32 @@ static void morph_apply_at(ligase_t *x, float cx, float cy) {
         memcpy(b.pitch_scale, as->pitch_scale, sizeof(b.pitch_scale));
         b.smear_pitch_scale_count = as->smear_pitch_scale_count;
         memcpy(b.smear_pitch_scale, as->smear_pitch_scale, sizeof(b.smear_pitch_scale));
+        // v5 scale slots: argmax step, like the active scale lists (dormant storage —
+        // the SOUNDING scale is covered by the D4 pick tables below)
+        memcpy(b.pitch_scale_slots, as->pitch_scale_slots, sizeof(b.pitch_scale_slots));
+        memcpy(b.pitch_scale_slot_counts, as->pitch_scale_slot_counts,
+               sizeof(b.pitch_scale_slot_counts));
+        memcpy(b.smear_pitch_scale_slots, as->smear_pitch_scale_slots,
+               sizeof(b.smear_pitch_scale_slots));
+        memcpy(b.smear_pitch_scale_slot_counts, as->smear_pitch_scale_slot_counts,
+               sizeof(b.smear_pitch_scale_slot_counts));
     }
 
     // Selection tree: excluded fields keep their current live values (shared mask helper).
     morph_mask_excluded(x, &b);
 
     morph_restore(x, &b);
+
+    // D4 (GATE A.4): a REAL blend (not an exact hit) repopulates the stochastic source-pick
+    // tables AFTER the restore (which cleared them — single-source semantics everywhere
+    // else). Only when the pitch-side group is morph-INCLUDED: an excluded group's scale
+    // stays under manual control, so the blend must not hijack its degree source either.
+    if (n > 0 && x->scheduler) {
+        if (m->included[MORPH_INC_DISCRETE(29)])   // grain pitch group (pitch mode flag)
+            morph_scale_blend_fill(&x->scheduler->scale_blend, m, w, n, 0);
+        if (m->included[MORPH_INC_DISCRETE(23)])   // smear pitch group (smear source flag)
+            morph_scale_blend_fill(&x->scheduler->smear_scale_blend, m, w, n, 1);
+    }
 }
 
 // ── Surface placement + live cursor ─────────────────────────────────────────
@@ -7833,9 +8476,22 @@ static int morph_set_included(ligase_t *x, const char *name, int on) {
     if (!strcmp(name, "gdelay_tone"))    { R(13); S(30); return 1; }
     if (!strcmp(name, "gdelay_mix"))     { R(14); S(31); return 1; }
     if (!strcmp(name, "pitch")) {         // grain pitch (-> playback speed)
-        R(38); R(39); S(16); S(17); D(20); D(21); D(29); return 1; }
+        // + the grain-side HARMONIC LAYER fields (v5): scale_root, active slot, quant, rotate
+        // (the slot LISTS follow D(29) — see morph_mask_excluded)
+        R(38); R(39); S(16); S(17); D(20); D(21); D(29);
+        S(MORPH_HARM_SCALAR_BASE + MH_SCALE_ROOT_G);
+        D(MORPH_HARM_DISCRETE_BASE + MH_SLOT_G);
+        D(MORPH_HARM_DISCRETE_BASE + MH_QUANT_G);
+        D(MORPH_HARM_DISCRETE_BASE + MH_ROTATE_G);
+        return 1; }
     if (!strcmp(name, "smear_pitch")) {   // resonator note->Hz pitch
-        R(37); R(40); S(18); S(19); S(20); D(22); D(23); D(24); D(25); D(26); D(27); return 1; }
+        // + the smear-side HARMONIC LAYER fields (v5); slot lists follow D(23) in the mask
+        R(37); R(40); S(18); S(19); S(20); D(22); D(23); D(24); D(25); D(26); D(27);
+        S(MORPH_HARM_SCALAR_BASE + MH_SCALE_ROOT_S);
+        D(MORPH_HARM_DISCRETE_BASE + MH_SLOT_S);
+        D(MORPH_HARM_DISCRETE_BASE + MH_QUANT_S);
+        D(MORPH_HARM_DISCRETE_BASE + MH_ROTATE_S);
+        return 1; }
     if (!strcmp(name, "fx")) {            // moog + smear-resonator + delay + distortion
         int rs[] = {11,12,13,14,15,18,19,20,21,22,23,24,25,26,27,28,33,34,35,36};
         for (unsigned i = 0; i < sizeof(rs)/sizeof(rs[0]); i++) R(rs[i]);
@@ -7969,11 +8625,13 @@ static void morph_step(ligase_t *x, int n) {
 // surface (points + cursor + route). A magic+version+size header rejects incompatible files
 // (a struct-layout change bumps sizeof, so old files are refused rather than read as garbage).
 #define MORPH_FILE_MAGIC   0x4D4F5250u   /* 'MORP' */
-#define MORPH_FILE_VERSION 3u   /* v3: morph_state_t grew for schema v4 (SOURCE SHAPE params +
-                                   MORPH_SCALAR_COUNT 64->96). v2 grew it for schema v3
-                                   (generator params + MORPH_DISCRETE_COUNT 32->48). Older
-                                   binary files are refused with a clear error — re-export
-                                   as text from the writing build, morph_import here. */
+#define MORPH_FILE_VERSION 4u   /* v4: morph_state_t grew for schema v5 (HARMONIC LAYER —
+                                   the 16x2 scale-slot arrays in every snapshot). v3 grew it
+                                   for schema v4 (SOURCE SHAPE params + MORPH_SCALAR_COUNT
+                                   64->96); v2 for schema v3 (generator params +
+                                   MORPH_DISCRETE_COUNT 32->48). Older binary files are
+                                   refused with a clear error — re-export as text from the
+                                   writing build, morph_import here. */
 
 static void ligase_morph_save(ligase_t *x, t_symbol *s) {
     if (!x->morph) return;
@@ -8108,6 +8766,18 @@ static void morph_write_snap(FILE *f, int id, const morph_snapshot_t *s) {
                 for (int k = 0; k < MAX_SCALE_NOTES; k++) fprintf(f, " %.9g", sc[k]);
                 break;
             }
+            case MF_SCALE_SLOT: {
+                // v5 slot lists write COUNT-PREFIXED variable width (exactly count values;
+                // an EMPTY slot is a bare 0) — the plan's "text export skips empty slots"
+                // compactness rule. Parsing stays boundary-free: the reader consumes count.
+                int *cnt;
+                const float *sc = morph_snap_scale_slot((morph_snapshot_t *)s, fd->idx, &cnt);
+                int c = *cnt;
+                if (c < 0) c = 0; else if (c > MAX_SCALE_NOTES) c = MAX_SCALE_NOTES;
+                fprintf(f, " %d", c);
+                for (int k = 0; k < c; k++) fprintf(f, " %.9g", sc[k]);
+                break;
+            }
         }
     }
     fprintf(f, "\n");
@@ -8150,6 +8820,20 @@ static int morph_read_snap(FILE *f, morph_snapshot_t *s, int ver) {
                 // clamp defensively (a corrupt file must not let the blend over-read the arrays)
                 if (*cnt < 0) *cnt = 0;
                 if (*cnt > MAX_SCALE_NOTES) *cnt = MAX_SCALE_NOTES;
+                break;
+            }
+            case MF_SCALE_SLOT: {
+                // count-prefixed variable width: read exactly count values (0 for an empty
+                // slot), zero the tail. Count validated BEFORE the value loop so a corrupt
+                // count can never over-read.
+                int *cnt, c;
+                float *sc = morph_snap_scale_slot(s, fd->idx, &cnt);
+                if (fscanf(f, "%d", &c) != 1) return 0;
+                if (c < 0 || c > MAX_SCALE_NOTES) return 0;
+                for (int k = 0; k < c; k++)
+                    if (fscanf(f, "%g", &sc[k]) != 1) return 0;
+                for (int k = c; k < MAX_SCALE_NOTES; k++) sc[k] = 0.0f;
+                *cnt = c;
                 break;
             }
         }
@@ -8443,7 +9127,8 @@ static void ligase_snapbuf_set(ligase_t *x, t_symbol *s, int argc, t_atom *argv)
             }
             break;
         }
-        case MF_SCALE: {                                   // whole-list set (GATE A.2)
+        case MF_SCALE:                                     // whole-list set (GATE A.2)
+        case MF_SCALE_SLOT: {                              // v5 slot lists share the grammar
             int cnt = argc - 1;
             if (cnt > MAX_SCALE_NOTES) cnt = MAX_SCALE_NOTES;
             for (int k = 0; k < cnt; k++)
@@ -8452,7 +9137,9 @@ static void ligase_snapbuf_set(ligase_t *x, t_symbol *s, int argc, t_atom *argv)
                     return;
                 }
             int *pc;
-            float *sc = morph_snap_scale(&x->snapbuf, fd->idx, &pc);
+            float *sc = (fd->kind == MF_SCALE)
+                      ? morph_snap_scale(&x->snapbuf, fd->idx, &pc)
+                      : morph_snap_scale_slot(&x->snapbuf, fd->idx, &pc);
             *pc = cnt;
             for (int k = 0; k < cnt; k++) sc[k] = atom_getfloat(&argv[1 + k]);
             for (int k = cnt; k < MAX_SCALE_NOTES; k++) sc[k] = 0.0f;
@@ -8498,9 +9185,12 @@ static void ligase_snapbuf_get(ligase_t *x, t_symbol *s, int argc, t_atom *argv)
             }
             break;
         }
-        case MF_SCALE: {
+        case MF_SCALE:
+        case MF_SCALE_SLOT: {
             int *pc;
-            const float *sc = morph_snap_scale(&x->snapbuf, fd->idx, &pc);
+            const float *sc = (fd->kind == MF_SCALE)
+                            ? morph_snap_scale(&x->snapbuf, fd->idx, &pc)
+                            : morph_snap_scale_slot(&x->snapbuf, fd->idx, &pc);
             for (int k = 0; k < *pc && k < MAX_SCALE_NOTES; k++) { SETFLOAT(&a[n], sc[k]); n++; }
             break;
         }
@@ -8526,9 +9216,12 @@ static void ligase_snapbuf_dump(ligase_t *x) {
                 for (int k = 0; k < 8; k++) { SETFLOAT(&a[n], morph_range_get_sub(q, k)); n++; }
                 break;
             }
-            case MF_SCALE: {
+            case MF_SCALE:
+            case MF_SCALE_SLOT: {
                 int *pc;
-                const float *sc = morph_snap_scale(&x->snapbuf, fd->idx, &pc);
+                const float *sc = (fd->kind == MF_SCALE)
+                                ? morph_snap_scale(&x->snapbuf, fd->idx, &pc)
+                                : morph_snap_scale_slot(&x->snapbuf, fd->idx, &pc);
                 for (int k = 0; k < *pc && k < MAX_SCALE_NOTES; k++) { SETFLOAT(&a[n], sc[k]); n++; }
                 if (n == 1) continue;   // empty scale list: nothing re-sendable to emit
                 break;
@@ -8742,6 +9435,17 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_pitch_range, gensym("pitch_range"), A_DEFFLOAT, A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_rand_type, gensym("pitch_rand_type"), A_DEFSYMBOL, 0);
     class_addmethod(ligase_class, (t_method)ligase_pitch_scale, gensym("pitch_scale"), A_GIMME, 0);
+    // HARMONIC LAYER — scale slots + root/rotate (Plans/harmonic_layer.md)
+    class_addmethod(ligase_class, (t_method)ligase_pitch_scale_slot, gensym("pitch_scale_slot"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_pitch_scale_to, gensym("pitch_scale_to"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_scale_root, gensym("scale_root"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_scale_root_quant, gensym("scale_root_quant"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_scale_rotate, gensym("scale_rotate"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_pitch_scale_slot, gensym("smear_pitch_scale_slot"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_pitch_scale_to, gensym("smear_pitch_scale_to"), A_GIMME, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_scale_root, gensym("smear_scale_root"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_scale_root_quant, gensym("smear_scale_root_quant"), A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_smear_scale_rotate, gensym("smear_scale_rotate"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_midi, gensym("midi"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_poly, gensym("poly"), A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_chord, gensym("chord"), A_GIMME, 0);

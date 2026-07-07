@@ -2,8 +2,19 @@
 
 **Owner:** SLB
 **Date:** 2026-07-06
-**Status:** APPROVED — GATE A cleared at ALL recommendations (owner 2026-07-06: "create the
-execution plans with all recommendations"). Build not started.
+**Status:** ✅ **DONE + headless-verified (2026-07-06, Seq 85).** All five steps' gates
+measured: regression exact after every step; slot-0 defaults **bit-identical** (md5
+`a04e437c…` HEAD vs new vs re-run); in-key root wander under a lorenz matrix pin (24/24
+integer-semitone changes, 9 roots); `pattern pitch_scale_slot` steps at exact cycle
+thirds; D4 blend yields ONLY member pitches (grain + smear, disjoint-scale test);
+`scope_tap scale` = the polygon exactly (79 360/79 360 samples on-circle at the root-spun
+classes); v1/v4 fixtures import with slot-0/root-0 equivalence; v5 text re-export
+byte-stable; binary v3 refused/v4 saves-loads (+1.06 MB ≈ the estimate); Giant Steps demo
+= per-slot histograms ⊆ the three transposed triads. As-built notes: pattern_debug also
+traces SCALE mode (measurement aid); the 6 new bands are not snapshot state; D4 pick also
+covers PATTERN modes; resonator bank follows root but not rotate, and blends keep the
+bank on the argmax scale (a per-block re-tuned bank body would flicker); harmonic ranges
+default to [0,1] span so pattern attach passes indices 1:1. Owner ear tests remain.
 **Tracked in:** `QUEUE.md` §4a (harmonic/notation arc, Seq 80)
 **Related:** `Plans/seq_scale_sidecar.md` (the control surface that drives this layer — it
 depends on Steps 1–2 here), `docs/modulation_layers.md` (the contract Step 3 extends),

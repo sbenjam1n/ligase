@@ -42,12 +42,21 @@
 //   square_pw_1..4, saw_skew_1..4, lorenz sigma/rho/beta x4, sphere_spin_1..4).
 // Bump MORPH_TEXT_VERSION whenever this schema changes. Import still accepts older
 // versions: fields with a newer `since` tag in the walker keep their current values.
+//   v5 appends the HARMONIC LAYER params: scalars +2 (scale_root, smear_scale_root),
+//   discretes +6 (active slot x2, root quant x2, rotate x2), plus 32 SCALE-SLOT list
+//   fields (16 slots x 2 destinations; empty slots written count-only in the text export).
+//   NOTE: v5 grew NEITHER MORPH_SCALAR_COUNT (91 used <= 96) NOR MORPH_DISCRETE_COUNT
+//   (48 used == 48), so the included[] index layout is UNCHANGED — no v4->v5 exclude-index
+//   remap is needed (unlike the v3->v4 MORPH_SCALAR_COUNT_V3 remap above).
 #define MORPH_SCALAR_USED_V2   32   // v1/v2 file layout (scalars written before v3)
 #define MORPH_DISCRETE_USED_V2 30   // v1/v2 file layout (discretes written before v3)
 #define MORPH_SCALAR_USED_V3   61   // v3 file layout (scalars written before v4)
-#define MORPH_SCALAR_USED   89      // v4: 32 + 29 generator + 28 source-shape scalars
-#define MORPH_DISCRETE_USED 42      // v3/v4: 30 + 12 generator discretes
-#define MORPH_TEXT_VERSION  4   /* v4 adds the SOURCE SHAPE params; v1-v3 still import */
+#define MORPH_SCALAR_USED_V4   89   // v4 file layout (scalars written before v5)
+#define MORPH_DISCRETE_USED_V4 42   // v3/v4 file layout (discretes written before v5)
+#define MORPH_SCALAR_USED   91      // v5: 32 + 29 generator + 28 source-shape + 2 harmonic scalars
+#define MORPH_DISCRETE_USED 48      // v5: 30 + 12 generator + 6 harmonic discretes
+#define MORPH_SCALE_SLOT_FIELDS (2 * 16)  // v5: the 32 scale-slot list fields (walker kind MF_SCALE_SLOT)
+#define MORPH_TEXT_VERSION  5   /* v5 adds the HARMONIC LAYER (slots/root/rotate); v1-v4 still import */
 
 // Route-leg easing curves
 enum {
@@ -89,6 +98,9 @@ typedef struct {
 } morph_fx_shadow_t;
 
 // A full snapshot — three field classes (continuous lerp vs discrete step) + the scale lists.
+// Schema v5 adds the 16 scale SLOTS per destination (argmax step on blend, like the active
+// scale lists; ~16.5 KB per snapshot — accepted in Plans/harmonic_layer.md; the text export
+// writes empty slots count-only so files stay compact).
 typedef struct {
     int   in_use;
     morph_range_slot_t ranges[MORPH_RANGE_COUNT];      // (a) modulatable ranges
@@ -96,6 +108,9 @@ typedef struct {
     int   discretes[MORPH_DISCRETE_COUNT];             // (c) discrete ints (argmax step)
     float pitch_scale[MAX_SCALE_NOTES];        int pitch_scale_count;
     float smear_pitch_scale[MAX_SCALE_NOTES];  int smear_pitch_scale_count;
+    // (d) HARMONIC LAYER scale slots (schema v5) — 16 per destination, A-P
+    float pitch_scale_slots[16][MAX_SCALE_NOTES];        int pitch_scale_slot_counts[16];
+    float smear_pitch_scale_slots[16][MAX_SCALE_NOTES];  int smear_pitch_scale_slot_counts[16];
 } morph_snapshot_t;
 
 // A placed snapshot on the surface.
