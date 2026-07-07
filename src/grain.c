@@ -141,9 +141,37 @@ static float semitones_to_speed(float semitones) {
 
 // @region:ligase_pd.core.pitch.scale Pitch Scale Management
 
-// Sample a random semitone value from a scale
+// HARMONIC LAYER (D2): the applied scale-root offset. Quantize (default ON) rounds the
+// APPLIED offset to integer semitones so a wandering root stays in-key; quant 0 = free/
+// continuous drift. root == 0 (the default) returns exactly 0 — the add at the call
+// sites is then a no-op and the legacy pitch math is untouched.
+// Non-static: the smear stanza + scope scale tap in ligase~.c reuse it (extern-declared there).
+float scale_root_applied(float root, int quant) {
+    if (root == 0.0f) return 0.0f;
+    return quant ? roundf(root) : root;
+}
+
+// HARMONIC LAYER (D4): pick ONE contributing snapshot's scale from a blend table,
+// probability proportional to the kernel weights (cum_w prefix sums). Advances the
+// caller-supplied LCG seed (the scheduler's DEDICATED scale_blend_seed — never the four
+// shared rand_seed[] streams). Returns NULL when the table is inactive (count == 0).
+const pitch_scale_t *scale_blend_pick(const scale_blend_t *b, unsigned int *seed) {
+    int n = b->count;
+    if (n <= 0) return NULL;
+    if (n == 1) return &b->scales[0];
+    float total = b->cum_w[n - 1];
+    if (!(total > 0.0f)) return &b->scales[0];
+    float t = rand_float_seeded(seed) * total;
+    for (int i = 0; i < n; i++)
+        if (t < b->cum_w[i]) return &b->scales[i];
+    return &b->scales[n - 1];
+}
+
+// Sample a random semitone value from a scale. `rotate` (D3) is a degree-index offset
+// with wrap into the degree list (no octave carry); rotate == 0 skips the wrap entirely,
+// keeping the historical index math bit-identical.
 // Non-static so the SMEAR pitch SCALE source (ligase~.c smear stanza) can reuse it (extern-declared there).
-float sample_scale_semitones(pitch_scale_t *scale, perlin_state_t *perlin_state, param_range_t *semitone_range) {
+float sample_scale_semitones(const pitch_scale_t *scale, perlin_state_t *perlin_state, param_range_t *semitone_range, int rotate) {
     if (scale->count == 0) {
         return 0.0f;  // No scale defined, return 0 semitones
     }
@@ -237,6 +265,13 @@ float sample_scale_semitones(pitch_scale_t *scale, perlin_state_t *perlin_state,
     // Map random_value (0.0 to 1.0) to scale index
     int index = (int)(random_value * scale->count);
     if (index >= scale->count) index = scale->count - 1;
+
+    // D3 scale_rotate: modal interchange — rotate the degree INDEXING with wrap (the pitch
+    // set is untouched; no octave carry — octave lives in the degree lists). rotate == 0
+    // (default) skips this block, so the legacy path stays bit-identical.
+    if (rotate != 0) {
+        index = ((index + rotate) % scale->count + scale->count) % scale->count;
+    }
 
     return scale->semitones[index];
 }
@@ -694,6 +729,16 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->smear_pitch_fine_range.min = -0.5f;
     sched->smear_pitch_fine_range.max =  0.5f;
 
+    // HARMONIC LAYER modulation-target ranges (disabled by default). Deliberately kept at
+    // the [0,1] default span so a pattern attach passes raw degrees/slot indices through
+    // 1:1 (`pattern pitch_scale_slot [ 0 1 2 ]` selects slots 0/1/2 directly).
+    sched->pitch_scale_slot_range       = default_range;
+    sched->smear_pitch_scale_slot_range = default_range;
+    sched->scale_root_range             = default_range;
+    sched->smear_scale_root_range       = default_range;
+    sched->scale_rotate_range           = default_range;
+    sched->smear_scale_rotate_range     = default_range;
+
     // Initialize grain distortion (enabled by default with zero intensity)
     sched->distortion = grain_distortion_create(sample_rate);
     if (!sched->distortion) {
@@ -709,6 +754,14 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->pitch_control.semitone_range.min = -12.0f;
     sched->pitch_control.semitone_range.max = 12.0f;
     sched->pitch_control.scale.count = 0;
+    // HARMONIC LAYER defaults (grain dest). The memset zeroed slots[]/slot_active/scale_root/
+    // scale_rotate (all inert-at-zero); scale_root_quant is the ONE non-zero default (owner-
+    // approved: quantize ON) — set it explicitly (the B22 param_range garbage lesson: every
+    // new field gets an explicit default even when the memset already covers it).
+    sched->pitch_control.slot_active      = 0;      // slot 0 IS the legacy scale
+    sched->pitch_control.scale_root       = 0.0f;
+    sched->pitch_control.scale_root_quant = 1;      // default ON [approved R]
+    sched->pitch_control.scale_rotate     = 0;
     sched->pitch_control.midi_note = 60;  // Middle C
     sched->pitch_control.midi_enabled = 0;
     sched->pitch_control.last_semitone = 0.0f;  // Initialize for change detection
@@ -728,6 +781,11 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     sched->smear_pitch_control.pattern_slot = -1;                // -1 = no slot bound (0 is a valid slot)
     sched->smear_pitch_control.midi_channel = 2;                 // default smear MIDI channel (used by P2)
     sched->smear_pitch_control.scale.count  = 0;                 // no scale loaded
+    // HARMONIC LAYER defaults (smear dest) — mirrors the grain-dest block above.
+    sched->smear_pitch_control.slot_active      = 0;
+    sched->smear_pitch_control.scale_root       = 0.0f;
+    sched->smear_pitch_control.scale_root_quant = 1;             // default ON [approved R]
+    sched->smear_pitch_control.scale_rotate     = 0;
     sched->smear_pitch_control.semitone_range = default_range;   // disabled by default
     sched->smear_pitch_control.last_hz      = 0.0f;
     sched->smear_pitch_control.semitone_fine = 0.0f;               // P3: no smear fine offset by default
@@ -827,6 +885,13 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
     for (int i = 0; i < 4; i++) {
         sched->perlin_state.square_pw[i] = 0.5f;
     }
+
+    // D4 scale-blend: the memset zeroed both blend tables (count 0 = inactive — the
+    // single-scale path is bit-identical until a morph blend populates them). The pick
+    // seed gets an explicit non-zero default, decorrelated from the four rand seeds.
+    sched->scale_blend.count       = 0;
+    sched->smear_scale_blend.count = 0;
+    sched->scale_blend_seed        = base_seed + 987654321u;
 
     // MOD MATRIX: the memset above zeroed mod_matrix[]/mod_conn_count (inert) and the envelope
     // follower state/value caches (silence -> 0). Only the follower release coeff needs a
@@ -1004,9 +1069,23 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
         case PITCH_MODE_SCALE:
             // Transpose from base speed by semitones from scale
             {
-                current_semitone = sample_scale_semitones(&sched->pitch_control.scale,
+                // D4 morph scale-blend: while a blend is active, EACH GRAIN picks its
+                // source scale from the contributing snapshots (weight-proportional) —
+                // semitone values are never interpolated. Inactive (count 0, the default
+                // and every non-blend state) -> the active scale, exactly as before.
+                const pitch_scale_t *sc = &sched->pitch_control.scale;
+                if (sched->scale_blend.count > 0) {
+                    const pitch_scale_t *bsc = scale_blend_pick(&sched->scale_blend,
+                                                                &sched->scale_blend_seed);
+                    if (bsc) sc = bsc;
+                }
+                current_semitone = sample_scale_semitones(sc,
                                                          &sched->perlin_state,
-                                                         &sched->pitch_control.semitone_range);
+                                                         &sched->pitch_control.semitone_range,
+                                                         sched->pitch_control.scale_rotate);
+                // D2 scale_root: transposition AFTER degree lookup (the polygon rotates)
+                current_semitone += scale_root_applied(sched->pitch_control.scale_root,
+                                                       sched->pitch_control.scale_root_quant);
                 final_speed = base_speed * semitones_to_speed(current_semitone);
             }
             break;
@@ -1017,7 +1096,16 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
             // then transpose. A rest holds the previous semitone. Reads the cache only; perform-safe.
             {
                 int slot = sched->pitch_control.pitch_pattern_slot;
-                int count = sched->pitch_control.scale.count;
+                // D4: under a morph scale-blend the degree stays pattern-driven but the
+                // SCALE supplying the semitone is a per-grain weighted source-pick (never
+                // an interpolation). Inactive -> the active scale, exactly as before.
+                const pitch_scale_t *sc = &sched->pitch_control.scale;
+                if (sched->scale_blend.count > 0) {
+                    const pitch_scale_t *bsc = scale_blend_pick(&sched->scale_blend,
+                                                                &sched->scale_blend_seed);
+                    if (bsc) sc = bsc;
+                }
+                int count = sc->count;
                 if (slot >= 0 && slot < PATTERN_SLOTS && count > 0 &&
                     sched->perlin_state.pattern[slot].step_count > 0) {
                     pattern_table_t *pt = &sched->perlin_state.pattern[slot];
@@ -1026,8 +1114,14 @@ void scheduler_trigger_grain(scheduler_t *sched, float position, float speed, ui
                     } else {
                         int degree = (int)pt->cached_value;                      // leaf value = scale degree
                         int idx = ((degree % count) + count) % count;            // [0, count-1]
+                        // D3 scale_rotate: modal degree-offset with wrap (octave from the
+                        // ORIGINAL degree only — no octave carry on the rotate itself)
+                        if (sched->pitch_control.scale_rotate != 0)
+                            idx = ((idx + sched->pitch_control.scale_rotate) % count + count) % count;
                         int oct = (int)floorf((float)degree / (float)count);     // octave compensation
-                        current_semitone = sched->pitch_control.scale.semitones[idx] + 12.0f * (float)oct;
+                        current_semitone = sc->semitones[idx] + 12.0f * (float)oct
+                                         + scale_root_applied(sched->pitch_control.scale_root,
+                                                              sched->pitch_control.scale_root_quant);
                     }
                 }
                 // else: slot / scale not ready -> current_semitone stays 0 (unison), never crashes

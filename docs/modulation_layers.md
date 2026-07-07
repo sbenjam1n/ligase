@@ -32,6 +32,33 @@ release *time* — is now voice state, while the follower's *pins* remain physic
 The scope tap routing (`scope_tap`, signal outlets 10/11) is the same kind of thing: a MONITOR,
 not voice state — never captured by snapshots, never morphed, absent from the export vocabulary.
 
+### Scale fields — the blend NEVER interpolates semitones (harmonic layer, schema v5)
+
+Scales are captured (the active `pitch_scale`/`smear_pitch_scale` lists and, since schema v5,
+the 16 scale SLOTS per destination plus `scale_root`/`scale_root_quant`/`scale_rotate` and the
+active-slot indices), but during a morph blend **semitone values are never interpolated** —
+an in-between semitone is an out-of-key pitch. The as-built rule (Plans/harmonic_layer.md D4,
+owner-approved):
+
+- **Grain destination:** each triggered grain picks its degree from ONE contributing
+  snapshot's scale, with probability proportional to the kernel weights (per-grain pick at
+  trigger, drawn from a dedicated LCG seed so the four shared `rand_N` streams are never
+  perturbed).
+- **Smear destination:** the resolver picks one contributing scale per BLOCK.
+- At any cursor position every sounding pitch belongs to one of the placed scales; the blend
+  is a harmonic crossfade **density**, matching SCALE mode's stochastic character. (Before
+  v5 the blend hard-switched the whole list to the argmax-weight snapshot's scale — also
+  never out-of-key, but binary; the pick rule replaces that switch for the SOUNDING scale.
+  The dormant slot arrays and every discrete harmonic field still step by argmax.)
+- `scale_root` is the one harmonic field that **does** interpolate (a scalar glide — musical
+  when `scale_root_quant` rounds the applied offset); slot indices, quant flags and rotate
+  step by argmax like every other discrete.
+- An exact cursor hit, `snapshot_recall`, `snapbuf_apply` and `morph_import` are
+  single-source restores: they clear the pick tables (count 0 ⇒ the legacy single-scale
+  path, byte-identical).
+- Excluding the pitch groups gates the pick too: `morph_exclude pitch` (or `smear_pitch`)
+  keeps the blend's hands off that destination's scale AND its degree source.
+
 ### The fourth state-holder — the Snapshot Expander's edit buffer (explicitly OFFLINE)
 
 The expander (`snapbuf_*`, see the manual's SNAPSHOT EXPANDER section) adds one more place state
@@ -173,6 +200,9 @@ v1 destinations  (per block): gdelay gdelay_feed gdelay_tone gdelay_mix moog_cut
                  moog_resonance moog_mix smear_frequency smear_resonance smear_stages
                  smear_feedback scanrate organize sos iot env_skew modout1-4
 v1.5 additions   (per grain): speed grainsize grain_start amplitude pan pitch_fine
+harmonic layer   (per block): scale_root smear_scale_root (±24 st) ·
+                 pitch_scale_slot smear_pitch_scale_slot (stepped 0-15) ·
+                 scale_rotate smear_scale_rotate (stepped, wrap at lookup)
 
 Snapshot Expander (all cold except the two marked):
 snapbuf_load <id> · snapbuf_from_live · snapbuf_set/get/dump · snapbuf_clear

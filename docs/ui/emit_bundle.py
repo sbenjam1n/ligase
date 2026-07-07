@@ -50,6 +50,7 @@ META = {
 CONTENTS = [
     ("pd/ligase_panel.pd", "ligase_panel.pd", True),
     ("pd/ligase_xpndr.pd", "ligase_xpndr.pd", True),
+    ("pd/ligase_seq.pd", "ligase_seq.pd", True),
     ("pd/README.md", "README.md", True),
     ("ligase.conf", "ligase.conf", True),
     # platform externals: Pd loads whichever matches the host. At least one must

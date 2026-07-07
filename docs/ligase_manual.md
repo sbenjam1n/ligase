@@ -358,6 +358,8 @@ matrix_connect <source> <dest> <depth> - Add/update a routing connection (depth 
   Destinations, per-block: gdelay, gdelay_feed, gdelay_tone, gdelay_mix, moog_cutoff,
   moog_resonance, moog_mix, smear_frequency, smear_resonance, smear_stages, smear_feedback,
   scanrate, organize, sos, iot, env_skew, modout1-4
+  Destinations, per-block harmonic (see MODULATING THE SCALE): scale_root, smear_scale_root,
+  pitch_scale_slot, smear_pitch_scale_slot, scale_rotate, smear_scale_rotate
   Destinations, per-grain (applied at grain trigger): speed, grainsize, grain_start,
   amplitude, pan, pitch_fine
 matrix_disconnect <source> <dest> - Disable a connection (kept; re-connect re-enables)
@@ -416,8 +418,21 @@ pitch_mode <0|1|2|3|4|5> - Off/Semitones/Range/Scale/MIDI/Pattern
 pitch_semitones <-24 to 24> - Fixed transposition
 pitch_range <min> <max> - Semitone range
 pitch_rand_type <type> - Random generator for pitch
-pitch_scale <note1> <note2> ... <noteN> - Scale definition (semitones)
+pitch_scale <note1> <note2> ... <noteN> - Scale definition (semitones; writes the ACTIVE slot)
 pitch_fine <cents> - ±50-cent fine tune on the grain pitch (modulatable: param_range pitch_fine)
+
+Scale Slots & Harmonic Layer (see SCALE SLOTS / MODULATING THE SCALE)
+
+pitch_scale_slot <0-15> - Select the grain-side active scale slot (A-P); modulatable, stepped
+pitch_scale_to <slot> <semis...> - Write a slot without selecting it (no semis = clear the slot)
+scale_root <-24 to 24> - Semitone offset applied AFTER degree lookup (grain dest); modulatable
+scale_root_quant <0|1> - 1 = round the applied root to integer semitones (default 1)
+scale_rotate <n> - Degree-index offset with wrap (modal interchange, grain dest); modulatable
+smear_pitch_scale_slot <0-15> - Smear-side active slot select (bank retunes next block)
+smear_pitch_scale_to <slot> <semis...> - Write a smear slot without selecting it
+smear_scale_root <-24 to 24> - Smear-side root offset (also shifts the resonator bank)
+smear_scale_root_quant <0|1> - Quantize the applied smear root (default 1)
+smear_scale_rotate <n> - Smear-side degree rotate (SCALE pick + PATTERN stepper; not the bank)
 
 MIDI (channel-aware; from Pd [notein] -> note/vel/channel)
 
@@ -1640,7 +1655,9 @@ Example:
 
 pitch_scale 0 2 4 5 7 9 11 (major scale)
 
-Up to 128 notes per scale.
+Up to 128 notes per scale. pitch_scale writes the ACTIVE scale SLOT (slot 0 unless selected
+otherwise) — sixteen slots per destination plus root/rotate modulation live in SCALE SLOTS and
+MODULATING THE SCALE.
 
 Mode 4 - MIDI
 
@@ -1755,6 +1772,84 @@ for an N-note chord at the same per-voice density.
 
 Backward compatibility: with poly 0 (the default) the grain-trigger sites take the single-call scalar path and
 the `midi` grain-channel write is the unchanged last-note-wins scalar — bit-identical to the pre-POLY external.
+
+# SCALE SLOTS
+
+Each pitch destination (GRAIN and SMEAR) holds SIXTEEN scale slots, A-P: A-D are the primary row,
+E-P two six-slot banks for progressions and set-lists. One slot per destination is ACTIVE — it is
+the scale every lookup reads (SCALE mode's stochastic pick, the PATTERN degree stepper, and, on the
+smear side, the resonator bank's size and tuning).
+
+  pitch_scale_slot <0-15>                 select the grain-side active slot
+  smear_pitch_scale_slot <0-15>           select the smear-side active slot
+  pitch_scale_to <slot> <semis...>        write a slot WITHOUT selecting it (no semis = clear)
+  smear_pitch_scale_to <slot> <semis...>  same, smear side
+  pitch_scale / smear_pitch_scale         (unchanged) write the ACTIVE slot
+
+Slot 0 IS the legacy scale: with no slot messages ever sent, pitch_scale writes slot 0 and slot 0
+sounds — every pre-slot patch behaves identically. Selecting a slot is a lookup-table swap applied
+at block rate: inherently click-free (grains already sounding keep their frozen pitch; new grains
+pick from the new slot). On the smear side a slot switch retunes/resizes the resonator bank on the
+next block (the bank is dry while the active slot is empty).
+
+  pitch_scale_to 0 0 4 7                  I    (C major triad)
+  pitch_scale_to 1 5 9 12                 IV
+  pitch_scale_to 2 7 11 14                V
+  pitch_scale_slot 1                      move to the IV chord — no click, no retyping
+
+`pitch_scale_slot` / `smear_pitch_scale_slot` are also modulation targets (stepped): see
+MODULATING THE SCALE. Empty slots are skipped by the text export (count 0), so surfaces with a
+few slots stay compact.
+
+# MODULATING THE SCALE
+
+The harmonic layer makes the scale itself addressable by every modulation system. Six per-block
+destinations exist in BOTH the param_range/pattern vocabulary (param_range / rand_type / pattern)
+and the matrix destination table (matrix_connect):
+
+  scale_root / smear_scale_root            semitone offset, clamp ±24, applied AFTER degree lookup
+  pitch_scale_slot / smear_pitch_scale_slot  STEPPED slot select (value rounds to 0-15)
+  scale_rotate / smear_scale_rotate        STEPPED degree-index offset, wraps into the scale
+
+SCALE ROOT — transposition as a destination. The offset joins after the degree lookup, so the
+scale SHAPE is untouched: the polygon rotates. With scale_root_quant 1 (the default) the APPLIED
+offset rounds to integer semitones — a wandering root wanders IN-KEY; quant 0 frees it into
+continuous drift. The smear root also shifts the whole resonator bank (the chord transposes with
+the key). The Coltrane payoff:
+
+  matrix_connect lorenz1 scale_root 4     the key wanders with the weather, quantized in-key
+
+SCALE ROTATE — modal interchange. Rotating a major scale's degree indexing yields its modes
+without changing the pitch set (no octave carry — octaves live in the degree lists). It offsets
+the stochastic pick and the PATTERN stepper; it deliberately does not touch the resonator bank
+(reordering a static bank's voices changes nothing audible).
+
+SLOT SELECT — chord progressions on the cycle clock. The slot destinations are stepped (values
+round to 0-15), which makes progressions one pattern away. The Giant Steps move — three slots a
+major third apart, cycled by the clock:
+
+  pitch_scale_to 0 0 4 7
+  pitch_scale_to 1 4 8 11
+  pitch_scale_to 2 8 12 15
+  pattern pitch_scale_slot 0 1 2          steps the key every third of the pattern cycle
+
+An LFO sweeping slots (matrix_connect sine1 pitch_scale_slot 8) walks the set-list instead.
+
+CAPTURE & MORPH (schema v5). All sixteen slots per destination, the active-slot indices, roots,
+quant flags and rotates are snapshot state (walker fields scale_root, pitch_scale_slot,
+scale_rotate, pitch_scale_a..p, smear_* — see the SNAPSHOT EXPANDER vocabulary). They join the
+pitch-side selection-tree groups (`morph_exclude pitch` / `smear_pitch`), NOT `sources`. SNAP
+under an active matrix connection records the BASE, never the momentary wobble. During a morph
+BLEND, scale_root interpolates as a scalar (musical to glide when quantized); slots, quant and
+rotate step by argmax; and the sounding SCALE follows the stochastic source-pick rule — each
+grain (grain dest) / each block (smear dest) picks ONE contributing snapshot's scale with
+probability proportional to the kernel weights, so semitone values are NEVER interpolated and a
+blend between different-scale snapshots never sounds an out-of-key pitch (the blend is a harmonic
+crossfade DENSITY). v1-v4 export files import cleanly: their scale lands in the active slot with
+root 0 — the old behavior exactly.
+
+The scale polygon and running patterns are visible on the scope outlets: see SCOPE
+(scope_tap scale / scope_tap pattern).
 
 # DELAY
 
@@ -2877,8 +2972,19 @@ scope_tap <family> [inst]
       Y = the summed loudness of all active grains — the cloud's amplitude
       silhouette, soft-scaled with tanh(sum/4) so a few full-scale grains sit
       mid-screen and dense clouds saturate toward 1; X = sweep.
+  scale [grain|smear]
+      THE SCALE POLYGON: the beam steps through the active slot's pitch
+      classes, one degree per sample — X = cos(2pi*pc/12), Y = sin(2pi*pc/12).
+      Every point sits ON the unit circle at an active pitch class; the
+      APPLIED scale_root is included, so root motion spins the polygon and
+      slot switches reshape it live. Default destination: grain.
+  pattern [slot 0-7]
+      A RUNNING PATTERN as a waveform: X = the cycle-phase ramp, Y = the
+      slot's current value (sample-and-hold) — steps read as plateaus, the
+      step silhouette of the pattern. Inactive slot parks the beam at (0,0).
 
-[inst] is the generator instance 1-4 (default 1; folw/grain/grainsum take none).
+[inst] is the generator instance 1-4 (default 1; folw/grain/grainsum take none;
+scale takes grain|smear, pattern takes a pattern slot 0-7).
 
 THE GRAIN CONSTELLATION (scope_tap grain). The scope scans the active grain pool
 round-robin, ONE GRAIN PER OUTPUT SAMPLE — a Vectrex-style vector-display refresh:
@@ -2962,6 +3068,10 @@ Per-BLOCK parameters (applied once per DSP block):
   smear_frequency, smear_resonance, smear_stages, smear_feedback
   scanrate, organize, sos, iot, env_skew
   modout1-4
+  scale_root, smear_scale_root (semitones, clamp ±24 — the applied offset honors
+    scale_root_quant), pitch_scale_slot, smear_pitch_scale_slot (STEPPED: rounds to
+    slot 0-15), scale_rotate, smear_scale_rotate (STEPPED: degrees, wraps into the
+    scale) — see MODULATING THE SCALE
 
 Per-GRAIN parameters (applied at each grain trigger):
 
@@ -3322,11 +3432,14 @@ bodies — those hold hundreds of values each and are not dumped as messages).
 morph_export <file> / morph_import <file> are the fully portable option: a human-readable .txt that
 holds EVERYTHING (every snapshot body + the surface), written as a logical-field schema rather than a
 memory image — so unlike the binary .morph it survives across builds whose struct layout differs (a
-"ligase_morph <version>" header guards the schema). The current schema is version 4 (v3 appended the
-generator/sources params, v4 the SOURCE SHAPE params); older v1-v3 files still import cleanly —
-their missing fields simply keep the values the engine has at import time, and the "exclude" line's
-indices are remapped from the older layout by file version, so old exclude lines keep selecting the
-same fields. The snapshot lines are long (one per snapshot, hundreds of numbers) but it is plain
+"ligase_morph <version>" header guards the schema). The current schema is version 5 (v3 appended the
+generator/sources params, v4 the SOURCE SHAPE params, v5 the HARMONIC LAYER — the 16 scale slots per
+destination, active-slot indices, scale_root/quant and scale_rotate; empty slots are written
+count-only so files stay compact); older v1-v4 files still import cleanly — their missing fields
+simply keep the values the engine has at import time (on a fresh instance that means slot-0/root-0:
+the old file's scale lands in the active slot, exactly the pre-slot behavior), and the "exclude"
+line's indices are remapped from the older layout by file version, so old exclude lines keep
+selecting the same fields. The snapshot lines are long (one per snapshot, hundreds of numbers) but it is plain
 text you can read, diff, and edit.
 
 Three persistence routes, then: morph_save/morph_load (binary, complete, fastest, build-specific);
@@ -3413,7 +3526,11 @@ Fields use the text-export schema's logical names — the same enumeration, so t
 - **Discretes** (`pan_mode`, `maxgrains`, `playhead`, `pitch_mode`, `nbody_mode_1`,
   `sphere_mode_4`, `nbody_pump_interval_2`, …): `snapbuf_set pan_mode 1`.
 - **Scale lists**: whole-list set, matching the live message —
-  `snapbuf_set pitch_scale 0 4 7` / `snapbuf_set smear_pitch_scale 0 3 7`.
+  `snapbuf_set pitch_scale 0 4 7` / `snapbuf_set smear_pitch_scale 0 3 7`. Since schema v5 the
+  sixteen SCALE SLOTS per destination address the same way (`snapbuf_set pitch_scale_b 3 6 9`,
+  `smear_pitch_scale_a..p`), and the harmonic scalars/discretes join the vocabulary:
+  `scale_root`, `smear_scale_root` (scalars); `pitch_scale_slot`, `smear_pitch_scale_slot`,
+  `scale_root_quant`, `smear_scale_root_quant`, `scale_rotate`, `smear_scale_rotate` (discretes).
 
 An unknown field or subfield is a pd error and leaves the buffer untouched. `snapbuf_get <band>`
 without a subfield reports all 8 values in export order.
@@ -3436,6 +3553,44 @@ without a subfield reports all 8 values in export order.
   the live generator rates untouched, exactly like a recall.
 - snapbuf_from_live inherits capture transparency: with the matrix wobbling a destination, the
   buffer records the knob value (the tracked base), never base+offset.
+
+# TONE / TIME CIRCLE (THE SEQ / SCALE SIDECAR)
+
+The harmonic + notation control surface (`pd/ligase_seq.pd`, embedded as `[pd seq]` in the
+panel; `Plans/seq_scale_sidecar.md`). A scale is a polygon on the pitch-class ring; a rhythm
+is the same polygon on the cycle ring — both are point-sets you PIN. Nothing here is a new
+engine message: the circles/grid compose the existing `pitch_scale`, `scale_root`,
+`scale_rotate`, `pitch_scale_to`, `pitch_scale_slot`, and `pattern` vocabulary (and the
+`smear_*` mirrors), so every gesture is scriptable through its `lgR_<id>` receive.
+
+## TONE CIRCLE (scale input, cold-edit)
+
+- The 12 ring toggles are pitch classes 0–11; toggling them composes the whole-list scale.
+  RING ORDER (CHRO / 5THS / W-T) is a pure display projection — the same set of pins always
+  sends the same scale.
+- ROOT → `scale_root` (transpose), MODE → `scale_rotate` (modal offset), POLYGON PRESET
+  (MAJ MIN PENT W-T OCTA AUG) lights the ring with a named scale.
+- The circle edits COLD. **APPLY** commits `pitch_scale …`, `scale_root …`, `scale_rotate …`,
+  routed by **DEST** (GRAIN / SMEAR / BOTH). Audible in PITCH MODE = SCALE.
+
+## SLOTS + AXIS→SLOTS (the Coltrane-changes generator)
+
+- Slots A–P select the live scale slot (`pitch_scale_slot`). **AXIS→SLOTS** writes the
+  composed shape into slot 0 (`pitch_scale_to`) and arms the axis cycle by sequencing the
+  root: with AXIS = 3 it arms `pattern scale_root [ 0 4 8 ]` — the Giant Steps three-key
+  tonic cycle, from three knob gestures. REV = retrograde, ALT = `<>` alternation form.
+
+## TIME CIRCLE (pattern input)
+
+- K / N select a euclid preset; the arm sends `pattern <target> <v>(k,n)` to the TARGET
+  (EVNT event · MOD a param · PTCH pitch · SMR smear pitch). The engine expands the
+  Bjorklund rhythm on the cycle clock (drive the clock with bangs to the left inlet).
+
+## PATTERN GRID (8 × 16 step sequencer)
+
+- A pin writes its step at the VALUE knob's level (the matrix DEPTH-at-pin rule):
+  `pattern <field> [ v v … ]`. The row target reuses the Snapshot-Expander PAGE × PARAM
+  field addressing.
 
 # QUERY STATE
 
