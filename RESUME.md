@@ -132,6 +132,9 @@ this is the "where we are / how to continue" digest._
   control surface; `pd/README.md` = open/script/MIDI-map/install it.
 - `Plans/` — `pd_panel_prototype.md` (Step 6 owner) · `harmonic_layer.md` (DONE) ·
   `seq_scale_sidecar.md` (DONE) · `vst_plugin.md` (GATE A) · completed in `Plans/completed/`.
-- `tests/` — per-feature headless patches (spatial/ modmatrix/ pattern_events/ resonator/
-  have committed patches; poly/expander/source-shapes/scope/harmonic are narrative-only).
+- `tests/` — per-feature headless acceptance patches; run all new suites with
+  `bash tests/run_acceptance.sh` (14 self-asserting checks). Committed suites now cover
+  spatial/ modmatrix/ pattern_events/ resonator/ + polyphony/ expander/ source_shapes/
+  scope_taps/ harmonic/ (Seq 90 backfill closed the narrative-only gap); plus the older
+  morph/ pattern/ oneshot/ param_lock/ suites.
 - `docs/ligase_manual.md` — manual source (PDF intentionally stale).
