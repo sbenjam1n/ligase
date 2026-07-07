@@ -28,7 +28,7 @@
 #             into the engine at patch load (False for anything with side effects:
 #             record arming, file I/O, momentary buttons)
 
-W, H = 1914, 1820   # Seq 84: SEQ/SCALE block (approved arrangement) rides below the expander
+W, H = 2456, 1096   # Seq 86: panel grew WIDE, not tall — paired expander + SEQ/SCALE at ~880, nothing below the presets line
 MAINW = 1520
 
 
@@ -236,42 +236,42 @@ CONTROLS = [
        note="[tgl] 0 = + (white pin), 1 = - (green pin)"),
 
     # ---------- XPNDR (snapshot expander; second canvas) ----------
-    _c("xp_led", "led", dict(x=1716, y=130, digits="02", label="buffer holds snap"), ("special", "xp_led")),
-    _c("xp_slot", "knob", dict(x=1780, y=134, name="DATA", rng="slot 0 – 63", inlet="MSG", cap="grey", pos=0.25, small=True),
+    _c("xp_led", "led", dict(x=1576, y=134, digits="02", label="buffer holds snap"), ("special", "xp_led")),
+    _c("xp_slot", "knob", dict(x=1652, y=138, name="DATA", rng="slot 0 – 63", inlet="MSG", cap="grey", pos=0.25, small=True),
        ("special", "xp_slot"), lo=0, hi=63, default=0, init_send=False),
-    _c("xp_load", "button", dict(x=1716, y=178, label="LOAD", w=66, lit=False), ("special", "xp_load"), init_send=False),
-    _c("xp_fromlive", "button", dict(x=1798, y=178, label="FROM LIVE", w=84, lit=False), ("special", "xp_fromlive"), init_send=False),
-    _c("xp_page", "switch", dict(x=1697.0, y=258, w=312, labels=["GRAIN", "TAPE", "DELAY", "FILTR", "SMEAR", "ENV", "PITCH", "SPACE"], sel=3, title="PAGE"),
+    _c("xp_load", "button", dict(x=1730, y=134, label="LOAD", w=64, lit=False), ("special", "xp_load"), init_send=False),
+    _c("xp_fromlive", "button", dict(x=1830, y=134, label="FROM LIVE", w=84, lit=False), ("special", "xp_fromlive"), init_send=False),
+    _c("xp_page", "switch", dict(x=1734, y=258, w=312, labels=["GRAIN", "TAPE", "DELAY", "FILTR", "SMEAR", "ENV", "PITCH", "SPACE"], sel=3, title="PAGE"),
        ("special", "xp_page"), lo=0, hi=7, default=0, init_send=False),
-    _c("xp_param", "switch", dict(x=1697.0, y=306, w=312, labels=["1", "2", "3", "4", "5", "6", "7", "8"], sel=1, title="PARAM"),
+    _c("xp_param", "switch", dict(x=1734, y=306, w=312, labels=["1", "2", "3", "4", "5", "6", "7", "8"], sel=1, title="PARAM"),
        ("special", "xp_param"), lo=0, hi=7, default=0, init_send=False),
-    _c("xp_value_led", "led", dict(x=1580, y=130, digits="0.42", label="stored value", w=96, h=30, ghost="8.88", fs=22), ("special", "xp_value_led")),
-    _c("xp_value", "knob", dict(x=1650, y=134, name="VALUE", rng="raw units", inlet="MSG", cap="white", pos=0.42, small=True),
+    _c("xp_value_led", "led", dict(x=2008, y=134, digits="0.42", label="stored value", w=96, h=30, ghost="8.88", fs=22), ("special", "xp_value_led")),
+    _c("xp_value", "knob", dict(x=2130, y=134, name="VALUE", rng="scalar · detent = discrete", inlet="MSG", cap="white", pos=0.42),
        ("special", "xp_value"), lo=-20000, hi=20000, default=0, init_send=False,
        note="raw field units ([nbx] in the patch — fields span ms/Hz/semitones)"),
-    _c("xp_min", "knob", dict(x=1586, y=404, name="MIN", rng="band low", inlet=None, cap="blue", pos=0.3, small=True),
+    _c("xp_min", "knob", dict(x=2000, y=262, name="MIN", rng="band low", inlet=None, cap="blue", pos=0.3, small=True),
        ("special", "xp_min"), lo=0.0, hi=1.0, default=0.0, init_send=False),
-    _c("xp_max", "knob", dict(x=1654, y=404, name="MAX", rng="band high", inlet=None, cap="blue", pos=0.7, small=True),
+    _c("xp_max", "knob", dict(x=2068, y=262, name="MAX", rng="band high", inlet=None, cap="blue", pos=0.7, small=True),
        ("special", "xp_max"), lo=0.0, hi=1.0, default=1.0, init_send=False),
-    _c("xp_slew", "knob", dict(x=1722, y=404, name="SLEW", rng="smooth", inlet=None, cap="blue", pos=0.2, small=True),
+    _c("xp_slew", "knob", dict(x=2136, y=262, name="SLEW", rng="smooth", inlet=None, cap="blue", pos=0.2, small=True),
        ("special", "xp_slew"), lo=0.0, hi=1.0, default=0.0, init_send=False),
-    _c("xp_enabled", "toggle", dict(x=1790, y=398, label="ENABLED", on=True), ("special", "xp_enabled"), lo=0, hi=1, default=1, init_send=False),
-    _c("xp_invert", "toggle", dict(x=1858, y=398, label="INVERT", on=False), ("special", "xp_invert"), lo=0, hi=1, default=0, init_send=False),
-    _c("xp_source", "switch", dict(x=1661, y=482, w=210, labels=["OFF", "PERL", "LRNZ", "NBDY", "SPHR", "RAND", "PAT"], sel=1, title="SOURCE"),
+    _c("xp_enabled", "toggle", dict(x=2204, y=256, label="ENABLED", on=True), ("special", "xp_enabled"), lo=0, hi=1, default=1, init_send=False),
+    _c("xp_invert", "toggle", dict(x=2272, y=256, label="INVERT", on=False), ("special", "xp_invert"), lo=0, hi=1, default=0, init_send=False),
+    _c("xp_source", "switch", dict(x=2078, y=340, w=210, labels=["OFF", "PERL", "LRNZ", "NBDY", "SPHR", "RAND", "PAT"], sel=1, title="SOURCE"),
        ("special", "xp_source"), lo=0, hi=6, default=0, init_send=False),
-    _c("xp_inst", "switch", dict(x=1830, y=482, w=64, labels=["1", "2", "3", "4"], sel=0, title="INST"),
+    _c("xp_inst", "switch", dict(x=2330, y=340, w=64, labels=["1", "2", "3", "4"], sel=0, title="INST"),
        ("special", "xp_inst"), lo=0, hi=3, default=0, init_send=False),
-    _c("xp_store", "button", dict(x=1580, y=592, label="STORE", w=62, lit=False), ("special", "xp_store"), init_send=False),
-    _c("xp_assign", "button", dict(x=1670, y=592, label="ASSIGN", w=62, lit=True), ("special", "xp_assign"), init_send=False),
-    _c("xp_audition", "button", dict(x=1762, y=592, label="AUDITION", w=66, lit=False),
+    _c("xp_store", "button", dict(x=1580, y=450, label="STORE", w=62, lit=False), ("special", "xp_store"), init_send=False),
+    _c("xp_assign", "button", dict(x=1670, y=450, label="ASSIGN", w=62, lit=True), ("special", "xp_assign"), init_send=False),
+    _c("xp_audition", "button", dict(x=1762, y=450, label="AUDITION", w=66, lit=False),
        ("special", "xp_audition"), lo=0, hi=1, default=0, init_send=False, note="[tgl] in the patch: snapbuf_audition 1/0"),
-    _c("xp_compare", "button", dict(x=1843, y=592, label="A/B", w=40, lit=False), ("bang", "snapbuf_compare"), init_send=False),
+    _c("xp_compare", "button", dict(x=1843, y=450, label="A/B", w=40, lit=False), ("bang", "snapbuf_compare"), init_send=False),
 
     # ---------- MONITOR (condensed: horizontal VU + inline knobs + 2-line legend) ----------
-    _c("master", "knob", dict(x=1762, y=722, name="MASTER", rng="amplitude · IN 21", inlet=None, cap="red", pos=0.6),
+    _c("master", "knob", dict(x=2226, y=460, name="MASTER", rng="amplitude · IN 21", inlet=None, cap="red", pos=0.6),
        None, lo=0.0, hi=2.0, default=1.0, init_send=False,
        note="duplicate of LEVEL (inlet 21); left unwired in the patch — two line~ writers on one signal inlet would SUM"),
-    _c("bank_mix", "knob", dict(x=1836, y=722, name="BANK MIX", rng="0 – 1", inlet="MSG", cap="grey", pos=0.0, small=True),
+    _c("bank_mix", "knob", dict(x=2295, y=460, name="BANK MIX", rng="0 – 1", inlet="MSG", cap="grey", pos=0.0, small=True),
        ("msg", "smear_bank_mix"), lo=0.0, hi=1.0, default=0.0, init_send=False),
 ]
 
