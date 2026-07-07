@@ -5,8 +5,8 @@
 #X obj 192 572 nbx 4 16 0 63 0 0 lgS_xp_slot lgR_xp_slot DATA_slot 0 -10 0 10 #dfe1e3 #26282b #26282b 0 256;
 #X obj 270 568 bng 18 250 50 0 lgS_xp_load lgR_xp_load LOAD 22 9 0 10 #dfe1e3 #26282b #26282b;
 #X obj 370 568 bng 18 250 50 0 lgS_xp_fromlive lgR_xp_fromlive FROM_LIVE 22 9 0 10 #dfe1e3 #26282b #26282b;
-#X obj 206 692 hradio 17 1 0 8 lgS_xp_page lgR_xp_page PAGE 0 -10 0 10 #dfe1e3 #26282b #26282b 0;
-#X obj 206 740 hradio 17 1 0 8 lgS_xp_param lgR_xp_param PARAM 0 -10 0 10 #dfe1e3 #26282b #26282b 0;
+#X obj 206 726 hradio 17 1 0 8 lgS_xp_page lgR_xp_page PAGE 0 -10 0 10 #dfe1e3 #26282b #26282b 0;
+#X obj 206 774 hradio 17 1 0 8 lgS_xp_param lgR_xp_param PARAM 0 -10 0 10 #dfe1e3 #26282b #26282b 0;
 #X obj 650 568 nbx 8 16 -1e+37 1e+37 0 0 lgS_xp_value lgR_xp_value VALUE 0 -10 0 10 #dfe1e3 #26282b #26282b 0 256;
 #X obj 520 696 hsl 70 15 0 1 0 0 lgS_xp_min lgR_xp_min MIN -2 -10 0 10 #ece8da #26282b #26282b 0 1;
 #X obj 588 696 hsl 70 15 0 1 0 0 lgS_xp_max lgR_xp_max MAX -2 -10 0 10 #ece8da #26282b #26282b 6900 1;

@@ -1615,9 +1615,9 @@
 <line x1="1987.1" y1="508.6" x2="1986.0" y2="506.0" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
 <text x="1990" y="541" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">VALUE</text>
 <text x="1990" y="550" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">step level</text>
-<rect x="2103.0" y="505" width="254" height="22" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="2105.0" y="507" width="250" height="18" rx="3" fill="#0a0705"/>
-<text x="2230" y="519.5" font-family="Courier New, monospace" font-size="8" font-weight="bold" fill="#f08a4b" text-anchor="middle">pattern moog_cutoff [ 0.2 0.8 .. ]</text>
+<rect x="2045.0" y="505" width="254" height="22" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="2047.0" y="507" width="250" height="18" rx="3" fill="#0a0705"/>
+<text x="2172" y="519.5" font-family="Courier New, monospace" font-size="8" font-weight="bold" fill="#f08a4b" text-anchor="middle">pattern moog_cutoff [ 0.2 0.8 .. ]</text>
 <text x="2172" y="552" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">row target = any snapbuf field · EVNT kinds via TARGET · pin = step at VALUE (the DEPTH-at-pin rule)</text>
 <circle cx="1540" cy="586" r="3" fill="#d9a23a" stroke="#4d5157" stroke-width="0.8"/>
 <text x="1548" y="589.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">SNAPSHOT</text>
@@ -1667,28 +1667,28 @@
 <circle cx="1540" cy="714" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
 <text x="1548" y="717.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">ADDRESS — PAGE × PARAM</text>
 <line x1="1719" y1="714" x2="1936" y2="714" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="1578.0" y="747" width="312" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<text x="1597.5" y="769" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">GRAIN</text>
-<text x="1636.5" y="769" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">TAPE</text>
-<text x="1675.5" y="769" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">DELAY</text>
-<circle cx="1714.5" cy="752" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1714.5" y="769" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">FILTR</text>
-<text x="1753.5" y="769" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SMEAR</text>
-<text x="1792.5" y="769" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">ENV</text>
-<text x="1831.5" y="769" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PITCH</text>
-<text x="1870.5" y="769" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SPACE</text>
-<text x="1734" y="740" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">PAGE</text>
-<rect x="1578.0" y="795" width="312" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<text x="1597.5" y="817" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
-<circle cx="1636.5" cy="800" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1636.5" y="817" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
-<text x="1675.5" y="817" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
-<text x="1714.5" y="817" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
-<text x="1753.5" y="817" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">5</text>
-<text x="1792.5" y="817" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">6</text>
-<text x="1831.5" y="817" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">7</text>
-<text x="1870.5" y="817" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">8</text>
-<text x="1734" y="788" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">PARAM</text>
+<rect x="1578.0" y="781" width="312" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<text x="1597.5" y="803" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">GRAIN</text>
+<text x="1636.5" y="803" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">TAPE</text>
+<text x="1675.5" y="803" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">DELAY</text>
+<circle cx="1714.5" cy="786" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1714.5" y="803" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">FILTR</text>
+<text x="1753.5" y="803" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SMEAR</text>
+<text x="1792.5" y="803" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">ENV</text>
+<text x="1831.5" y="803" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PITCH</text>
+<text x="1870.5" y="803" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SPACE</text>
+<text x="1734" y="774" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">PAGE</text>
+<rect x="1578.0" y="829" width="312" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<text x="1597.5" y="851" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
+<circle cx="1636.5" cy="834" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1636.5" y="851" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
+<text x="1675.5" y="851" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
+<text x="1714.5" y="851" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
+<text x="1753.5" y="851" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">5</text>
+<text x="1792.5" y="851" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">6</text>
+<text x="1831.5" y="851" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">7</text>
+<text x="1870.5" y="851" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">8</text>
+<text x="1734" y="822" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">PARAM</text>
 <circle cx="1972" cy="714" r="3" fill="#3b66b5" stroke="#4d5157" stroke-width="0.8"/>
 <text x="1980" y="717.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">MODULATION BAND (of the addressed param)</text>
 <line x1="2284" y1="714" x2="2404" y2="714" stroke="#a4a9ae" stroke-width="0.7"/>

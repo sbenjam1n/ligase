@@ -560,7 +560,7 @@ text(AXC2, 406, "PAGE", 7, LEGEND, "middle", "bold")
 switch(AXC2, 462, 300, ["1", "2", "3", "4", "5", "6", "7", "8"], 0, None)
 text(AXC2, 450, "PARAM", 7, LEGEND, "middle", "bold")
 knob(1990, 516, "VALUE", "step level", None, "white", 0.42, small=True)
-_led_line(2230, 516, 250, "pattern moog_cutoff [ 0.2 0.8 .. ]", 8)
+_led_line(2172, 516, 250, "pattern moog_cutoff [ 0.2 0.8 .. ]", 8)
 text(AXC2, 552, "row target = any snapbuf field · EVNT kinds via TARGET · pin = step at VALUE (the DEPTH-at-pin rule)", 6.5, MUTED)
 
 # ===== SNAPSHOT EXPANDER (bottom; paired columns, MONITOR in the right corner) =====
