@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1914" height="1464" viewBox="0 0 1914 1464">
+<svg xmlns="http://www.w3.org/2000/svg" width="1914" height="1820" viewBox="0 0 1914 1820">
 <defs>
 <linearGradient id="brushed" x1="0" y1="0" x2="0" y2="1">
   <stop offset="0" stop-color="#dfe1e3"/><stop offset="0.35" stop-color="#cfd1d4"/>
@@ -19,16 +19,16 @@
   <stop offset="0" stop-color="#15161a"/><stop offset="1" stop-color="#232529"/>
 </linearGradient>
 </defs>
-<rect width="1914" height="1464" fill="url(#caseEdge)"/>
-<rect x="14" y="14" width="1886" height="1436" rx="14" fill="url(#brushed)" stroke="#9ba0a5" stroke-width="1.2"/>
+<rect width="1914" height="1820" fill="url(#caseEdge)"/>
+<rect x="14" y="14" width="1886" height="1792" rx="14" fill="url(#brushed)" stroke="#9ba0a5" stroke-width="1.2"/>
 <circle cx="34" cy="34" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
 <line x1="31" y1="31" x2="37" y2="37" stroke="#6b7075" stroke-width="1.2"/>
-<circle cx="34" cy="1430" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
-<line x1="31" y1="1427" x2="37" y2="1433" stroke="#6b7075" stroke-width="1.2"/>
+<circle cx="34" cy="1786" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
+<line x1="31" y1="1783" x2="37" y2="1789" stroke="#6b7075" stroke-width="1.2"/>
 <circle cx="1880" cy="34" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
 <line x1="1877" y1="31" x2="1883" y2="37" stroke="#6b7075" stroke-width="1.2"/>
-<circle cx="1880" cy="1430" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
-<line x1="1877" y1="1427" x2="1883" y2="1433" stroke="#6b7075" stroke-width="1.2"/>
+<circle cx="1880" cy="1786" r="5.5" fill="url(#chromeDome)" stroke="#7d8186" stroke-width="0.8"/>
+<line x1="1877" y1="1783" x2="1883" y2="1789" stroke="#6b7075" stroke-width="1.2"/>
 <text x="52" y="52" font-family="Helvetica, Arial, sans-serif" font-size="25" fill="#26282b" text-anchor="start" letter-spacing="5">ligase~</text>
 <text x="214" y="52" font-family="Helvetica, Arial, sans-serif" font-size="10.5" fill="#71767c" text-anchor="start" letter-spacing="3">GRANULAR TAPE SYNTHESIZER</text>
 <text x="214" y="66" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="start" letter-spacing="2">SYNTHI-STYLE CONTROL SURFACE</text>
@@ -1214,30 +1214,49 @@
 <line x1="1496" y1="42" x2="1496" y2="1030" stroke="#a4a9ae" stroke-width="0.7"/>
 <text x="1532" y="56" font-family="Helvetica, Arial, sans-serif" font-size="13" fill="#26282b" text-anchor="start" letter-spacing="4">SNAPSHOT EXPANDER</text>
 <text x="1532" y="70" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#71767c" text-anchor="start" letter-spacing="0.5">EDIT BUFFER — cold; ASSIGN is the only realtime touchpoint</text>
-<circle cx="1540" cy="92" r="3" fill="#d9a23a" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1548" y="95.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">SNAPSHOT</text>
-<line x1="1615" y1="92" x2="1862" y2="92" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="1554.0" y="112.0" width="68" height="36" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="1556.0" y="114.0" width="64" height="32" rx="3" fill="#0a0705"/>
-<text x="1588" y="139" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">88</text>
-<text x="1588" y="139" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">02</text>
-<text x="1588" y="157.0" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">buffer holds snap</text>
-<line x1="1647.4" y1="144.6" x2="1645.3" y2="146.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1658.0" y1="119.0" x2="1658.0" y2="116.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1668.6" y1="144.6" x2="1670.7" y2="146.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1658" cy="134.8" r="12" fill="#00000022"/>
-<circle cx="1658" cy="134" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1658" cy="134" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1650.7" y1="131.0" x2="1648.0" y2="129.9" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1658" y="159" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">DATA</text>
-<text x="1658" y="168" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">slot 0 – 63</text>
-<rect x="1645.9" y="105" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
-<text x="1658" y="114.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
-<rect x="1778.0" y="113.5" width="84" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="1820" y="125" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">LOAD</text>
-<rect x="1778.0" y="139.5" width="84" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="1820" y="151" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">FROM LIVE</text>
-<text x="1820" y="174" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_load · snapbuf_from_live</text>
+<circle cx="1540" cy="92" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1548" y="95.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">VALUE</text>
+<line x1="1593" y1="92" x2="1682" y2="92" stroke="#a4a9ae" stroke-width="0.7"/>
+<rect x="1530.0" y="113.0" width="100" height="34" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1532.0" y="115.0" width="96" height="30" rx="3" fill="#0a0705"/>
+<text x="1580" y="138" font-family="Courier New, monospace" font-size="22" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">8.88</text>
+<text x="1580" y="138" font-family="Courier New, monospace" font-size="22" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">0.42</text>
+<text x="1580" y="156.0" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">stored value</text>
+<line x1="1639.4" y1="144.6" x2="1637.3" y2="146.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1650.0" y1="119.0" x2="1650.0" y2="116.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1660.6" y1="144.6" x2="1662.7" y2="146.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1650" cy="134.8" r="12" fill="#00000022"/>
+<circle cx="1650" cy="134" r="12" fill="#ece8da" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1650" cy="134" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1647.1" y1="126.6" x2="1646.0" y2="124.0" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1650" y="159" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">VALUE</text>
+<text x="1650" y="168" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">raw units</text>
+<rect x="1637.9" y="105" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
+<text x="1650" y="114.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
+<text x="1650" y="176" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_get / set</text>
+<circle cx="1706" cy="92" r="3" fill="#d9a23a" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1714" y="95.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">SNAPSHOT</text>
+<line x1="1781" y1="92" x2="1862" y2="92" stroke="#a4a9ae" stroke-width="0.7"/>
+<rect x="1682.0" y="112.0" width="68" height="36" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1684.0" y="114.0" width="64" height="32" rx="3" fill="#0a0705"/>
+<text x="1716" y="139" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">88</text>
+<text x="1716" y="139" font-family="Courier New, monospace" font-size="26" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">02</text>
+<text x="1716" y="157.0" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">buffer holds snap</text>
+<line x1="1769.4" y1="144.6" x2="1767.3" y2="146.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1780.0" y1="119.0" x2="1780.0" y2="116.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1790.6" y1="144.6" x2="1792.7" y2="146.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1780" cy="134.8" r="12" fill="#00000022"/>
+<circle cx="1780" cy="134" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1780" cy="134" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1772.7" y1="131.0" x2="1770.0" y2="129.9" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1780" y="159" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">DATA</text>
+<text x="1780" y="168" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">slot 0 – 63</text>
+<rect x="1767.9" y="105" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
+<text x="1780" y="114.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
+<rect x="1683.0" y="169.5" width="66" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1716" y="181" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">LOAD</text>
+<rect x="1756.0" y="169.5" width="84" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1798" y="181" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">FROM LIVE</text>
 <circle cx="1540" cy="220" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
 <text x="1548" y="223.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">ADDRESS — PAGE × PARAM</text>
 <line x1="1719" y1="220" x2="1862" y2="220" stroke="#a4a9ae" stroke-width="0.7"/>
@@ -1263,569 +1282,552 @@
 <text x="1794.5" y="323" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">7</text>
 <text x="1833.5" y="323" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">8</text>
 <text x="1697.0" y="294" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">PARAM</text>
-<circle cx="1540" cy="362" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1548" y="365.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">VALUE</text>
-<line x1="1593" y1="362" x2="1862" y2="362" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="1554.0" y="387.0" width="100" height="34" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="1556.0" y="389.0" width="96" height="30" rx="3" fill="#0a0705"/>
-<text x="1604" y="412" font-family="Courier New, monospace" font-size="22" font-weight="bold" fill="#31201a" text-anchor="middle" letter-spacing="3">8.88</text>
-<text x="1604" y="412" font-family="Courier New, monospace" font-size="22" font-weight="bold" fill="#f08a4b" text-anchor="middle" letter-spacing="3">0.42</text>
-<text x="1604" y="430.0" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">stored value</text>
-<line x1="1689.9" y1="418.1" x2="1687.7" y2="420.3" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1704.0" y1="384.0" x2="1704.0" y2="381.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1718.1" y1="418.1" x2="1720.3" y2="420.3" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1704" cy="404.8" r="17" fill="#00000022"/>
-<circle cx="1704" cy="404" r="17" fill="#ece8da" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1704" cy="404" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1699.9" y1="393.6" x2="1698.2" y2="389.3" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1704" y="434" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">VALUE</text>
-<text x="1704" y="443" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">scalar · detent = discrete</text>
-<rect x="1691.9" y="370" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
-<text x="1704" y="379.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
-<text x="1798" y="400" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="start">snapbuf_get</text>
-<text x="1798" y="410" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="start">snapbuf_set</text>
-<circle cx="1540" cy="478" r="3" fill="#3b66b5" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1548" y="481.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">MODULATION BAND (of the addressed param)</text>
-<line x1="1852" y1="478" x2="1862" y2="478" stroke="#a4a9ae" stroke-width="0.7"/>
-<line x1="1575.4" y1="530.6" x2="1573.3" y2="532.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1586.0" y1="505.0" x2="1586.0" y2="502.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1596.6" y1="530.6" x2="1598.7" y2="532.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1586" cy="520.8" r="12" fill="#00000022"/>
-<circle cx="1586" cy="520" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1586" cy="520" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1579.6" y1="515.3" x2="1577.3" y2="513.7" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1586" y="545" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MIN</text>
-<text x="1586" y="554" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">band low</text>
-<line x1="1643.4" y1="530.6" x2="1641.3" y2="532.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1654.0" y1="505.0" x2="1654.0" y2="502.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1664.6" y1="530.6" x2="1666.7" y2="532.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1654" cy="520.8" r="12" fill="#00000022"/>
-<circle cx="1654" cy="520" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1654" cy="520" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1660.4" y1="515.3" x2="1662.7" y2="513.7" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1654" y="545" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MAX</text>
-<text x="1654" y="554" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">band high</text>
-<line x1="1711.4" y1="530.6" x2="1709.3" y2="532.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1722.0" y1="505.0" x2="1722.0" y2="502.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1732.6" y1="530.6" x2="1734.7" y2="532.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1722" cy="520.8" r="12" fill="#00000022"/>
-<circle cx="1722" cy="520" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1722" cy="520" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1714.2" y1="518.8" x2="1711.3" y2="518.3" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1722" y="545" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">SLEW</text>
-<text x="1722" y="554" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">smooth</text>
-<rect x="1777" y="506" width="26" height="16" rx="8" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<circle cx="1796" cy="514" r="6" fill="#4f9860" stroke="#6f7479" stroke-width="0.6"/>
-<text x="1790" y="534" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">ENABLED</text>
-<rect x="1845" y="506" width="26" height="16" rx="8" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<circle cx="1852" cy="514" r="6" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.6"/>
-<text x="1858" y="534" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">INVERT</text>
-<rect x="1556.0" y="593" width="210" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<text x="1571.0" y="615" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">OFF</text>
-<circle cx="1601.0" cy="598" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1601.0" y="615" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PERL</text>
-<text x="1631.0" y="615" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">LRNZ</text>
-<text x="1661.0" y="615" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">NBDY</text>
-<text x="1691.0" y="615" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SPHR</text>
-<text x="1721.0" y="615" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">RAND</text>
-<text x="1751.0" y="615" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PAT</text>
-<text x="1661" y="586" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">SOURCE</text>
-<rect x="1798.0" y="593" width="64" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<circle cx="1806.0" cy="598" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1806.0" y="615" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
-<text x="1822.0" y="615" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
-<text x="1838.0" y="615" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
-<text x="1854.0" y="615" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
-<text x="1830" y="586" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">INST</text>
-<circle cx="1540" cy="670" r="3" fill="#c04a38" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1548" y="673.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">COMMIT / AUDITION</text>
-<line x1="1682" y1="670" x2="1862" y2="670" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="1549.0" y="699.5" width="62" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="1580" y="711" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">STORE</text>
-<rect x="1639.0" y="699.5" width="62" height="17" rx="8.5" fill="#e8c47c" stroke="#a8863c" stroke-width="0.9"/>
-<text x="1670" y="711" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">ASSIGN</text>
-<rect x="1729.0" y="699.5" width="66" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="1762" y="711" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">AUDITION</text>
-<rect x="1823.0" y="699.5" width="40" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="1843" y="711" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">A/B</text>
-<text x="1580" y="730" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_store</text>
-<text x="1670" y="730" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_apply</text>
-<text x="1762" y="730" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">hold = momentary</text>
-<text x="1843" y="730" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">compare</text>
-<text x="1697.0" y="750" font-family="Helvetica, Arial, sans-serif" font-size="7.2" fill="#8a6d3b" text-anchor="middle" font-weight="bold">edits are COLD — ASSIGN commits; AUDITION borrows the live voice and reverts exactly</text>
-<circle cx="1540" cy="794" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1548" y="797.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">MONITOR</text>
-<line x1="1608" y1="794" x2="1862" y2="794" stroke="#a4a9ae" stroke-width="0.7"/>
-<text x="1556" y="814" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#71767c" text-anchor="start">OUTPUT</text>
-<rect x="1556" y="820" width="150" height="14" rx="3" fill="url(#insetPlate)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="1560" y="823" width="9" height="8" fill="#4f9860"/>
-<rect x="1572" y="823" width="9" height="8" fill="#4f9860"/>
-<rect x="1584" y="823" width="9" height="8" fill="#4f9860"/>
-<rect x="1596" y="823" width="9" height="8" fill="#4f9860"/>
-<rect x="1608" y="823" width="9" height="8" fill="#4f9860"/>
-<rect x="1620" y="823" width="9" height="8" fill="#4f9860"/>
-<rect x="1632" y="823" width="9" height="8" fill="#4f9860"/>
-<rect x="1644" y="823" width="9" height="8" fill="#4f9860"/>
-<rect x="1656" y="823" width="9" height="8" fill="#2c2f34"/>
-<rect x="1668" y="823" width="9" height="8" fill="#2c2f34"/>
-<rect x="1680" y="823" width="9" height="8" fill="#2c2f34"/>
-<rect x="1692" y="823" width="9" height="8" fill="#2c2f34"/>
-<text x="1548" y="831" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="end" font-weight="bold">L</text>
-<rect x="1556" y="842" width="150" height="14" rx="3" fill="url(#insetPlate)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="1560" y="845" width="9" height="8" fill="#4f9860"/>
-<rect x="1572" y="845" width="9" height="8" fill="#4f9860"/>
-<rect x="1584" y="845" width="9" height="8" fill="#4f9860"/>
-<rect x="1596" y="845" width="9" height="8" fill="#4f9860"/>
-<rect x="1608" y="845" width="9" height="8" fill="#4f9860"/>
-<rect x="1620" y="845" width="9" height="8" fill="#4f9860"/>
-<rect x="1632" y="845" width="9" height="8" fill="#4f9860"/>
-<rect x="1644" y="845" width="9" height="8" fill="#2c2f34"/>
-<rect x="1656" y="845" width="9" height="8" fill="#2c2f34"/>
-<rect x="1668" y="845" width="9" height="8" fill="#2c2f34"/>
-<rect x="1680" y="845" width="9" height="8" fill="#2c2f34"/>
-<rect x="1692" y="845" width="9" height="8" fill="#2c2f34"/>
-<text x="1548" y="853" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="end" font-weight="bold">R</text>
-<line x1="1747.9" y1="852.1" x2="1745.7" y2="854.3" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1762.0" y1="818.0" x2="1762.0" y2="815.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1776.1" y1="852.1" x2="1778.3" y2="854.3" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1762" cy="838.8" r="17" fill="#00000022"/>
-<circle cx="1762" cy="838" r="17" fill="#c04a38" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1762" cy="838" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1767.1" y1="828.0" x2="1769.2" y2="823.9" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1762" y="868" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MASTER</text>
-<text x="1762" y="877" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">amplitude · IN 21</text>
-<line x1="1825.4" y1="848.6" x2="1823.3" y2="850.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1836.0" y1="823.0" x2="1836.0" y2="820.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1846.6" y1="848.6" x2="1848.7" y2="850.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1836" cy="838.8" r="12" fill="#00000022"/>
-<circle cx="1836" cy="838" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1836" cy="838" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1830.4" y1="843.6" x2="1828.4" y2="845.6" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1836" y="863" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">BANK MIX</text>
-<text x="1836" y="872" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">0 – 1</text>
-<rect x="1823.9" y="809" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
-<text x="1836" y="818.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
-<text x="1556" y="890" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="start">OUTLETS  1/2 audio · 3 note · 4 grain bang · 5 splice end · 9 state · 10/11 scope_x~/y~</text>
-<text x="1556" y="902" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#8a6d3b" text-anchor="start">pattern events: message-driven — pattern event grain [ 1(3,8) ]</text>
+<circle cx="1540" cy="362" r="3" fill="#3b66b5" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1548" y="365.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">MODULATION BAND (of the addressed param)</text>
+<line x1="1852" y1="362" x2="1862" y2="362" stroke="#a4a9ae" stroke-width="0.7"/>
+<line x1="1575.4" y1="414.6" x2="1573.3" y2="416.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1586.0" y1="389.0" x2="1586.0" y2="386.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1596.6" y1="414.6" x2="1598.7" y2="416.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1586" cy="404.8" r="12" fill="#00000022"/>
+<circle cx="1586" cy="404" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1586" cy="404" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1579.6" y1="399.3" x2="1577.3" y2="397.7" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1586" y="429" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MIN</text>
+<text x="1586" y="438" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">band low</text>
+<line x1="1643.4" y1="414.6" x2="1641.3" y2="416.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1654.0" y1="389.0" x2="1654.0" y2="386.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1664.6" y1="414.6" x2="1666.7" y2="416.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1654" cy="404.8" r="12" fill="#00000022"/>
+<circle cx="1654" cy="404" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1654" cy="404" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1660.4" y1="399.3" x2="1662.7" y2="397.7" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1654" y="429" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MAX</text>
+<text x="1654" y="438" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">band high</text>
+<line x1="1711.4" y1="414.6" x2="1709.3" y2="416.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1722.0" y1="389.0" x2="1722.0" y2="386.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1732.6" y1="414.6" x2="1734.7" y2="416.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1722" cy="404.8" r="12" fill="#00000022"/>
+<circle cx="1722" cy="404" r="12" fill="#3b66b5" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1722" cy="404" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1714.2" y1="402.8" x2="1711.3" y2="402.3" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1722" y="429" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">SLEW</text>
+<text x="1722" y="438" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">smooth</text>
+<rect x="1777" y="390" width="26" height="16" rx="8" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<circle cx="1796" cy="398" r="6" fill="#4f9860" stroke="#6f7479" stroke-width="0.6"/>
+<text x="1790" y="418" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">ENABLED</text>
+<rect x="1845" y="390" width="26" height="16" rx="8" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<circle cx="1852" cy="398" r="6" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.6"/>
+<text x="1858" y="418" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">INVERT</text>
+<rect x="1556.0" y="477" width="210" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<text x="1571.0" y="499" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">OFF</text>
+<circle cx="1601.0" cy="482" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1601.0" y="499" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PERL</text>
+<text x="1631.0" y="499" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">LRNZ</text>
+<text x="1661.0" y="499" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">NBDY</text>
+<text x="1691.0" y="499" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SPHR</text>
+<text x="1721.0" y="499" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">RAND</text>
+<text x="1751.0" y="499" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PAT</text>
+<text x="1661" y="470" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">SOURCE</text>
+<rect x="1798.0" y="477" width="64" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<circle cx="1806.0" cy="482" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1806.0" y="499" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
+<text x="1822.0" y="499" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
+<text x="1838.0" y="499" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
+<text x="1854.0" y="499" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
+<text x="1830" y="470" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">INST</text>
+<circle cx="1540" cy="554" r="3" fill="#c04a38" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1548" y="557.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">COMMIT / AUDITION</text>
+<line x1="1682" y1="554" x2="1862" y2="554" stroke="#a4a9ae" stroke-width="0.7"/>
+<rect x="1549.0" y="583.5" width="62" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1580" y="595" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">STORE</text>
+<rect x="1639.0" y="583.5" width="62" height="17" rx="8.5" fill="#e8c47c" stroke="#a8863c" stroke-width="0.9"/>
+<text x="1670" y="595" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">ASSIGN</text>
+<rect x="1729.0" y="583.5" width="66" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1762" y="595" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">AUDITION</text>
+<rect x="1823.0" y="583.5" width="40" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1843" y="595" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">A/B</text>
+<text x="1580" y="614" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_store</text>
+<text x="1670" y="614" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">snapbuf_apply</text>
+<text x="1762" y="614" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">hold = momentary</text>
+<text x="1843" y="614" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">compare</text>
+<text x="1697.0" y="634" font-family="Helvetica, Arial, sans-serif" font-size="7.2" fill="#8a6d3b" text-anchor="middle" font-weight="bold">edits are COLD — ASSIGN commits; AUDITION borrows the live voice and reverts exactly</text>
+<circle cx="1540" cy="678" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1548" y="681.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">MONITOR</text>
+<line x1="1608" y1="678" x2="1862" y2="678" stroke="#a4a9ae" stroke-width="0.7"/>
+<text x="1556" y="698" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#71767c" text-anchor="start">OUTPUT</text>
+<rect x="1556" y="704" width="150" height="14" rx="3" fill="url(#insetPlate)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1560" y="707" width="9" height="8" fill="#4f9860"/>
+<rect x="1572" y="707" width="9" height="8" fill="#4f9860"/>
+<rect x="1584" y="707" width="9" height="8" fill="#4f9860"/>
+<rect x="1596" y="707" width="9" height="8" fill="#4f9860"/>
+<rect x="1608" y="707" width="9" height="8" fill="#4f9860"/>
+<rect x="1620" y="707" width="9" height="8" fill="#4f9860"/>
+<rect x="1632" y="707" width="9" height="8" fill="#4f9860"/>
+<rect x="1644" y="707" width="9" height="8" fill="#4f9860"/>
+<rect x="1656" y="707" width="9" height="8" fill="#2c2f34"/>
+<rect x="1668" y="707" width="9" height="8" fill="#2c2f34"/>
+<rect x="1680" y="707" width="9" height="8" fill="#2c2f34"/>
+<rect x="1692" y="707" width="9" height="8" fill="#2c2f34"/>
+<text x="1548" y="715" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="end" font-weight="bold">L</text>
+<rect x="1556" y="726" width="150" height="14" rx="3" fill="url(#insetPlate)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1560" y="729" width="9" height="8" fill="#4f9860"/>
+<rect x="1572" y="729" width="9" height="8" fill="#4f9860"/>
+<rect x="1584" y="729" width="9" height="8" fill="#4f9860"/>
+<rect x="1596" y="729" width="9" height="8" fill="#4f9860"/>
+<rect x="1608" y="729" width="9" height="8" fill="#4f9860"/>
+<rect x="1620" y="729" width="9" height="8" fill="#4f9860"/>
+<rect x="1632" y="729" width="9" height="8" fill="#4f9860"/>
+<rect x="1644" y="729" width="9" height="8" fill="#2c2f34"/>
+<rect x="1656" y="729" width="9" height="8" fill="#2c2f34"/>
+<rect x="1668" y="729" width="9" height="8" fill="#2c2f34"/>
+<rect x="1680" y="729" width="9" height="8" fill="#2c2f34"/>
+<rect x="1692" y="729" width="9" height="8" fill="#2c2f34"/>
+<text x="1548" y="737" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="end" font-weight="bold">R</text>
+<line x1="1747.9" y1="736.1" x2="1745.7" y2="738.3" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1762.0" y1="702.0" x2="1762.0" y2="699.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1776.1" y1="736.1" x2="1778.3" y2="738.3" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1762" cy="722.8" r="17" fill="#00000022"/>
+<circle cx="1762" cy="722" r="17" fill="#c04a38" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1762" cy="722" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1767.1" y1="712.0" x2="1769.2" y2="707.9" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1762" y="752" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MASTER</text>
+<text x="1762" y="761" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">amplitude · IN 21</text>
+<line x1="1825.4" y1="732.6" x2="1823.3" y2="734.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1836.0" y1="707.0" x2="1836.0" y2="704.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1846.6" y1="732.6" x2="1848.7" y2="734.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1836" cy="722.8" r="12" fill="#00000022"/>
+<circle cx="1836" cy="722" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1836" cy="722" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1830.4" y1="727.6" x2="1828.4" y2="729.6" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1836" y="747" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">BANK MIX</text>
+<text x="1836" y="756" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">0 – 1</text>
+<rect x="1823.9" y="693" width="24.2" height="12" rx="3" fill="#e9e2cd" stroke="#b5a878" stroke-width="0.7"/>
+<text x="1836" y="702.5" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#6b5f35" text-anchor="middle" font-weight="bold">MSG</text>
+<text x="1556" y="774" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="start">OUTLETS  1/2 audio · 3 note · 4 grain bang · 5 splice end · 9 state · 10/11 scope_x~/y~</text>
+<text x="1556" y="786" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#8a6d3b" text-anchor="start">pattern events: message-driven — pattern event grain [ 1(3,8) ]</text>
 <line x1="40" y1="1046" x2="1874" y2="1046" stroke="#a4a9ae" stroke-width="0.8"/>
-<circle cx="52" cy="1064" r="3" fill="#d9a23a" stroke="#4d5157" stroke-width="0.8"/>
-<text x="60" y="1067.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">TONE CIRCLE — SCALE</text>
-<line x1="209" y1="1064" x2="464" y2="1064" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="44" y="1084" width="216" height="216" rx="6" fill="url(#insetPlate)" stroke="#84888c" stroke-width="1"/>
-<circle cx="152" cy="1192" r="78" fill="none" stroke="#33363b" stroke-width="0.8"/>
-<polygon points="152.0,1114.0 219.5,1153.0 219.5,1231.0 152.0,1270.0 84.5,1231.0 84.5,1153.0" fill="none" stroke="#79c98b" stroke-width="1.4" stroke-opacity="0.9"/>
-<polygon points="152.0,1114.0 219.5,1231.0 84.5,1231.0" fill="none" stroke="#8a6d3b" stroke-width="1.2" stroke-dasharray="4,3" stroke-opacity="0.95"/>
-<circle cx="152.0" cy="1114.0" r="6.5" fill="#4f9860" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="152.0" cy="1114.0" r="2" fill="#0d0e10"/>
-<text x="152.0" y="1100.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">C</text>
-<circle cx="191.0" cy="1124.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="199.0" y="1113.0936120442627" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">C#</text>
-<circle cx="219.5" cy="1153.0" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="219.5" cy="1153.0" r="2" fill="#0d0e10"/>
-<text x="233.40638795573724" y="1147.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">D</text>
-<circle cx="230.0" cy="1192.0" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="246.0" y="1194.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">D#</text>
-<circle cx="219.5" cy="1231.0" r="6.5" fill="#4f9860" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="219.5" cy="1231.0" r="2" fill="#0d0e10"/>
-<text x="233.40638795573724" y="1241.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">E</text>
-<circle cx="191.0" cy="1259.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="199.0" y="1275.9063879557373" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">F</text>
-<circle cx="152.0" cy="1270.0" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="152.0" cy="1270.0" r="2" fill="#0d0e10"/>
-<text x="152.0" y="1288.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">F#</text>
-<circle cx="113.0" cy="1259.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="105.00000000000003" y="1275.9063879557373" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">G</text>
-<circle cx="84.5" cy="1231.0" r="6.5" fill="#4f9860" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="84.5" cy="1231.0" r="2" fill="#0d0e10"/>
-<text x="70.59361204426276" y="1241.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">G#</text>
-<circle cx="74.0" cy="1192.0" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="58.0" y="1194.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">A</text>
-<circle cx="84.5" cy="1153.0" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="84.5" cy="1153.0" r="2" fill="#0d0e10"/>
-<text x="70.59361204426277" y="1147.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">A#</text>
-<circle cx="113.0" cy="1124.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="104.99999999999996" y="1113.0936120442627" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">B</text>
-<text x="152" y="1314" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">pin = pitch class · WHITE = scale · GREEN = axis tonic</text>
-<text x="152" y="1324" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#8a6d3b" text-anchor="middle">polygon stays in key under rotation</text>
-<rect x="292.0" y="1103" width="128" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<circle cx="313.3" cy="1108" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="313.3333333333333" y="1125" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">CHRO</text>
-<text x="356.0" y="1125" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">5THS</text>
-<text x="398.66666666666663" y="1125" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">W-T</text>
-<text x="356" y="1096" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">RING ORDER</text>
-<line x1="307.9" y1="1182.1" x2="305.7" y2="1184.3" stroke="#71767c" stroke-width="0.8"/>
-<line x1="322.0" y1="1148.0" x2="322.0" y2="1145.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="336.1" y1="1182.1" x2="338.3" y2="1184.3" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="322" cy="1168.8" r="17" fill="#00000022"/>
-<circle cx="322" cy="1168" r="17" fill="#ece8da" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="322" cy="1168" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="314.1" y1="1175.9" x2="310.8" y2="1179.2" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
-<text x="322" y="1198" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">ROOT</text>
-<text x="322" y="1207" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">rotate = transpose</text>
-<line x1="385.4" y1="1178.6" x2="383.3" y2="1180.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="396.0" y1="1153.0" x2="396.0" y2="1150.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="406.6" y1="1178.6" x2="408.7" y2="1180.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="396" cy="1168.8" r="12" fill="#00000022"/>
-<circle cx="396" cy="1168" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="396" cy="1168" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="390.4" y1="1173.6" x2="388.4" y2="1175.6" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="396" y="1193" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MODE</text>
-<text x="396" y="1202" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">home degree</text>
-<line x1="345.4" y1="1236.6" x2="343.3" y2="1238.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="356.0" y1="1211.0" x2="356.0" y2="1208.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="366.6" y1="1236.6" x2="368.7" y2="1238.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="356" cy="1226.8" r="12" fill="#00000022"/>
-<circle cx="356" cy="1226" r="12" fill="#d9a23a" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="356" cy="1226" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="360.2" y1="1219.3" x2="361.8" y2="1216.9" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
-<text x="356" y="1251" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">AXIS</text>
-<text x="356" y="1260" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1·2·3·4·6</text>
-<rect x="271.0" y="1277" width="170" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<text x="285.1666666666667" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">MAJ</text>
-<text x="313.5" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">MIN</text>
-<text x="341.8333333333333" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PENT</text>
-<circle cx="370.2" cy="1282" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="370.16666666666663" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">W-T</text>
-<text x="398.5" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">OCTA</text>
-<text x="426.8333333333333" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">AUG</text>
-<text x="356" y="1270" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">POLYGON PRESET</text>
-<circle cx="494" cy="1064" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
-<text x="502" y="1067.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">SLOTS / COMMIT</text>
-<line x1="614" y1="1064" x2="786" y2="1064" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="538.0" y="1085.5" width="40" height="17" rx="8.5" fill="#e8c47c" stroke="#a8863c" stroke-width="0.9"/>
-<text x="558" y="1097" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">A</text>
-<rect x="590.0" y="1085.5" width="40" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="610" y="1097" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">B</text>
-<rect x="642.0" y="1085.5" width="40" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="662" y="1097" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">C</text>
-<rect x="694.0" y="1085.5" width="40" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="714" y="1097" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">D</text>
-<rect x="525.0" y="1109.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="541" y="1121" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">E</text>
-<rect x="563.0" y="1109.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="579" y="1121" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">F</text>
-<rect x="601.0" y="1109.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="617" y="1121" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">G</text>
-<rect x="639.0" y="1109.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="655" y="1121" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">H</text>
-<rect x="677.0" y="1109.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="693" y="1121" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">I</text>
-<rect x="715.0" y="1109.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="731" y="1121" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">J</text>
-<rect x="525.0" y="1133.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="541" y="1145" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">K</text>
-<rect x="563.0" y="1133.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="579" y="1145" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">L</text>
-<rect x="601.0" y="1133.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="617" y="1145" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">M</text>
-<rect x="639.0" y="1133.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="655" y="1145" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">N</text>
-<rect x="677.0" y="1133.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="693" y="1145" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">O</text>
-<rect x="715.0" y="1133.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="731" y="1145" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">P</text>
-<rect x="588.0" y="1161.5" width="96" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
-<text x="636" y="1173" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">AXIS → SLOTS</text>
-<text x="636" y="1188" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#8a6d3b" text-anchor="middle">shape rotated by the AXIS interval → A/B/C  (AXIS 3 = Giant Steps)</text>
-<rect x="530.0" y="1199" width="212" height="22" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="532.0" y="1201" width="208" height="18" rx="3" fill="#0a0705"/>
-<text x="636" y="1213.5" font-family="Courier New, monospace" font-size="8.5" font-weight="bold" fill="#f08a4b" text-anchor="middle">pattern scale_slot [ 0 1 2 ]</text>
-<text x="636" y="1228" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">SEQ — slot progression on the cycle clock</text>
-<rect x="566.0" y="1257" width="140" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<text x="589.3333333333334" y="1279" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">GRAIN</text>
-<text x="636.0" y="1279" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SMEAR</text>
-<circle cx="682.7" cy="1262" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="682.6666666666666" y="1279" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">BOTH</text>
-<text x="636" y="1250" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">DEST</text>
-<rect x="508" y="1250" width="26" height="16" rx="8" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<circle cx="515" cy="1258" r="6" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.6"/>
-<text x="521" y="1278" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">REV</text>
-<line x1="740.4" y1="1264.6" x2="738.3" y2="1266.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="751.0" y1="1239.0" x2="751.0" y2="1236.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="761.6" y1="1264.6" x2="763.7" y2="1266.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="751" cy="1254.8" r="12" fill="#00000022"/>
-<circle cx="751" cy="1254" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="751" cy="1254" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="743.1" y1="1254.6" x2="740.2" y2="1254.8" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="751" y="1279" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">ALT</text>
-<text x="751" y="1288" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">&lt;&gt; depth</text>
-<rect x="608.0" y="1293.5" width="56" height="17" rx="8.5" fill="#e8c47c" stroke="#a8863c" stroke-width="0.9"/>
-<text x="636" y="1305" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">APPLY</text>
-<text x="636" y="1318" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">circles edit COLD; APPLY commits (expander rule)</text>
-<rect x="522.0" y="1331" width="228" height="22" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="524.0" y="1333" width="224" height="18" rx="3" fill="#0a0705"/>
-<text x="636" y="1345.5" font-family="Courier New, monospace" font-size="8.5" font-weight="bold" fill="#f08a4b" text-anchor="middle">pitch_scale 0 2 4 6 8 10</text>
-<rect x="522.0" y="1357" width="228" height="22" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="524.0" y="1359" width="224" height="18" rx="3" fill="#0a0705"/>
-<text x="636" y="1371.5" font-family="Courier New, monospace" font-size="8.5" font-weight="bold" fill="#f08a4b" text-anchor="middle">pattern event grain [ 1(3,8) ]</text>
-<text x="636" y="1386" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#8a6d3b" text-anchor="middle">SENDS — the knobs write the code; readouts show the truth</text>
-<circle cx="816" cy="1064" r="3" fill="#4f9860" stroke="#4d5157" stroke-width="0.8"/>
-<text x="824" y="1067.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">TIME CIRCLE — PATTERN</text>
-<line x1="987" y1="1064" x2="1228" y2="1064" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="808" y="1084" width="216" height="216" rx="6" fill="url(#insetPlate)" stroke="#84888c" stroke-width="1"/>
-<circle cx="916" cy="1192" r="78" fill="none" stroke="#33363b" stroke-width="0.8"/>
-<polygon points="994.0,1192.0 860.8,1247.2 860.8,1136.8" fill="none" stroke="#79c98b" stroke-width="1.4" stroke-opacity="0.9"/>
-<line x1="916" y1="1192" x2="971.2" y2="1247.2" stroke="#f08a4b" stroke-width="1.3"/>
-<circle cx="916.0" cy="1114.0" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="916.0" y="1100.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">1</text>
-<circle cx="971.2" cy="1136.8" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="982.4680374315354" y="1128.0319625684645" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">2</text>
-<circle cx="994.0" cy="1192.0" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="994.0" cy="1192.0" r="2" fill="#0d0e10"/>
-<text x="1010.0" y="1194.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle">3</text>
-<circle cx="971.2" cy="1247.2" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="982.4680374315354" y="1260.9680374315355" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">4</text>
-<circle cx="916.0" cy="1270.0" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="916.0" y="1288.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">5</text>
-<circle cx="860.8" cy="1247.2" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="860.8" cy="1247.2" r="2" fill="#0d0e10"/>
-<text x="849.5319625684646" y="1260.9680374315355" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle">6</text>
-<circle cx="838.0" cy="1192.0" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="822.0" y="1194.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">7</text>
-<circle cx="860.8" cy="1136.8" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="860.8" cy="1136.8" r="2" fill="#0d0e10"/>
-<text x="849.5319625684646" y="1128.0319625684645" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle">8</text>
-<text x="916" y="1314" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">pin = onset · euclid (3,8) on the cycle clock</text>
-<text x="916" y="1324" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#8a6d3b" text-anchor="middle">playhead sweeps once per pattern_cycle</text>
-<rect x="1056.0" y="1103" width="128" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<circle cx="1072.0" cy="1108" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1072.0" y="1125" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">EVNT</text>
-<text x="1104.0" y="1125" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">MOD</text>
-<text x="1136.0" y="1125" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PTCH</text>
-<text x="1168.0" y="1125" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SMR</text>
-<text x="1120" y="1096" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">TARGET</text>
-<line x1="1071.9" y1="1182.1" x2="1069.7" y2="1184.3" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1086.0" y1="1148.0" x2="1086.0" y2="1145.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1100.1" y1="1182.1" x2="1102.3" y2="1184.3" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1086" cy="1168.8" r="17" fill="#00000022"/>
-<circle cx="1086" cy="1168" r="17" fill="#ece8da" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1086" cy="1168" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1080.9" y1="1158.0" x2="1078.8" y2="1153.9" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1086" y="1198" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">K</text>
-<text x="1086" y="1207" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">pulses</text>
-<line x1="1149.4" y1="1178.6" x2="1147.3" y2="1180.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1160.0" y1="1153.0" x2="1160.0" y2="1150.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1170.6" y1="1178.6" x2="1172.7" y2="1180.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1160" cy="1168.8" r="12" fill="#00000022"/>
-<circle cx="1160" cy="1168" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1160" cy="1168" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1160.0" y1="1160.1" x2="1160.0" y2="1157.2" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1160" y="1193" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">N</text>
-<text x="1160" y="1202" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">steps</text>
-<line x1="1109.4" y1="1236.6" x2="1107.3" y2="1238.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1120.0" y1="1211.0" x2="1120.0" y2="1208.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1130.6" y1="1236.6" x2="1132.7" y2="1238.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1120" cy="1226.8" r="12" fill="#00000022"/>
-<circle cx="1120" cy="1226" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1120" cy="1226" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1112.2" y1="1224.8" x2="1109.3" y2="1224.3" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1120" y="1251" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">ROT</text>
-<text x="1120" y="1260" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">rotate</text>
-<rect x="1035.0" y="1277" width="170" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<circle cx="1045.6" cy="1282" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1045.625" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
-<text x="1066.875" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
-<text x="1088.125" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
-<text x="1109.375" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
-<text x="1130.625" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">5</text>
-<text x="1151.875" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">6</text>
-<text x="1173.125" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">7</text>
-<text x="1194.375" y="1299" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">8</text>
-<text x="1120" y="1270" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">SLOT</text>
-<circle cx="1260" cy="1064" r="3" fill="#3b66b5" stroke="#4d5157" stroke-width="0.8"/>
-<text x="1268" y="1067.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">PATTERN GRID — 8 SLOTS × 16 STEPS</text>
-<line x1="1520" y1="1064" x2="1870" y2="1064" stroke="#a4a9ae" stroke-width="0.7"/>
-<rect x="1262" y="1094" width="376" height="192" rx="4" fill="url(#insetPlate)" stroke="#84888c" stroke-width="1"/>
-<text x="1254" y="1112" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">0</text>
-<circle cx="1277.5" cy="1109.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="1277.5" cy="1109.5" r="2" fill="#0d0e10"/>
-<circle cx="1300.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1323.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1346.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1369.5" cy="1109.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="1369.5" cy="1109.5" r="2" fill="#0d0e10"/>
-<circle cx="1392.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1415.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1438.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1461.5" cy="1109.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="1461.5" cy="1109.5" r="2" fill="#0d0e10"/>
-<circle cx="1484.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1507.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1530.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1553.5" cy="1109.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="1553.5" cy="1109.5" r="2" fill="#0d0e10"/>
-<circle cx="1576.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1599.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1622.5" cy="1109.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="1254" y="1135" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">1</text>
-<circle cx="1277.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1300.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1323.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1346.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1369.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1392.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1415.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1438.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1461.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1484.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1507.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1530.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1553.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1576.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1599.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1622.5" cy="1132.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="1254" y="1158" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">2</text>
-<circle cx="1277.5" cy="1155.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="1277.5" cy="1155.5" r="2" fill="#0d0e10"/>
-<circle cx="1300.5" cy="1155.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1323.5" cy="1155.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1346.5" cy="1155.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="1346.5" cy="1155.5" r="2" fill="#0d0e10"/>
-<circle cx="1369.5" cy="1155.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1392.5" cy="1155.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1415.5" cy="1155.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="1415.5" cy="1155.5" r="2" fill="#0d0e10"/>
-<circle cx="1438.5" cy="1155.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1461.5" cy="1155.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1484.5" cy="1155.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1507.5" cy="1155.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="1507.5" cy="1155.5" r="2" fill="#0d0e10"/>
-<circle cx="1530.5" cy="1155.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1553.5" cy="1155.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1576.5" cy="1155.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="1576.5" cy="1155.5" r="2" fill="#0d0e10"/>
-<circle cx="1599.5" cy="1155.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1622.5" cy="1155.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="1254" y="1181" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">3</text>
-<circle cx="1277.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1300.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1323.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1346.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1369.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1392.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1415.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1438.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1461.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1484.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1507.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1530.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1553.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1576.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1599.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1622.5" cy="1178.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="1254" y="1204" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">4</text>
-<circle cx="1277.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1300.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1323.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1346.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1369.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1392.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1415.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1438.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1461.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1484.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1507.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1530.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1553.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1576.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1599.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1622.5" cy="1201.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="1254" y="1227" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">5</text>
-<circle cx="1277.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1300.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1323.5" cy="1224.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="1323.5" cy="1224.5" r="2" fill="#0d0e10"/>
-<circle cx="1346.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1369.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1392.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1415.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1438.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1461.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1484.5" cy="1224.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
-<circle cx="1484.5" cy="1224.5" r="2" fill="#0d0e10"/>
-<circle cx="1507.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1530.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1553.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1576.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1599.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1622.5" cy="1224.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="1254" y="1250" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">6</text>
-<circle cx="1277.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1300.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1323.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1346.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1369.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1392.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1415.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1438.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1461.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1484.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1507.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1530.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1553.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1576.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1599.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1622.5" cy="1247.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<text x="1254" y="1273" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">7</text>
-<circle cx="1277.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1300.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1323.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1346.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1369.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1392.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1415.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1438.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1461.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1484.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1507.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1530.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1553.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1576.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1599.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<circle cx="1622.5" cy="1270.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
-<line x1="1266" y1="1094" x2="1266" y2="1286" stroke="#4a4f55" stroke-width="0.8" stroke-dasharray="3,3"/>
-<line x1="1358" y1="1094" x2="1358" y2="1286" stroke="#4a4f55" stroke-width="0.8" stroke-dasharray="3,3"/>
-<line x1="1450" y1="1094" x2="1450" y2="1286" stroke="#4a4f55" stroke-width="0.8" stroke-dasharray="3,3"/>
-<line x1="1542" y1="1094" x2="1542" y2="1286" stroke="#4a4f55" stroke-width="0.8" stroke-dasharray="3,3"/>
-<text x="1450" y="1298" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">pin = step at the VALUE knob's level (the DEPTH-at-pin rule) · row = slot · quarters marked</text>
-<text x="1765" y="1094" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="1">SLOT TARGET — XPNDR ADDRESSING</text>
-<rect x="1660.0" y="1117" width="210" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<text x="1673.125" y="1139" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">GRAIN</text>
-<text x="1699.375" y="1139" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">TAPE</text>
-<text x="1725.625" y="1139" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">DELAY</text>
-<circle cx="1751.9" cy="1122" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1751.875" y="1139" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">FILTR</text>
-<text x="1778.125" y="1139" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SMEAR</text>
-<text x="1804.375" y="1139" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">ENV</text>
-<text x="1830.625" y="1139" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PITCH</text>
-<text x="1856.875" y="1139" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SPACE</text>
-<text x="1765" y="1110" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="middle" font-weight="bold">PAGE</text>
-<rect x="1660.0" y="1171" width="210" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
-<circle cx="1673.1" cy="1176" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
-<text x="1673.125" y="1193" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
-<text x="1699.375" y="1193" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
-<text x="1725.625" y="1193" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
-<text x="1751.875" y="1193" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
-<text x="1778.125" y="1193" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">5</text>
-<text x="1804.375" y="1193" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">6</text>
-<text x="1830.625" y="1193" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">7</text>
-<text x="1856.875" y="1193" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">8</text>
-<text x="1765" y="1164" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="middle" font-weight="bold">PARAM</text>
-<line x1="1679.4" y1="1242.6" x2="1677.3" y2="1244.7" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1690.0" y1="1217.0" x2="1690.0" y2="1214.0" stroke="#71767c" stroke-width="0.8"/>
-<line x1="1700.6" y1="1242.6" x2="1702.7" y2="1244.7" stroke="#71767c" stroke-width="0.8"/>
-<circle cx="1690" cy="1232.8" r="12" fill="#00000022"/>
-<circle cx="1690" cy="1232" r="12" fill="#ece8da" stroke="#4d5157" stroke-width="1.1"/>
-<circle cx="1690" cy="1232" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
-<line x1="1687.1" y1="1224.6" x2="1686.0" y2="1222.0" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
-<text x="1690" y="1257" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">VALUE</text>
-<text x="1690" y="1266" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">step level</text>
-<rect x="1728.0" y="1221" width="144" height="22" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
-<rect x="1730.0" y="1223" width="140" height="18" rx="3" fill="#0a0705"/>
-<text x="1800" y="1235.5" font-family="Courier New, monospace" font-size="7.5" font-weight="bold" fill="#f08a4b" text-anchor="middle">pattern moog_cutoff [ .. ]</text>
-<text x="1765" y="1270" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">row target = any snapbuf field · EVNT kinds via TARGET</text>
-<line x1="40" y1="1406" x2="1874" y2="1406" stroke="#a4a9ae" stroke-width="0.8"/>
-<text x="46" y="1420" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="start">Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save</text>
-<text x="46" y="1434" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="start">BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix &amp; param_range)</text>
-<text x="1868" y="1434" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="end">ligase~ — QUEUE Seq 83 chassis (SEQ/SCALE band silkscreen-forward until Plans/seq_scale_sidecar.md builds)</text>
+<circle cx="1014" cy="1052" r="3" fill="#d9a23a" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1022" y="1055.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">TONE CIRCLE — SCALE</text>
+<line x1="1171" y1="1052" x2="1242" y2="1052" stroke="#a4a9ae" stroke-width="0.7"/>
+<circle cx="1290" cy="1052" r="3" fill="#ece8da" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1298" y="1055.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">SLOTS / COMMIT</text>
+<line x1="1410" y1="1052" x2="1514" y2="1052" stroke="#a4a9ae" stroke-width="0.7"/>
+<circle cx="1582" cy="1052" r="3" fill="#4f9860" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1590" y="1055.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">TIME CIRCLE — PATTERN</text>
+<line x1="1753" y1="1052" x2="1862" y2="1052" stroke="#a4a9ae" stroke-width="0.7"/>
+<rect x="1006" y="1078" width="216" height="216" rx="6" fill="url(#insetPlate)" stroke="#84888c" stroke-width="1"/>
+<circle cx="1114" cy="1186" r="78" fill="none" stroke="#33363b" stroke-width="0.8"/>
+<polygon points="1114.0,1108.0 1181.5,1147.0 1181.5,1225.0 1114.0,1264.0 1046.5,1225.0 1046.5,1147.0" fill="none" stroke="#79c98b" stroke-width="1.4" stroke-opacity="0.9"/>
+<polygon points="1114.0,1108.0 1181.5,1225.0 1046.5,1225.0" fill="none" stroke="#8a6d3b" stroke-width="1.2" stroke-dasharray="4,3" stroke-opacity="0.95"/>
+<circle cx="1114.0" cy="1108.0" r="6.5" fill="#4f9860" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1114.0" cy="1108.0" r="2" fill="#0d0e10"/>
+<text x="1114.0" y="1094.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">C</text>
+<circle cx="1153.0" cy="1118.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="1161.0" y="1107.0936120442627" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">C#</text>
+<circle cx="1181.5" cy="1147.0" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1181.5" cy="1147.0" r="2" fill="#0d0e10"/>
+<text x="1195.4063879557373" y="1141.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">D</text>
+<circle cx="1192.0" cy="1186.0" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="1208.0" y="1188.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">D#</text>
+<circle cx="1181.5" cy="1225.0" r="6.5" fill="#4f9860" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1181.5" cy="1225.0" r="2" fill="#0d0e10"/>
+<text x="1195.4063879557373" y="1235.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">E</text>
+<circle cx="1153.0" cy="1253.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="1161.0" y="1269.9063879557373" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">F</text>
+<circle cx="1114.0" cy="1264.0" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1114.0" cy="1264.0" r="2" fill="#0d0e10"/>
+<text x="1114.0" y="1282.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">F#</text>
+<circle cx="1075.0" cy="1253.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="1067.0" y="1269.9063879557373" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">G</text>
+<circle cx="1046.5" cy="1225.0" r="6.5" fill="#4f9860" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1046.5" cy="1225.0" r="2" fill="#0d0e10"/>
+<text x="1032.5936120442627" y="1235.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">G#</text>
+<circle cx="1036.0" cy="1186.0" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="1020.0" y="1188.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">A</text>
+<circle cx="1046.5" cy="1147.0" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1046.5" cy="1147.0" r="2" fill="#0d0e10"/>
+<text x="1032.5936120442627" y="1141.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle" font-weight="bold">A#</text>
+<circle cx="1075.0" cy="1118.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="1067.0" y="1107.0936120442627" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">B</text>
+<text x="1114" y="1308" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">pin = pitch class · WHITE = scale · GREEN = axis tonic</text>
+<text x="1114" y="1318" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#8a6d3b" text-anchor="middle">polygon stays in key under rotation</text>
+<rect x="1050.0" y="1339" width="128" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<circle cx="1071.3" cy="1344" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1071.3333333333333" y="1361" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">CHRO</text>
+<text x="1114.0" y="1361" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">5THS</text>
+<text x="1156.6666666666667" y="1361" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">W-T</text>
+<text x="1114" y="1332" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">RING ORDER</text>
+<line x1="1029.9" y1="1414.1" x2="1027.7" y2="1416.3" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1044.0" y1="1380.0" x2="1044.0" y2="1377.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1058.1" y1="1414.1" x2="1060.3" y2="1416.3" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1044" cy="1400.8" r="17" fill="#00000022"/>
+<circle cx="1044" cy="1400" r="17" fill="#ece8da" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1044" cy="1400" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1036.1" y1="1407.9" x2="1032.8" y2="1411.2" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1044" y="1430" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">ROOT</text>
+<text x="1044" y="1439" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">rotate = transpose</text>
+<line x1="1103.4" y1="1410.6" x2="1101.3" y2="1412.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1114.0" y1="1385.0" x2="1114.0" y2="1382.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1124.6" y1="1410.6" x2="1126.7" y2="1412.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1114" cy="1400.8" r="12" fill="#00000022"/>
+<circle cx="1114" cy="1400" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1114" cy="1400" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1108.4" y1="1405.6" x2="1106.4" y2="1407.6" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1114" y="1425" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">MODE</text>
+<text x="1114" y="1434" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">home degree</text>
+<line x1="1173.4" y1="1410.6" x2="1171.3" y2="1412.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1184.0" y1="1385.0" x2="1184.0" y2="1382.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1194.6" y1="1410.6" x2="1196.7" y2="1412.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1184" cy="1400.8" r="12" fill="#00000022"/>
+<circle cx="1184" cy="1400" r="12" fill="#d9a23a" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1184" cy="1400" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1188.2" y1="1393.3" x2="1189.8" y2="1390.9" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1184" y="1425" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">AXIS</text>
+<text x="1184" y="1434" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1·2·3·4·6</text>
+<rect x="1029.0" y="1459" width="170" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<text x="1043.1666666666667" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">MAJ</text>
+<text x="1071.5" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">MIN</text>
+<text x="1099.8333333333333" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PENT</text>
+<circle cx="1128.2" cy="1464" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1128.1666666666667" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">W-T</text>
+<text x="1156.5" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">OCTA</text>
+<text x="1184.8333333333333" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">AUG</text>
+<text x="1114" y="1452" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">POLYGON PRESET</text>
+<text x="1398" y="1080" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="1.5">SCALE SLOTS</text>
+<rect x="1300.0" y="1091.5" width="40" height="17" rx="8.5" fill="#e8c47c" stroke="#a8863c" stroke-width="0.9"/>
+<text x="1320" y="1103" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">A</text>
+<rect x="1352.0" y="1091.5" width="40" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1372" y="1103" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">B</text>
+<rect x="1404.0" y="1091.5" width="40" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1424" y="1103" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">C</text>
+<rect x="1456.0" y="1091.5" width="40" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1476" y="1103" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">D</text>
+<rect x="1287.0" y="1115.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1303" y="1127" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">E</text>
+<rect x="1325.0" y="1115.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1341" y="1127" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">F</text>
+<rect x="1363.0" y="1115.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1379" y="1127" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">G</text>
+<rect x="1401.0" y="1115.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1417" y="1127" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">H</text>
+<rect x="1439.0" y="1115.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1455" y="1127" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">I</text>
+<rect x="1477.0" y="1115.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1493" y="1127" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">J</text>
+<rect x="1287.0" y="1139.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1303" y="1151" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">K</text>
+<rect x="1325.0" y="1139.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1341" y="1151" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">L</text>
+<rect x="1363.0" y="1139.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1379" y="1151" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">M</text>
+<rect x="1401.0" y="1139.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1417" y="1151" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">N</text>
+<rect x="1439.0" y="1139.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1455" y="1151" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">O</text>
+<rect x="1477.0" y="1139.5" width="32" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1493" y="1151" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">P</text>
+<rect x="1350.0" y="1167.5" width="96" height="17" rx="8.5" fill="url(#chromeBezel)" stroke="#8d9195" stroke-width="0.9"/>
+<text x="1398" y="1179" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">AXIS → SLOTS</text>
+<text x="1398" y="1194" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#8a6d3b" text-anchor="middle">shape rotated by the AXIS interval → A/B/C</text>
+<text x="1398" y="1204" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#8a6d3b" text-anchor="middle">(AXIS 3 = the Giant Steps tonic cycle)</text>
+<rect x="1292.0" y="1215" width="212" height="22" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1294.0" y="1217" width="208" height="18" rx="3" fill="#0a0705"/>
+<text x="1398" y="1229.5" font-family="Courier New, monospace" font-size="7.8" font-weight="bold" fill="#f08a4b" text-anchor="middle">pattern pitch_scale_slot [ 0 1 2 ]</text>
+<text x="1398" y="1246" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">SEQ — slot progression on the cycle clock</text>
+<rect x="1328.0" y="1273" width="140" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<text x="1351.3333333333333" y="1295" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">GRAIN</text>
+<text x="1398.0" y="1295" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SMEAR</text>
+<circle cx="1444.7" cy="1278" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1444.6666666666667" y="1295" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">BOTH</text>
+<text x="1398" y="1266" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">DEST</text>
+<rect x="1370.0" y="1311.5" width="56" height="17" rx="8.5" fill="#e8c47c" stroke="#a8863c" stroke-width="0.9"/>
+<text x="1398" y="1323" font-family="Helvetica, Arial, sans-serif" font-size="7.5" fill="#26282b" text-anchor="middle" font-weight="bold">APPLY</text>
+<text x="1398" y="1338" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">circles edit COLD; APPLY commits (expander rule)</text>
+<text x="1398" y="1362" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="1.5">SENDS</text>
+<rect x="1284.0" y="1369" width="228" height="22" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1286.0" y="1371" width="224" height="18" rx="3" fill="#0a0705"/>
+<text x="1398" y="1383.5" font-family="Courier New, monospace" font-size="8.5" font-weight="bold" fill="#f08a4b" text-anchor="middle">pitch_scale 0 2 4 6 8 10</text>
+<rect x="1284.0" y="1395" width="228" height="22" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1286.0" y="1397" width="224" height="18" rx="3" fill="#0a0705"/>
+<text x="1398" y="1409.5" font-family="Courier New, monospace" font-size="8.5" font-weight="bold" fill="#f08a4b" text-anchor="middle">pattern event grain [ 1(3,8) ]</text>
+<text x="1398" y="1426" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#8a6d3b" text-anchor="middle">the knobs write the code — readouts show the truth</text>
+<rect x="1347" y="1452" width="26" height="16" rx="8" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<circle cx="1354" cy="1460" r="6" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.6"/>
+<text x="1360" y="1480" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#71767c" text-anchor="middle">REV</text>
+<line x1="1425.4" y1="1466.6" x2="1423.3" y2="1468.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1436.0" y1="1441.0" x2="1436.0" y2="1438.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1446.6" y1="1466.6" x2="1448.7" y2="1468.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1436" cy="1456.8" r="12" fill="#00000022"/>
+<circle cx="1436" cy="1456" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1436" cy="1456" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1428.1" y1="1456.6" x2="1425.2" y2="1456.8" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1436" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">ALT</text>
+<text x="1436" y="1490" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">&lt;&gt; depth</text>
+<text x="1398" y="1500" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">SEQ modifiers — retrograde · &lt;&gt; alternation of the slot progression</text>
+<rect x="1574" y="1078" width="216" height="216" rx="6" fill="url(#insetPlate)" stroke="#84888c" stroke-width="1"/>
+<circle cx="1682" cy="1186" r="78" fill="none" stroke="#33363b" stroke-width="0.8"/>
+<polygon points="1760.0,1186.0 1626.8,1241.2 1626.8,1130.8" fill="none" stroke="#79c98b" stroke-width="1.4" stroke-opacity="0.9"/>
+<line x1="1682" y1="1186" x2="1737.2" y2="1241.2" stroke="#f08a4b" stroke-width="1.3"/>
+<circle cx="1682.0" cy="1108.0" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="1682.0" y="1094.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">1</text>
+<circle cx="1737.2" cy="1130.8" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="1748.4680374315355" y="1122.0319625684645" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">2</text>
+<circle cx="1760.0" cy="1186.0" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1760.0" cy="1186.0" r="2" fill="#0d0e10"/>
+<text x="1776.0" y="1188.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle">3</text>
+<circle cx="1737.2" cy="1241.2" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="1748.4680374315355" y="1254.9680374315355" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">4</text>
+<circle cx="1682.0" cy="1264.0" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="1682.0" y="1282.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">5</text>
+<circle cx="1626.8" cy="1241.2" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1626.8" cy="1241.2" r="2" fill="#0d0e10"/>
+<text x="1615.5319625684645" y="1254.9680374315355" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle">6</text>
+<circle cx="1604.0" cy="1186.0" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="1588.0" y="1188.5" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#5b6066" text-anchor="middle">7</text>
+<circle cx="1626.8" cy="1130.8" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1626.8" cy="1130.8" r="2" fill="#0d0e10"/>
+<text x="1615.5319625684645" y="1122.0319625684645" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#b9bec4" text-anchor="middle">8</text>
+<text x="1682" y="1308" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">pin = onset · euclid (3,8) on the cycle clock</text>
+<text x="1682" y="1318" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#8a6d3b" text-anchor="middle">playhead sweeps once per pattern_cycle</text>
+<rect x="1618.0" y="1339" width="128" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<circle cx="1634.0" cy="1344" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1634.0" y="1361" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">EVNT</text>
+<text x="1666.0" y="1361" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">MOD</text>
+<text x="1698.0" y="1361" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PTCH</text>
+<text x="1730.0" y="1361" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SMR</text>
+<text x="1682" y="1332" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">TARGET</text>
+<line x1="1597.9" y1="1414.1" x2="1595.7" y2="1416.3" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1612.0" y1="1380.0" x2="1612.0" y2="1377.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1626.1" y1="1414.1" x2="1628.3" y2="1416.3" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1612" cy="1400.8" r="17" fill="#00000022"/>
+<circle cx="1612" cy="1400" r="17" fill="#ece8da" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1612" cy="1400" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1606.9" y1="1390.0" x2="1604.8" y2="1385.9" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1612" y="1430" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">K</text>
+<text x="1612" y="1439" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">pulses</text>
+<line x1="1671.4" y1="1410.6" x2="1669.3" y2="1412.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1682.0" y1="1385.0" x2="1682.0" y2="1382.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1692.6" y1="1410.6" x2="1694.7" y2="1412.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1682" cy="1400.8" r="12" fill="#00000022"/>
+<circle cx="1682" cy="1400" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1682" cy="1400" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1682.0" y1="1392.1" x2="1682.0" y2="1389.2" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1682" y="1425" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">N</text>
+<text x="1682" y="1434" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">steps</text>
+<line x1="1741.4" y1="1410.6" x2="1739.3" y2="1412.7" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1752.0" y1="1385.0" x2="1752.0" y2="1382.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1762.6" y1="1410.6" x2="1764.7" y2="1412.7" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1752" cy="1400.8" r="12" fill="#00000022"/>
+<circle cx="1752" cy="1400" r="12" fill="#787f88" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1752" cy="1400" r="7.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1744.2" y1="1398.8" x2="1741.3" y2="1398.3" stroke="#f4f1e8" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1752" y="1425" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">ROT</text>
+<text x="1752" y="1434" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">rotate</text>
+<rect x="1597.0" y="1459" width="170" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<circle cx="1607.6" cy="1464" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1607.625" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
+<text x="1628.875" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
+<text x="1650.125" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
+<text x="1671.375" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
+<text x="1692.625" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">5</text>
+<text x="1713.875" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">6</text>
+<text x="1735.125" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">7</text>
+<text x="1756.375" y="1481" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">8</text>
+<text x="1682" y="1452" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="middle" font-weight="bold">SLOT</text>
+<circle cx="1014" cy="1524" r="3" fill="#3b66b5" stroke="#4d5157" stroke-width="0.8"/>
+<text x="1022" y="1527.5" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="2.2">PATTERN GRID — 8 SLOTS × 16 STEPS (plain sequences; nesting/alternation via notation or ALT)</text>
+<line x1="1711" y1="1524" x2="1862" y2="1524" stroke="#a4a9ae" stroke-width="0.7"/>
+<rect x="1006" y="1542" width="376" height="192" rx="4" fill="url(#insetPlate)" stroke="#84888c" stroke-width="1"/>
+<text x="998" y="1560" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">0</text>
+<circle cx="1021.5" cy="1557.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1021.5" cy="1557.5" r="2" fill="#0d0e10"/>
+<circle cx="1044.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1067.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1090.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1113.5" cy="1557.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1113.5" cy="1557.5" r="2" fill="#0d0e10"/>
+<circle cx="1136.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1159.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1182.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1205.5" cy="1557.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1205.5" cy="1557.5" r="2" fill="#0d0e10"/>
+<circle cx="1228.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1251.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1274.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1297.5" cy="1557.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1297.5" cy="1557.5" r="2" fill="#0d0e10"/>
+<circle cx="1320.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1343.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1366.5" cy="1557.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="998" y="1583" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">1</text>
+<circle cx="1021.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1044.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1067.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1090.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1113.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1136.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1159.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1182.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1205.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1228.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1251.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1274.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1297.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1320.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1343.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1366.5" cy="1580.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="998" y="1606" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">2</text>
+<circle cx="1021.5" cy="1603.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1021.5" cy="1603.5" r="2" fill="#0d0e10"/>
+<circle cx="1044.5" cy="1603.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1067.5" cy="1603.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1090.5" cy="1603.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1090.5" cy="1603.5" r="2" fill="#0d0e10"/>
+<circle cx="1113.5" cy="1603.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1136.5" cy="1603.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1159.5" cy="1603.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1159.5" cy="1603.5" r="2" fill="#0d0e10"/>
+<circle cx="1182.5" cy="1603.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1205.5" cy="1603.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1228.5" cy="1603.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1251.5" cy="1603.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1251.5" cy="1603.5" r="2" fill="#0d0e10"/>
+<circle cx="1274.5" cy="1603.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1297.5" cy="1603.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1320.5" cy="1603.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1320.5" cy="1603.5" r="2" fill="#0d0e10"/>
+<circle cx="1343.5" cy="1603.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1366.5" cy="1603.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="998" y="1629" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">3</text>
+<circle cx="1021.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1044.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1067.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1090.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1113.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1136.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1159.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1182.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1205.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1228.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1251.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1274.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1297.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1320.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1343.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1366.5" cy="1626.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="998" y="1652" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">4</text>
+<circle cx="1021.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1044.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1067.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1090.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1113.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1136.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1159.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1182.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1205.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1228.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1251.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1274.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1297.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1320.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1343.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1366.5" cy="1649.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="998" y="1675" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">5</text>
+<circle cx="1021.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1044.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1067.5" cy="1672.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1067.5" cy="1672.5" r="2" fill="#0d0e10"/>
+<circle cx="1090.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1113.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1136.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1159.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1182.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1205.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1228.5" cy="1672.5" r="6.5" fill="#ece8da" stroke="#0d0e10" stroke-width="1.2"/>
+<circle cx="1228.5" cy="1672.5" r="2" fill="#0d0e10"/>
+<circle cx="1251.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1274.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1297.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1320.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1343.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1366.5" cy="1672.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="998" y="1698" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">6</text>
+<circle cx="1021.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1044.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1067.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1090.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1113.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1136.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1159.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1182.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1205.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1228.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1251.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1274.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1297.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1320.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1343.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1366.5" cy="1695.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<text x="998" y="1721" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="end">7</text>
+<circle cx="1021.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1044.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1067.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1090.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1113.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1136.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1159.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1182.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1205.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1228.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1251.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1274.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1297.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1320.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1343.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<circle cx="1366.5" cy="1718.5" r="3.4" fill="#111316" stroke="#3e4247" stroke-width="0.8"/>
+<line x1="1010" y1="1542" x2="1010" y2="1734" stroke="#4a4f55" stroke-width="0.8" stroke-dasharray="3,3"/>
+<line x1="1102" y1="1542" x2="1102" y2="1734" stroke="#4a4f55" stroke-width="0.8" stroke-dasharray="3,3"/>
+<line x1="1194" y1="1542" x2="1194" y2="1734" stroke="#4a4f55" stroke-width="0.8" stroke-dasharray="3,3"/>
+<line x1="1286" y1="1542" x2="1286" y2="1734" stroke="#4a4f55" stroke-width="0.8" stroke-dasharray="3,3"/>
+<text x="1194" y="1745" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">pin = step at the VALUE knob's level (the DEPTH-at-pin rule) · row = slot · quarters marked</text>
+<text x="1418" y="1552" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#26282b" text-anchor="start" font-weight="bold" letter-spacing="1.2">SLOT TARGET — XPNDR ADDRESSING</text>
+<rect x="1490.0" y="1575" width="300" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<text x="1508.75" y="1597" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">GRAIN</text>
+<text x="1546.25" y="1597" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">TAPE</text>
+<text x="1583.75" y="1597" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">DELAY</text>
+<circle cx="1621.2" cy="1580" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1621.25" y="1597" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">FILTR</text>
+<text x="1658.75" y="1597" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SMEAR</text>
+<text x="1696.25" y="1597" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">ENV</text>
+<text x="1733.75" y="1597" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">PITCH</text>
+<text x="1771.25" y="1597" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">SPACE</text>
+<text x="1640" y="1568" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="middle" font-weight="bold">PAGE</text>
+<rect x="1490.0" y="1619" width="300" height="10" rx="5" fill="url(#insetPlate)" stroke="#8d9297" stroke-width="0.8"/>
+<circle cx="1508.8" cy="1624" r="6.5" fill="url(#chromeDome)" stroke="#6f7479" stroke-width="0.8"/>
+<text x="1508.75" y="1641" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">1</text>
+<text x="1546.25" y="1641" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">2</text>
+<text x="1583.75" y="1641" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">3</text>
+<text x="1621.25" y="1641" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">4</text>
+<text x="1658.75" y="1641" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">5</text>
+<text x="1696.25" y="1641" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">6</text>
+<text x="1733.75" y="1641" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">7</text>
+<text x="1771.25" y="1641" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">8</text>
+<text x="1640" y="1612" font-family="Helvetica, Arial, sans-serif" font-size="7" fill="#26282b" text-anchor="middle" font-weight="bold">PARAM</text>
+<line x1="1431.9" y1="1690.1" x2="1429.7" y2="1692.3" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1446.0" y1="1656.0" x2="1446.0" y2="1653.0" stroke="#71767c" stroke-width="0.8"/>
+<line x1="1460.1" y1="1690.1" x2="1462.3" y2="1692.3" stroke="#71767c" stroke-width="0.8"/>
+<circle cx="1446" cy="1676.8" r="17" fill="#00000022"/>
+<circle cx="1446" cy="1676" r="17" fill="#ece8da" stroke="#4d5157" stroke-width="1.1"/>
+<circle cx="1446" cy="1676" r="10.2" fill="url(#chromeDome)" stroke="#7e8388" stroke-width="0.6"/>
+<line x1="1441.9" y1="1665.6" x2="1440.2" y2="1661.3" stroke="#26282b" stroke-width="1.8" stroke-linecap="round"/>
+<text x="1446" y="1706" font-family="Helvetica, Arial, sans-serif" font-size="8.5" fill="#26282b" text-anchor="middle" font-weight="bold" letter-spacing="0.4">VALUE</text>
+<text x="1446" y="1715" font-family="Helvetica, Arial, sans-serif" font-size="6.8" fill="#71767c" text-anchor="middle">step level</text>
+<rect x="1550.0" y="1665" width="204" height="22" rx="5" fill="url(#chromeBezel)" stroke="#84888c" stroke-width="0.8"/>
+<rect x="1552.0" y="1667" width="200" height="18" rx="3" fill="#0a0705"/>
+<text x="1652" y="1679.5" font-family="Courier New, monospace" font-size="8" font-weight="bold" fill="#f08a4b" text-anchor="middle">pattern moog_cutoff [ ... ]</text>
+<text x="1640" y="1712" font-family="Helvetica, Arial, sans-serif" font-size="6.5" fill="#71767c" text-anchor="middle">row target = any snapbuf-addressable field, or EVNT kinds via TARGET</text>
+<line x1="40" y1="1762" x2="1874" y2="1762" stroke="#a4a9ae" stroke-width="0.8"/>
+<text x="46" y="1776" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="start">Pd PROTOTYPE KEY:  knob = [knb]/[hsl] → signal inlet  ·  pin matrix = [tgl] grid → matrix_connect  ·  joystick = [grid]/2×[hsl] → IN 23/24  ·  switch = [radio]  ·  button = [bng]  ·  splice display = [nbx]+[knb]+ENTER[bng]  ·  reel = [openpanel]/[savepanel] → load/save</text>
+<text x="46" y="1790" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="start">BADGES:  IN n = signal inlet n (CV-drivable, headless 0/1 conventions apply)  ·  MSG = message/preset-set (no dedicated inlet; automatable via the modulation matrix &amp; param_range)</text>
+<text x="1868" y="1790" font-family="Helvetica, Arial, sans-serif" font-size="8" fill="#71767c" text-anchor="end">ligase~ — QUEUE Seq 83 chassis (SEQ/SCALE band silkscreen-forward until Plans/seq_scale_sidecar.md builds)</text>
 </svg>

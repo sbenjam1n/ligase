@@ -9,9 +9,12 @@ the circle input itself works against the existing `pitch_scale`/`smear_pitch_sc
 messages, but AXIS→SLOTS and SEQ need the slot engine.
 **Mockup → INTEGRATED (owner revision 2026-07-06, Seq 83: "align items in expander
 section, seq/scale can go below these… hopefully this is the final panel change"):** the
-band now lives IN the main panel (`docs/ui/ligase_synthi_panel.svg`, H 1096→1464, drawn by
-`emit_svg.py` below every column; the standalone `gen_seq_mockup.py`/`ligase_seq_panel.svg`
-are deleted). It is silkscreen-forward until this plan's build wires it; at Step 1 the
+block now lives IN the main panel (`docs/ui/ligase_synthi_panel.svg`, H 1096→1820, drawn
+by `emit_svg.py`) as a **right-aligned block under the expander column** (x 1006–1862 on
+the expander rail, y 1052–1745; owner correction Seq 84) — the APPROVED internal
+arrangement preserved: circles row + grid below. VALUE moved beside SNAPSHOT to shorten
+the expander above it. The standalone `gen_seq_mockup.py`/`ligase_seq_panel.svg` are
+deleted. It is silkscreen-forward until this plan's build wires it; at Step 1 the
 band's controls join `panel_layout.py` as `SEQ_*` records and the bespoke drawing code
 becomes data-driven like every other section.
 **Tracked in:** `QUEUE.md` §4a (harmonic/notation arc, Seq 80)
