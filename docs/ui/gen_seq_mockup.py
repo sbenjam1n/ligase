@@ -269,7 +269,7 @@ text(CTR, ry3 + 36, "SEQ modifiers — retrograde · <> alternation of the slot 
 GY = 576
 strip(48, GY, W - 96, "PATTERN GRID — 8 SLOTS × 16 STEPS (plain sequences; nesting/alternation via notation or ALT)", "blue")
 CELL = 23
-gx, gy = 120, GY + 22
+gx, gy = LBX + 4, GY + 22          # grid BED left edge (gx-4) = tone-circle bed left edge
 GW, GH = 16 * CELL, 8 * CELL
 parts.append(f'<rect x="{gx-4}" y="{gy-4}" width="{GW+8}" height="{GH+8}" rx="4" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
 demo = {(0, 0), (0, 4), (0, 8), (0, 12), (2, 0), (2, 3), (2, 6), (2, 10), (2, 13), (5, 2), (5, 9)}
@@ -286,7 +286,7 @@ for c in range(0, 16, 4):
 text(gx + GW / 2, gy + GH + 18, "pin = step at the VALUE knob's level (the matrix DEPTH-at-pin rule) · row = slot · quarters marked", 6.8, MUTED)
 
 # right of grid: slot addressing (XPNDR idiom) + value + readout
-AX = 512
+AX = 460
 AXC = (AX + (W - 48)) / 2                       # center of the addressing zone
 text(AX, gy + 6, "SLOT TARGET — XPNDR ADDRESSING", 8, LEGEND, "start", "bold", "1.2")
 switch(AXC, gy + 34, 300, ["GRAIN", "TAPE", "DELAY", "FILTR", "SMEAR", "ENV", "PITCH", "SPACE"], 3, None)
