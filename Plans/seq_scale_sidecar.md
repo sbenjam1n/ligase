@@ -63,10 +63,12 @@ knobs, LED bezels verbatim from the shared drawing idiom):
   (EVNT / MOD / PTCH / SMR)**, **SLOT radio (1–8)**.
 
 ### Column 2 — SLOTS / COMMIT (the mirror line)
-- **SCALE SLOTS A–D** + **AXIS→SLOTS**: takes the current shape, writes its rotations by
-  the AXIS interval into slots A/B/C (`pitch_scale_to …`, harmonic_layer D1) — **the
+- **SCALE SLOTS A–P (16)** — primary row A–D + two six-slot bank rows E–J / K–P (owner
+  revision 2026-07-06) — + **AXIS→SLOTS**: takes the current shape, writes its rotations
+  by the AXIS interval into slots A/B/C (`pitch_scale_to …`, harmonic_layer D1) — **the
   Coltrane-changes generator** (AXIS 3 = Giant Steps tonic cycle; AXIS 4 = the
-  minor-third/diminished cycle).
+  minor-third/diminished cycle). The banks hold progressions/set-lists; any slot is a
+  `pattern pitch_scale_slot` step and a morph-surface citizen.
 - **SEQ readout + REV toggle + ALT knob**: arms `pattern pitch_scale_slot [ 0 1 2 ]`;
   REV = retrograde progression, ALT = `<>` alternation depth of the slot string.
 - **DEST (GRAIN / SMEAR / BOTH)** routes which destination the circle writes.
@@ -108,7 +110,9 @@ knobs, LED bezels verbatim from the shared drawing idiom):
 5. ✅ **XPNDR PAGE×PARAM addressing** reused for grid-row targets.
 6. ✅ **Readouts show the literal sent strings** (truth in labeling).
 7. ✅ Layout symmetry: twin 216×216 beds, mirrored control rows, commit column on the
-   mirror line (mockup `docs/ui/ligase_seq_panel.svg` is the geometry spec).
+   mirror line (mockup `docs/ui/ligase_seq_panel.svg` is the geometry spec). Owner
+   revision 2026-07-06 applied: chassis condensed 1040→880 (tight gutters) and the slot
+   bank grown to 16 (A–D + two rows of six).
 
 ## Steps
 

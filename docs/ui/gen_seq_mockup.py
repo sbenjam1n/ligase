@@ -13,7 +13,7 @@
 # top-aligned and mirrored about the panel centerline.
 import math
 
-W, H = 1040, 872
+W, H = 880, 872
 parts = []
 
 PANEL = "url(#brushed)"
@@ -162,13 +162,13 @@ text(214, 66, "TONE CIRCLE · TIME CIRCLE · PATTERN GRID — a scale is a polyg
 CTR = W / 2                      # 520 — the mirror line
 BEDW = 216                       # the panel's twin-square module (joystick/scope)
 BY = 130                         # bed top (shared)
-LBX, RBX = 64, W - 64 - BEDW     # 64 and 760 — mirrored beds
+LBX, RBX = 48, W - 48 - BEDW     # 48 and 616 — mirrored beds, tight gutters
 LCX, RCX = LBX + BEDW / 2, RBX + BEDW / 2   # 172 / 868 column centers
 
 # ---------- strips (three columns, mirrored widths) ----------
-strip(48, 104, 320, "TONE CIRCLE — SCALE", "yellow")
-strip(672, 104, 320, "TIME CIRCLE — PATTERN", "green")
-strip(404, 104, 232, "SLOTS / COMMIT", "white")
+strip(48, 104, 236, "TONE CIRCLE — SCALE", "yellow")
+strip(616, 104, 216, "TIME CIRCLE — PATTERN", "green")
+strip(324, 104, 232, "SLOTS / COMMIT", "white")
 
 # ---------- TONE CIRCLE bed (216x216, matrix-pin idiom) ----------
 parts.append(f'<rect x="{LBX}" y="{BY}" width="{BEDW}" height="{BEDW}" rx="6" fill="{INSET}" stroke="#84888c" stroke-width="1"/>')
@@ -229,22 +229,25 @@ text(RCX, BY + BEDW + 14, "pin = onset · euclid (3,8) on the cycle clock", 6.5,
 text(RCX, BY + BEDW + 24, "playhead sweeps once per pattern_cycle", 6.5, BRONZE)
 
 # ---------- CENTER column: slots / commit (mirror line = CTR) ----------
-cy0 = 140
+cy0 = 132
 text(CTR, cy0, "SCALE SLOTS", 8, LEGEND, "middle", "bold", "1.5")
 for i, lab in enumerate("ABCD"):
-    button(CTR - 78 + i * 52, cy0 + 22, lab, 40, lit=(i == 0))
-button(CTR, cy0 + 50, "AXIS → SLOTS", 96)
-text(CTR, cy0 + 68, "shape rotated by the AXIS interval → A/B/C", 6.5, BRONZE)
-text(CTR, cy0 + 78, "(AXIS 3 = the Giant Steps tonic cycle)", 6.5, BRONZE)
-led_line(CTR, cy0 + 100, 208, "pattern scale_slot [ 0 1 2 ]")
-text(CTR, cy0 + 120, "SEQ — slot progression on the cycle clock", 6.5, MUTED)
-switch(CTR, cy0 + 152, 140, ["GRAIN", "SMEAR", "BOTH"], 2, "DEST")
-button(CTR, cy0 + 196, "APPLY", 56, lit=True)
-text(CTR, cy0 + 214, "circles edit COLD; APPLY commits (expander rule)", 6.5, MUTED)
-text(CTR, cy0 + 240, "SENDS", 8, LEGEND, "middle", "bold", "1.5")
-led_line(CTR, cy0 + 258, 224, "pitch_scale 0 2 4 6 8 10")
-led_line(CTR, cy0 + 284, 224, "pattern event grain [ 1(3,8) ]")
-text(CTR, cy0 + 304, "the knobs write the code — readouts show the truth", 6.5, BRONZE)
+    button(CTR - 78 + i * 52, cy0 + 20, lab, 40, lit=(i == 0))
+for r in range(2):                                    # 12 more slots, 2 rows of 6
+    for i in range(6):
+        button(CTR - 95 + i * 38, cy0 + 44 + r * 24, chr(ord("E") + r * 6 + i), 32)
+button(CTR, cy0 + 96, "AXIS → SLOTS", 96)
+text(CTR, cy0 + 114, "shape rotated by the AXIS interval → A/B/C", 6.5, BRONZE)
+text(CTR, cy0 + 124, "(AXIS 3 = the Giant Steps tonic cycle)", 6.5, BRONZE)
+led_line(CTR, cy0 + 146, 208, "pattern scale_slot [ 0 1 2 ]")
+text(CTR, cy0 + 166, "SEQ — slot progression on the cycle clock", 6.5, MUTED)
+switch(CTR, cy0 + 198, 140, ["GRAIN", "SMEAR", "BOTH"], 2, "DEST")
+button(CTR, cy0 + 240, "APPLY", 56, lit=True)
+text(CTR, cy0 + 258, "circles edit COLD; APPLY commits (expander rule)", 6.5, MUTED)
+text(CTR, cy0 + 282, "SENDS", 8, LEGEND, "middle", "bold", "1.5")
+led_line(CTR, cy0 + 300, 224, "pitch_scale 0 2 4 6 8 10")
+led_line(CTR, cy0 + 326, 224, "pattern event grain [ 1(3,8) ]")
+text(CTR, cy0 + 346, "the knobs write the code — readouts show the truth", 6.5, BRONZE)
 
 # ---------- mirrored control rows under the beds ----------
 ry1, ry2, ry3 = 396, 452, 516
@@ -283,16 +286,17 @@ for c in range(0, 16, 4):
 text(gx + GW / 2, gy + GH + 18, "pin = step at the VALUE knob's level (the matrix DEPTH-at-pin rule) · row = slot · quarters marked", 6.8, MUTED)
 
 # right of grid: slot addressing (XPNDR idiom) + value + readout
-AX = 620
+AX = 512
+AXC = (AX + (W - 48)) / 2                       # center of the addressing zone
 text(AX, gy + 6, "SLOT TARGET — XPNDR ADDRESSING", 8, LEGEND, "start", "bold", "1.2")
-switch(AX + 170, gy + 34, 312, ["GRAIN", "TAPE", "DELAY", "FILTR", "SMEAR", "ENV", "PITCH", "SPACE"], 3, None)
-text(AX + 170, gy + 16, "PAGE", 7.5, LEGEND, "middle", "bold")
-switch(AX + 170, gy + 78, 312, ["1", "2", "3", "4", "5", "6", "7", "8"], 0, None)
-text(AX + 170, gy + 62, "PARAM", 7.5, LEGEND, "middle", "bold")
-knob(AX + 40, gy + 128, "VALUE", "step level", "white", 0.42)
-badge(AX + 120, gy + 124, "MSG")
-led_line(AX + 236, gy + 128, 200, "pattern moog_cutoff [ ... ]", 8)
-text(AX + 170, gy + 160, "row target = any snapbuf-addressable field, or EVNT kinds via TARGET", 6.5, MUTED)
+switch(AXC, gy + 34, 300, ["GRAIN", "TAPE", "DELAY", "FILTR", "SMEAR", "ENV", "PITCH", "SPACE"], 3, None)
+text(AXC, gy + 16, "PAGE", 7.5, LEGEND, "middle", "bold")
+switch(AXC, gy + 78, 300, ["1", "2", "3", "4", "5", "6", "7", "8"], 0, None)
+text(AXC, gy + 62, "PARAM", 7.5, LEGEND, "middle", "bold")
+knob(AX + 28, gy + 128, "VALUE", "step level", "white", 0.42)
+badge(AX + 94, gy + 124, "MSG")
+led_line(AX + 212, gy + 128, 186, "pattern moog_cutoff [ ... ]", 8)
+text(AXC, gy + 160, "row target = any snapbuf-addressable field, or EVNT kinds via TARGET", 6.5, MUTED)
 
 # footer
 parts.append(f'<line x1="48" y1="{H-56}" x2="{W-48}" y2="{H-56}" stroke="{LINE}" stroke-width="0.7"/>')

@@ -31,25 +31,31 @@ scale becomes addressable state.
 
 ## Design
 
-### D1. Scale slots (×4 per destination)
+### D1. Scale slots (×16 per destination)
 
-Four scale slots A–D per destination (grain, smear). New state: `pitch_scale_t slots[4]` +
+Sixteen scale slots A–P per destination (grain, smear) — owner revision 2026-07-06
+("add 12 scale slots"): A–D = the primary row (the axis generator writes here), E–P =
+two banks of six for progressions and set-lists. New state: `pitch_scale_t slots[16]` +
 active index per `*_pitch_control_t`.
 
 ```
-pitch_scale_slot <0-3>            select the grain-side active slot
-smear_pitch_scale_slot <0-3>      select the smear-side active slot
+pitch_scale_slot <0-15>           select the grain-side active slot
+smear_pitch_scale_slot <0-15>     select the smear-side active slot
 pitch_scale_to <slot> <semis...>  write a specific slot without selecting it
 smear_pitch_scale_to <slot> <semis...>
 pitch_scale / smear_pitch_scale   (unchanged) write the ACTIVE slot — full back-compat
 ```
+
+Memory: 16 slots × 129 floats × 2 destinations ≈ 16.5 KB per snapshot capture
+(~1.05 MB across all 64 morph snapshots — small next to the reel; acceptable). The text
+export skips empty slots (count 0), so files stay compact.
 
 Slot selection applies at the existing per-block/degree-lookup sites — inherently
 click-free (a lookup-table swap, no audio-path discontinuity). Slot 0 initialized from the
 legacy scale ⇒ defaults bit-identical.
 
 **`scale_slot` becomes a modulation target** (grain + smear entries in
-`get_param_range_by_name` + matrix destination, stepped: value rounds to 0–3). That makes
+`get_param_range_by_name` + matrix destination, stepped: value rounds to 0–15). That makes
 it pattern-drivable for free (`pattern pitch_scale_slot [ 0 1 2 ]` — chord progressions on
 the cycle clock), matrix-drivable (an LFO sweeping slots), and morph-capturable.
 
@@ -113,7 +119,8 @@ grain constellation; same S/H write path.
 
 ### D6. Capture schema v5
 
-Walker grows: 8 scale-slot fields (4×2 dests, `MF_SCALE`), active-slot indices ×2,
+Walker grows: 32 scale-slot fields (16×2 dests, `MF_SCALE`; empty slots skipped in text
+export), active-slot indices ×2,
 root ×2, quant ×2, rotate ×2 (`since = 5`). Text schema v4→v5 with v1–v4 import compat
 (the `since` discipline); binary version bump with explicit refusal; v4 files load with
 slot-0 semantics = the legacy scale (proven by import test). Exclude-group: all new fields
@@ -122,7 +129,8 @@ join the existing pitch-side groups (grain → the grain/pitch group, smear → 
 
 ## GATE A — owner decisions (ALL cleared at [R], 2026-07-06)
 
-1. ✅ Slot count **4 per destination** (A–D; the axis generator needs ≤3 + home).
+1. ✅ Slot count **16 per destination** (A–P; owner revision 2026-07-06 up from 4 —
+   A–D primary + two six-slot banks; the axis generator still writes A/B/C).
 2. ✅ `scale_root` clamp **±24 st**, quantize **default ON**.
 3. ✅ `scale_rotate` wraps (no octave carry — octave lives in the degree lists).
 4. ✅ Morph blend = **stochastic source-pick** (never interpolate semitones).
