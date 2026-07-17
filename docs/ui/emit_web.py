@@ -273,6 +273,9 @@ const CSS = `
 .lg-vuseg { position:absolute; width:9px; height:8px; background:#2c2f34; pointer-events:none; }
 /* live scope canvas (phosphor XY trace over the scope bed) */
 .lg-scope { position:absolute; pointer-events:none; }
+/* morph metasurface canvas — opaque, covers the mockup art, owns snapshot points + cursor + route */
+.lg-meta { position:absolute; pointer-events:auto; cursor:crosshair; touch-action:none;
+  border-radius:4px; }
 `;
 
 function fmt(v) { v = +v; return Math.abs(v) >= 100 ? v.toFixed(0) : (Number.isInteger(v) ? String(v) : v.toFixed(2)); }
@@ -302,6 +305,102 @@ function knobSVG(r, cap) {
     ptr.setAttribute('y2', ((r - 1.2) * Math.sin(a)).toFixed(1));
   };
   return { svg, setPos };
+}
+
+/* createMorphSurface — the Bencina metasurface as a live canvas over the joystick bed
+ * (JX,JY,JS = 812,760,216, mirroring emit_svg). Snapshots are placed as labelled points;
+ * the cursor blends between them (drives lgR_joy_x/_y = the CV morph cursor); routes animate.
+ * Drives the engine's morph API over lg_engine: snapshot / morph_point / morph_unplace /
+ * snapshot_clear / morph_route / morph_run / morph_stop / morph_pause. */
+function createMorphSurface(engine, overlay) {
+  const X = 812, Y = 760, S = 216, LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const cv = document.createElement('canvas');
+  cv.className = 'lg-meta'; cv.width = S; cv.height = S;
+  cv.style.left = X + 'px'; cv.style.top = Y + 'px';
+  cv.style.width = S + 'px'; cv.style.height = S + 'px';
+  overlay.appendChild(cv);
+  const g = cv.getContext('2d');
+  const st = { pts: [], wps: [], cx: 0.55, cy: 0.45, sel: null, nextId: 0, running: false, anim: 0, t0: 0, from: null };
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  const px = (v) => v * S;
+
+  function draw() {
+    g.fillStyle = '#141619'; g.fillRect(0, 0, S, S);
+    g.strokeStyle = '#2a2e33'; g.lineWidth = 1; g.beginPath();
+    for (let i = 1; i < 4; i++) { g.moveTo(S * i / 4, 0); g.lineTo(S * i / 4, S); g.moveTo(0, S * i / 4); g.lineTo(S, S * i / 4); }
+    g.stroke();
+    const path = st.wps.length ? st.wps : st.pts;
+    if (path.length > 1) {
+      g.strokeStyle = '#8a6d3b'; g.lineWidth = 1.3; g.setLineDash([4, 3]); g.beginPath();
+      path.forEach((p, i) => { const x = px(p.x), y = px(p.y); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+      g.stroke(); g.setLineDash([]);
+    }
+    st.wps.forEach((p) => { g.fillStyle = '#8a6d3b'; g.beginPath(); g.arc(px(p.x), px(p.y), 3, 0, 7); g.fill(); });
+    st.pts.forEach((p) => {
+      const x = px(p.x), y = px(p.y);
+      g.beginPath(); g.arc(x, y, 7, 0, 7);
+      g.fillStyle = (p === st.sel) ? '#e8c47c' : '#4f9860'; g.fill();
+      g.lineWidth = 1.2; g.strokeStyle = '#0d0e10'; g.stroke();
+      g.fillStyle = '#0d0e10'; g.font = 'bold 9px ui-monospace,monospace';
+      g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(p.label, x, y + 0.5);
+    });
+    const cxp = px(st.cx), cyp = px(st.cy);
+    g.strokeStyle = '#e8c47c'; g.lineWidth = 1;
+    g.beginPath(); g.arc(cxp, cyp, 7, 0, 7); g.stroke();
+    g.beginPath(); g.moveTo(cxp - 11, cyp); g.lineTo(cxp + 11, cyp); g.moveTo(cxp, cyp - 11); g.lineTo(cxp, cyp + 11); g.stroke();
+    if (!st.pts.length) {
+      g.fillStyle = '#6b7075'; g.font = '8px ui-monospace,monospace'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+      g.fillText('SNAP drops a snapshot here', S / 2, S - 30);
+      g.fillText('drag = morph · shift-click = route pt · dblclick pt = remove', S / 2, S - 18);
+    }
+  }
+
+  const rectXY = (e) => { const r = cv.getBoundingClientRect();
+    return { x: clamp((e.clientX - r.left) / r.width), y: clamp((e.clientY - r.top) / r.height) }; };
+  const hit = (x, y) => st.pts.find((p) => Math.hypot(p.x - x, p.y - y) < 0.06);
+  const msg = (...a) => engine.sendMsg('lg_engine', a);
+  function setCursor(x, y, send) { st.cx = x; st.cy = y; if (send) { engine.setFloat('lgR_joy_x', x); engine.setFloat('lgR_joy_y', y); } draw(); }
+
+  let mode = null, dragPt = null;
+  cv.addEventListener('pointerdown', (e) => {
+    const { x, y } = rectXY(e);
+    if (e.shiftKey) { st.wps.push({ x, y }); draw(); return; }
+    const p = hit(x, y);
+    if (p) { st.sel = p; dragPt = p; mode = 'pt'; draw(); }
+    else { mode = 'cur'; setCursor(x, y, true); }
+    try { cv.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault();
+  });
+  cv.addEventListener('pointermove', (e) => { if (!mode) return; const { x, y } = rectXY(e);
+    if (mode === 'pt' && dragPt) { dragPt.x = x; dragPt.y = y; msg('morph_point', dragPt.id, x, y); draw(); }
+    else if (mode === 'cur') setCursor(x, y, true); });
+  const end = () => { mode = null; dragPt = null; };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+  cv.addEventListener('dblclick', (e) => { const { x, y } = rectXY(e); const p = hit(x, y);
+    if (p) { msg('morph_unplace', p.id); msg('snapshot_clear', p.id);
+      st.pts = st.pts.filter((q) => q !== p); if (st.sel === p) st.sel = null; draw(); } });
+
+  function snap() { const id = st.nextId++, label = LETTERS[st.pts.length % 26];
+    msg('snapshot', id); msg('morph_point', id, st.cx, st.cy);
+    const p = { id, x: st.cx, y: st.cy, label }; st.pts.push(p); st.sel = p; draw(); }
+  function stop() { msg('morph_stop'); st.running = false; if (st.anim) { cancelAnimationFrame(st.anim); st.anim = 0; } draw(); }
+  function run() {
+    const path = st.wps.length ? st.wps.slice() : st.pts.map((p) => ({ x: p.x, y: p.y }));
+    if (!path.length) return; const rate = 1.5;
+    msg('morph_route_clear'); path.forEach((p) => msg('morph_route', p.x, p.y, rate, 3)); msg('morph_run', 1);
+    st.running = true; st.t0 = performance.now(); st.from = { x: st.cx, y: st.cy };
+    const total = path.length * rate;
+    const tick = (now) => { if (!st.running) return;
+      const el = ((now - st.t0) / 1000) % total, leg = Math.floor(el / rate), lt = (el - leg * rate) / rate;
+      const a = leg === 0 ? st.from : path[leg - 1], b = path[leg], s = lt * lt * (3 - 2 * lt);
+      st.cx = a.x + (b.x - a.x) * s; st.cy = a.y + (b.y - a.y) * s; draw();
+      st.anim = requestAnimationFrame(tick); };
+    st.anim = requestAnimationFrame(tick);
+  }
+  function pause() { msg('morph_pause'); if (st.anim) { cancelAnimationFrame(st.anim); st.anim = 0; } }
+  function clearRoute() { st.wps = []; msg('morph_route_clear'); draw(); }
+
+  draw();
+  return { snap, run, stop, pause, clearRoute, draw, el: cv, st };
 }
 
 // shared <defs> for the chrome-dome gradient, injected once (mini knob SVGs reference it by id)
@@ -344,16 +443,18 @@ export function buildControls(engine, container, opts = {}) {
   if (window.ResizeObserver) new ResizeObserver(rescale).observe(stage);
   window.addEventListener('resize', rescale);
 
+  // the morph metasurface owns the joystick bed (points/cursor/routes); it also captures the
+  // SNAP / ROUTE RUN / STOP / PAUSE buttons below.
+  const morph = createMorphSurface(engine, overlay);
+  const MORPH_BTN = { morph_snap: () => morph.snap(), morph_run: () => morph.run(),
+                      morph_stop: () => morph.stop(), morph_pause: () => morph.pause() };
+
   const handles = {};
   for (const c of CONTROLS) {
+    if (c.kind === 'joypad') { handles[c.id] = { set: () => {}, el: morph.el }; continue; }
     const w = document.createElement('div');
     w.className = 'lg-w'; w.dataset.id = c.id;
-    if (c.kind === 'joypad') {
-      w.style.left = c.x + 'px'; w.style.top = c.y + 'px';
-      w.style.width = c.w + 'px'; w.style.height = c.h + 'px';
-    } else {
-      w.style.left = c.cx + 'px'; w.style.top = c.cy + 'px';
-    }
+    w.style.left = c.cx + 'px'; w.style.top = c.cy + 'px';
     let setter = () => {};
 
     if (c.kind === 'knob') {
@@ -420,10 +521,11 @@ export function buildControls(engine, container, opts = {}) {
     } else if (c.kind === 'button') {
       const b = document.createElement('div'); b.className = 'lg-btn';
       b.style.width = c.w + 'px'; b.textContent = c.btnLabel;
-      b.addEventListener('click', () => { engine.sendBang(c.recv);
+      const act = MORPH_BTN[c.id];   // SNAP/RUN/STOP/PAUSE drive the metasurface, not a bare bang
+      b.addEventListener('click', () => { act ? act() : engine.sendBang(c.recv);
         b.classList.add('lit'); setTimeout(() => b.classList.remove('lit'), 120); });
       w.appendChild(b);
-      setter = () => engine.sendBang(c.recv);
+      setter = act || (() => engine.sendBang(c.recv));
 
     } else if (c.kind === 'pin' || c.kind === 'mxpin') {
       const p = document.createElement('div'); p.className = 'lg-pin';
