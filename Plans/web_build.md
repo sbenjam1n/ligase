@@ -75,8 +75,16 @@ answers for audio-in and reel file I/O without a native filesystem.
 - **GUI = a fourth emitter.** libpd has **no GUI** — the `.pd`'s GUI objects don't render. So
   the settled panel drives from an **HTML/JS front-end** generated from `panel_layout.py`
   (`emit_web.py`), talking to the engine over libpd's message API using the **existing
-  `lgR_<id>` receive-symbol bus** — the same scripting interface the headless tests use. The
-  SVG stays the visual spec; the web UI is layout parity, not pixel parity.
+  `lgR_<id>` receive-symbol bus** — the same scripting interface the headless tests use.
+  - **The panel IS the SVG (as-built).** The web UI renders the rendered silkscreen
+    (`ligase_synthi_panel.svg`) as its backdrop and overlays live, exactly-registered widgets
+    on top of — and hiding — each control's static twin (knobs turn, switches/toggles/buttons/
+    ring+grid pins respond), placed at the SAME `panel_layout` coordinates the SVG drew them,
+    so the overlay tracks the art at any scale. This is pixel parity with the silkscreen, not
+    just layout parity. The panel renders on page load (the engine buffers control input until
+    Start arms audio). **Phased follow-ups** (static SVG art for now, wired later): the
+    mod-matrix pin field, joystick-pad drag (`joy_x`/`joy_y` → IN 23/24), and live scope/VU
+    display (need engine signal taps back to the main thread).
 - **Audio in:** `getUserMedia` → a Web Audio source → the AudioWorklet feeding `[adc~]`.
   Opt-in (mic permission; HTTPS satisfied by Pages). Default OFF (many sessions are reel-only).
 - **Reel I/O without a filesystem** (`[openpanel]→load` has nothing to open):
