@@ -28,6 +28,7 @@ export class LigaseEngine {
 
   onPrint(cb) { this._prints.push(cb); }
   onScope(cb) { this._scope = cb; }
+  onVU(cb) { this._vu = cb; }
 
   async _fetchText(url) { const r = await fetch(url); if (!r.ok) throw new Error('fetch ' + url); return r.text(); }
   async _fetchBytes(url) { const r = await fetch(url); if (!r.ok) throw new Error('fetch ' + url); return r.arrayBuffer(); }
@@ -80,6 +81,7 @@ export class LigaseEngine {
         break;
       }
       case 'scope': if (this._scope) this._scope(m.peak); break;
+      case 'vu': if (this._vu) this._vu(m.l, m.r); break;
       case 'error': for (const cb of this._prints) cb('[worklet error] ' + m.text); break;
       default: break;
     }
