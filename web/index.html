@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ligase~ — browser</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; background:#1c1e20; color:#ece8da;
+    font:13px/1.4 ui-monospace,Menlo,Consolas,monospace; }
+  header { padding:10px 14px; border-bottom:1px solid #3a3d40; display:flex;
+    gap:8px; flex-wrap:wrap; align-items:center; position:sticky; top:0; background:#1c1e20; z-index:10; }
+  header h1 { font-size:14px; margin:0 10px 0 0; letter-spacing:.06em; }
+  button, label.file { background:#3a3d40; color:#ece8da; border:1px solid #55585c;
+    padding:5px 10px; cursor:pointer; font:inherit; border-radius:2px; }
+  button:disabled { opacity:.4; cursor:default; }
+  button.on { background:#9fd0a0; color:#1c1e20; }
+  #status { margin-left:auto; color:#9fd0a0; }
+  #panelwrap { overflow:auto; padding:12px; }
+  #log { height:96px; overflow:auto; padding:6px 12px; border-top:1px solid #3a3d40;
+    font-size:11px; color:#9a9d9f; white-space:pre-wrap; }
+  #drop { border:1px dashed #55585c; padding:5px 10px; border-radius:2px; }
+  #drop.hot { border-color:#9fd0a0; color:#9fd0a0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ligase~</h1>
+  <button id="start">▶ Start audio</button>
+  <button id="mic" disabled>🎙 Mic: off</button>
+  <label class="file">📂 Load reel<input id="loadfile" type="file" accept=".wav,audio/wav" hidden></label>
+  <span id="drop">…or drop a WAV here</span>
+  <button id="save" disabled>💾 Export reel</button>
+  <span id="status">idle</span>
+</header>
+<div id="panelwrap"><div id="controls"></div></div>
+<div id="log"></div>
+
+<script type="module">
+import { LigaseEngine } from './ligase-host.js';
+import { buildControls, sendDefaults } from './ligase_controls.js';
+
+const $ = (id) => document.getElementById(id);
+const log = (m) => { const el = $('log'); el.textContent += m + '\n'; el.scrollTop = el.scrollHeight; };
+const status = (m) => { $('status').textContent = m; };
+
+const engine = new LigaseEngine({ base: './' });
+engine.onPrint((t) => log(t.replace(/\n$/, '')));
+let started = false;
+
+// Narrow screens / very wide SVG panel: fall back to flow layout under 1600px.
+const flow = window.matchMedia('(max-width: 1600px)').matches;
+
+$('start').addEventListener('click', async () => {
+  if (started) return;
+  $('start').disabled = true; status('loading…');
+  try {
+    const patch = await (await fetch('./ligase_panel.pd')).text();
+    await engine.start({ patch });
+    sendDefaults(engine);
+    buildControls(engine, $('controls'), { flow });
+    started = true;
+    $('mic').disabled = false; $('save').disabled = false;
+    $('start').textContent = '● running'; $('start').classList.add('on');
+    status('running @ ' + Math.round(engine.ctx.sampleRate) + ' Hz');
+    log('engine ready — ' + document.querySelectorAll('.lg-ctl').length + ' controls');
+  } catch (e) { status('error'); log('start failed: ' + e); $('start').disabled = false; }
+});
+
+$('mic').addEventListener('click', async () => {
+  try {
+    if (engine.micStream) { engine.disableMic(); $('mic').textContent = '🎙 Mic: off'; $('mic').classList.remove('on'); }
+    else { await engine.enableMic(); $('mic').textContent = '🎙 Mic: ON'; $('mic').classList.add('on'); log('mic -> [adc~]'); }
+  } catch (e) { log('mic denied: ' + e); }
+});
+
+$('loadfile').addEventListener('change', async (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  await engine.loadReel(f); log('loaded reel: ' + f.name + ' (' + f.size + ' bytes -> MEMFS)');
+});
+
+const drop = $('drop');
+['dragover', 'dragenter'].forEach((ev) => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('hot'); }));
+['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('hot')));
+drop.addEventListener('drop', async (e) => {
+  e.preventDefault(); const f = e.dataTransfer.files[0]; if (!f) return;
+  await engine.loadReel(f); log('dropped reel: ' + f.name);
+});
+
+$('save').addEventListener('click', async () => {
+  status('exporting…');
+  const blob = await engine.saveReel();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'ligase_reel.wav';
+  document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  status('running'); log('exported reel (' + blob.size + ' bytes)');
+});
+</script>
+</body>
+</html>

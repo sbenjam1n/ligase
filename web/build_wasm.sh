@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # build_wasm.sh — build the ligase WASM engine (Plans/web_build.md Arc A).
 # Compiles libpd (static) + ligase's 15 sources + a host into a WASM module.
-#   TARGET=node    -> host_test.js  (headless engine-identity harness, runs under node)
-#   TARGET=worklet -> ligase_wasm.js (MODULARIZE for the browser AudioWorklet — Step 3+)
+#   TARGET=node     -> host_test.js     (headless smoke harness: sine/ligase RMS, runs under node)
+#   TARGET=identity -> host_identity.js  (Step-2 engine-identity gate: reproduces the native
+#                                         AUTOMATED_TEST_PROCEDURE baseline in WASM, runs under node)
+#   TARGET=worklet  -> ligase_wasm.js    (MODULARIZE for the browser AudioWorklet — Step 3+)
 # Env: EMSDK (default /opt/emsdk), LIBPD_DIR (default /opt/libpd), TARGET (default node).
 # CI clones emsdk + libpd fresh; locally they were set up during the Seq-92 spike.
 set -euo pipefail
@@ -40,11 +42,34 @@ if [ "$TARGET" = node ]; then
     --embed-file "$HERE/test_sine.pd" --embed-file "$HERE/test_ligase.pd" \
     -o "$HERE/host_test.js"
   echo "[build] wrote host_test.js (node harness)"
+elif [ "$TARGET" = identity ]; then
+  # Step-2 engine-identity gate. Embeds the two self-running procedure patches; reads the
+  # reel back out of MEMFS. No -ffast-math (bit-faithful IEEE-754), matching the native build.
+  "$EMCC" "$HERE/host_identity.c" "${COMMON[@]}" \
+    --embed-file "$HERE/test_auto_wasm.pd@test_auto_wasm.pd" \
+    --embed-file "$HERE/test_playback_wasm.pd@test_playback_wasm.pd" \
+    -o "$HERE/host_identity.js"
+  echo "[build] wrote host_identity.js (engine-identity harness)"
 else
-  # browser module: MODULARIZE, export libpd API for the AudioWorklet glue (Step 3+)
+  # Browser module for the single-threaded AudioWorklet (Step 3+). Plain-Pages safe:
+  #   - NO pthreads / NO SharedArrayBuffer  -> works without COOP/COEP headers.
+  #   - MODULARIZE (classic, NOT ES6)       -> defines a global createLigaseModule factory; the
+  #                                            host concatenates this glue + the processor into one
+  #                                            Blob for audioWorklet.addModule (worklets can't
+  #                                            import/fetch). Also usable from a <script> tag.
+  #   - ENVIRONMENT=web,worker              -> no node/shell glue paths.
+  #   - WASM_ASYNC_COMPILATION=0            -> synchronous instantiate from a passed wasmBinary
+  #                                            (AudioWorkletGlobalScope has no fetch()).
+  #   - ALLOW_TABLE_GROWTH + addFunction    -> register JS print/float hooks as C callbacks.
+  # The full libpd C API is exported so the worklet drives the engine (process, messages,
+  # the lgR_/lgS_ bus, reel MEMFS I/O).
+  LIGASE_EXPORTS='["_libpd_init","_libpd_clear_search_path","_libpd_add_to_search_path","_libpd_init_audio","_libpd_process_float","_libpd_openfile","_libpd_closefile","_libpd_start_message","_libpd_add_float","_libpd_add_symbol","_libpd_finish_message","_libpd_finish_list","_libpd_float","_libpd_symbol","_libpd_bang","_libpd_bind","_libpd_unbind","_libpd_set_printhook","_libpd_set_floathook","_libpd_blocksize","_ligase_tilde_setup","_malloc","_free"]'
   "$EMCC" "${COMMON[@]}" -O3 \
-    -s MODULARIZE=1 -s EXPORT_NAME=createLigaseModule -s EXPORT_ES6=1 \
-    -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","FS"]' \
+    -s MODULARIZE=1 -s EXPORT_NAME=createLigaseModule \
+    -s ENVIRONMENT=web,worker -s WASM_ASYNC_COMPILATION=0 \
+    -s ALLOW_TABLE_GROWTH=1 \
+    -s EXPORTED_FUNCTIONS="$LIGASE_EXPORTS" \
+    -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","addFunction","removeFunction","FS","HEAPF32","UTF8ToString","stringToUTF8","lengthBytesUTF8","getValue","setValue"]' \
     -o "$HERE/ligase_wasm.js"
-  echo "[build] wrote ligase_wasm.js (browser module)"
+  echo "[build] wrote ligase_wasm.js (browser AudioWorklet module)"
 fi
