@@ -182,20 +182,27 @@ class LigaseProcessor extends AudioWorkletProcessor {
 
     this._process(this.ticks, this._inPtr, this._outPtr);
 
-    // De-interleave to outputs (dac~), tracking a peak for the scope tap.
+    // De-interleave to outputs (dac~), tracking per-channel peaks for the VU meters.
     const o0 = out[0], o1 = out.length > 1 ? out[1] : null;
-    let peak = this._peak || 0;
+    let peakL = this._peakL || 0, peakR = this._peakR || 0;
     for (let i = 0; i < frames; i++) {
       const l = HEAP[outBase + i * 2];
       o0[i] = l;
-      const a = l < 0 ? -l : l; if (a > peak) peak = a;
-      if (o1) o1[i] = HEAP[outBase + i * 2 + 1];
+      const al = l < 0 ? -l : l; if (al > peakL) peakL = al;
+      const r = HEAP[outBase + i * 2 + 1];
+      if (o1) o1[i] = r;
+      const ar = r < 0 ? -r : r; if (ar > peakR) peakR = ar;
     }
-    // Scope: post the running output peak roughly every ~85 ms so a headless host can confirm
-    // DSP is producing audio without an output device.
-    this._peak = peak;
+    // VU + scope: post running output peaks roughly every ~85 ms. `scope` (mono peak) is kept
+    // for the headless identity host; `vu` carries the per-channel peaks the meters draw.
+    this._peakL = peakL; this._peakR = peakR;
     this._scopeN = (this._scopeN || 0) + 1;
-    if (this._scopeN >= 32) { this.port.postMessage({ type: 'scope', peak }); this._scopeN = 0; this._peak = 0; }
+    if (this._scopeN >= 32) {
+      const peak = peakL > peakR ? peakL : peakR;
+      this.port.postMessage({ type: 'scope', peak });
+      this.port.postMessage({ type: 'vu', l: peakL, r: peakR });
+      this._scopeN = 0; this._peakL = 0; this._peakR = 0;
+    }
 
     // Deferred reel save readback (engine wrote to MEMFS on a previous block).
     if (this._pendingSave && (this._pendingSaveWait = (this._pendingSaveWait || 0) - 1) <= 0) {

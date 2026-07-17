@@ -171,6 +171,40 @@ def build_descriptors(panel_path):
         elif wk == "pin":
             d["pinCap"] = CAP["green"] if cid.startswith("seq_ring_") else CAP["white"]
         out.append(d)
+
+    # --- modulation-matrix pins: generated straight into the pd patch (not CONTROLS),
+    # one iemgui toggle mx_<i>_<j> per source×dest with an lgR_mx_<i>_<j> receive. Drive
+    # them the same way; positions mirror emit_svg.py's matrix geometry (MX+58, MY+54, CELL).
+    MX_GX, MX_GY, MX_CELL = 864, 184, 23
+    for i in range(len(PL.MATRIX_SRCS)):
+        for j in range(len(PL.MATRIX_DSTS)):
+            cid = "mx_%d_%d" % (i, j)
+            if ("lgR_" + cid) not in recv:
+                skipped.append((cid, "no lgR_%s receive in panel" % cid))
+                continue
+            out.append({
+                "id": cid, "recv": "lgR_" + cid, "send": "lgS_" + cid, "kind": "mxpin",
+                "cx": MX_GX + j * MX_CELL + MX_CELL / 2.0,
+                "cy": MX_GY + i * MX_CELL + MX_CELL / 2.0,
+                "lo": 0, "hi": 1, "default": 0, "initSend": False,
+                "pinCap": CAP["white"],
+                "src": PL.MATRIX_SRCS[i][0], "dst": PL.MATRIX_DSTS[j][0],
+            })
+
+    # --- morph joystick pad: one 2D control driving lgR_joy_x / lgR_joy_y (IN 23/24).
+    # Bed geometry mirrors emit_svg.py's JX,JY,JS.
+    JX, JY, JS = 812, 760, 216
+    if "lgR_joy_x" in recv and "lgR_joy_y" in recv:
+        jx = PL.CONTROL_BY_ID["joy_x"]
+        jy = PL.CONTROL_BY_ID["joy_y"]
+        out.append({
+            "id": "joypad", "kind": "joypad",
+            "x": JX, "y": JY, "w": JS, "h": JS,
+            "recvX": "lgR_joy_x", "sendX": "lgS_joy_x", "defX": jx.get("default", 0.5),
+            "recvY": "lgR_joy_y", "sendY": "lgS_joy_y", "defY": jy.get("default", 0.5),
+        })
+    else:
+        skipped.append(("joypad", "joy_x/joy_y receive missing"))
     return out, skipped
 
 
@@ -220,13 +254,23 @@ const CSS = `
   background:linear-gradient(#eceef0,#c3c6c9); color:#26282b; font:bold 7.5px/1 ui-monospace,monospace;
   display:flex; align-items:center; justify-content:center; cursor:pointer; letter-spacing:.02em; }
 .lg-btn.lit, .lg-btn:active { background:#e8c47c; border-color:#a8863c; }
-/* tone-ring / pattern-grid pin — off-state fully covers the silkscreen twin (incl. demo pins) */
+/* tone-ring / pattern-grid / matrix pin — off-state fully covers the silkscreen twin */
 .lg-pin { width:14px; height:14px; border-radius:50%; cursor:pointer;
   background:#16181c; border:1px solid #3e4247;
   display:flex; align-items:center; justify-content:center; }
 .lg-pin::after { content:''; width:5px; height:5px; border-radius:50%; background:#0d0e10; }
 .lg-pin.on { border:1.4px solid #0d0e10; }
 .lg-pin.on::after { width:4px; height:4px; background:#0d0e10; }
+.lg-pin.mx { width:13px; height:13px; }
+/* morph joystick pad — a 2D drag surface driving joy_x/joy_y (bed art is the SVG under it) */
+.lg-joypad { transform:none; cursor:crosshair; touch-action:none; }
+.lg-joypad .cur { position:absolute; width:16px; height:16px; margin:-8px 0 0 -8px;
+  border-radius:50%; border:1.5px solid #e8c47c; box-shadow:0 0 6px #e8c47caa; pointer-events:none; }
+.lg-joypad .cur::before, .lg-joypad .cur::after { content:''; position:absolute; background:#e8c47c; }
+.lg-joypad .cur::before { left:7px; top:-6px; width:1px; height:28px; }
+.lg-joypad .cur::after { top:7px; left:-6px; height:1px; width:28px; }
+/* VU meter segment (positioned absolutely; driven live by engine.onVU) */
+.lg-vuseg { position:absolute; width:9px; height:8px; background:#2c2f34; pointer-events:none; }
 `;
 
 function fmt(v) { v = +v; return Math.abs(v) >= 100 ? v.toFixed(0) : (Number.isInteger(v) ? String(v) : v.toFixed(2)); }
@@ -302,7 +346,12 @@ export function buildControls(engine, container, opts = {}) {
   for (const c of CONTROLS) {
     const w = document.createElement('div');
     w.className = 'lg-w'; w.dataset.id = c.id;
-    w.style.left = c.cx + 'px'; w.style.top = c.cy + 'px';
+    if (c.kind === 'joypad') {
+      w.style.left = c.x + 'px'; w.style.top = c.y + 'px';
+      w.style.width = c.w + 'px'; w.style.height = c.h + 'px';
+    } else {
+      w.style.left = c.cx + 'px'; w.style.top = c.cy + 'px';
+    }
     let setter = () => {};
 
     if (c.kind === 'knob') {
@@ -322,7 +371,7 @@ export function buildControls(engine, container, opts = {}) {
       };
       let dragging = false, sy = 0, sp = 0;
       const down = (e) => { dragging = true; sy = e.clientY; sp = pos; w.classList.add('live');
-        k.setPointerCapture && k.setPointerCapture(e.pointerId); e.preventDefault(); };
+        try { k.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); };
       const move = (e) => { if (!dragging) return;
         apply(sp + (sy - e.clientY) / 180, true); };
       const up = () => { dragging = false; w.classList.remove('live'); };
@@ -374,23 +423,69 @@ export function buildControls(engine, container, opts = {}) {
       w.appendChild(b);
       setter = () => engine.sendBang(c.recv);
 
-    } else if (c.kind === 'pin') {
+    } else if (c.kind === 'pin' || c.kind === 'mxpin') {
       const p = document.createElement('div'); p.className = 'lg-pin';
-      p.style.background = '#111316';
+      if (c.kind === 'mxpin') p.classList.add('mx');
       let on = !!c.default;
       const place = () => { p.classList.toggle('on', on);
-        p.style.background = on ? c.pinCap : '#111316'; };
+        p.style.background = on ? c.pinCap : '#16181c'; };
       place();
       const apply = (v, send) => { on = !!v; place(); if (send) engine.setFloat(c.recv, on ? 1 : 0); };
       p.addEventListener('click', () => apply(!on, true));
+      if (c.src) p.title = c.src + ' → ' + c.dst;
       w.appendChild(p);
       engine.watch(c.send, (v) => apply(!!v, false));
       setter = (v) => apply(!!v, true);
+
+    } else if (c.kind === 'joypad') {
+      w.classList.add('lg-joypad');
+      const cur = document.createElement('div'); cur.className = 'cur'; w.appendChild(cur);
+      let px = c.defX, py = c.defY;
+      const place = () => { cur.style.left = (px * c.w) + 'px'; cur.style.top = (py * c.h) + 'px'; };
+      place();
+      const apply = (nx, ny, send) => {
+        px = Math.max(0, Math.min(1, nx)); py = Math.max(0, Math.min(1, ny)); place();
+        if (send) { engine.setFloat(c.recvX, px); engine.setFloat(c.recvY, py); }
+      };
+      let drag = false;
+      const at = (e) => { const r = w.getBoundingClientRect();
+        apply((e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height, true); };
+      w.addEventListener('pointerdown', (e) => { drag = true; at(e);
+        try { w.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); });
+      w.addEventListener('pointermove', (e) => { if (drag) at(e); });
+      w.addEventListener('pointerup', () => { drag = false; });
+      w.addEventListener('pointercancel', () => { drag = false; });
+      engine.watch(c.sendX, (v) => apply(v, py, false));
+      engine.watch(c.sendY, (v) => apply(px, v, false));
     }
 
     overlay.appendChild(w);
     handles[c.id] = { set: setter, el: w };
   }
+
+  // --- live VU meters (MONITOR / OUTPUT) — 12-segment L/R bars over the SVG meter art,
+  // driven by engine.onVU(l, r). Geometry mirrors emit_svg.py's monitor block. ---
+  const VUX = 1988, VUY = 932, SEGW = 12, SEGN = 12;
+  const meters = [];
+  for (const [row, off] of [['L', 0], ['R', 22]]) {
+    const segs = [];
+    for (let i = 0; i < SEGN; i++) {
+      const s = document.createElement('div'); s.className = 'lg-vuseg';
+      s.style.left = (VUX + 4 + i * SEGW) + 'px'; s.style.top = (VUY + off + 3) + 'px';
+      overlay.appendChild(s); segs.push(s);
+    }
+    meters.push(segs);
+  }
+  const paintVU = (segs, v) => {
+    const nlit = Math.round(Math.min(1, Math.sqrt(Math.max(0, v))) * SEGN);
+    for (let i = 0; i < SEGN; i++) {
+      const on = i < nlit;
+      segs[i].style.background = on ? (i < 9 ? '#4f9860' : i < 11 ? '#d9a23a' : '#c04a38') : '#2c2f34';
+    }
+  };
+  paintVU(meters[0], 0); paintVU(meters[1], 0);
+  if (engine.onVU) engine.onVU((l, r) => { paintVU(meters[0], l); paintVU(meters[1], r); });
+
   return handles;
 }
 
