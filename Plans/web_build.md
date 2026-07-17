@@ -2,9 +2,16 @@
 
 **Owner:** SLB
 **Date:** 2026-07-06
-**Status:** PLANNED (GATE A — owner decisions below; recommendations flagged [R]). Two arcs:
-**A. web deployment** (the main ask), **B. primase~ as an optional trigger/clock source**
-(applies to BOTH the web build and the existing desktop `.plugdata` bundle).
+**Status:** IN PROGRESS — **GATE A cleared at ALL recommendations (owner 2026-07-06: "take the
+recommendations, begin arc A").** **Arc A Steps 1–2 core PROVEN headless (Seq 92):** Emscripten
+6.0.3 + libpd (BSD) toolchain stood up; stock libpd→WASM verified in node (`test_sine.pd` → RMS
+0.141421 / MAX 0.200000); **all 15 ligase sources compile under emcc and `[ligase~]` instantiates
++ processes audio in WASM** (no "couldn't create"; no kiss_fft hazard — fog/FFT was removed). A7
+license audit confirmed: libpd/pure-data BSD + Emscripten MIT/NCSA → the GPL-2 web build is
+distributable with NO relicense. Foundation in `web/` (`build_wasm.sh`, `host_headless.c`, test
+patches, README). Remaining Arc A: rigorous exact-baseline engine-identity test in WASM, browser
+AudioWorklet + HTML host, `emit_web.py` GUI, audio-in + reel MEMFS/Blob I/O, GitHub Actions →
+Pages. Two arcs: **A. web deployment** (in progress), **B. primase~ trigger/clock** (queued).
 **Tracked in:** `QUEUE.md` §4a (prototyping/UI/VST/web arc).
 **Related:** `Plans/vst_plugin.md` (the SAME compiled-in constraint — a third deploy target),
 `Plans/pd_panel_prototype.md` (`panel_layout.py` becomes a fourth emitter here),

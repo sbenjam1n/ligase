@@ -14,3 +14,11 @@ __pycache__/
 
 # Build output
 dist/
+
+# Web build (Plans/web_build.md) — build outputs; sources are tracked
+web/obj/
+web/host_test.js
+web/host_test.wasm
+web/ligase_wasm.js
+web/ligase_wasm.wasm
+web/*.data
