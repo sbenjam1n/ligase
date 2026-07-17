@@ -48,8 +48,8 @@ const engine = new LigaseEngine({ base: './' });
 engine.onPrint((t) => log(t.replace(/\n$/, '')));
 let started = false;
 
-// Narrow screens / very wide SVG panel: fall back to flow layout under 1600px.
-const flow = window.matchMedia('(max-width: 1600px)').matches;
+// Web UI is always responsive flow (works at any width). See Plans/web_build.md.
+const flow = true;  // always responsive flow — absolute/SVG-coordinate mode retired
 
 $('start').addEventListener('click', async () => {
   if (started) return;

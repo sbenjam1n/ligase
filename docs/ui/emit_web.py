@@ -91,8 +91,44 @@ def switch_labels(ctrl):
     return [str(i) for i in range(lo, hi + 1)]
 
 
+def parse_sections():
+    """Map control id -> section title, from panel_layout.py's own `# ---- TITLE ----`
+    markers (so the web grouping tracks the single source, no per-control metadata)."""
+    src = open(os.path.join(ROOT, "docs", "ui", "panel_layout.py"), encoding="utf-8").read()
+    id2sec, cur = {}, "PANEL"
+    # only scan the CONTROLS list region (before the trailing data tables)
+    region = src.split("CONTROL_BY_ID", 1)[0]
+    for line in region.splitlines():
+        m = re.search(r"#\s*-+\s*(.+?)\s*-+\s*$", line)
+        if m:
+            title = re.sub(r"\s*\(.*$", "", m.group(1)).strip()   # drop parentheticals
+            title = re.sub(r"^[A-H]\.\s*", "", title)             # drop "A. " prefixes
+            cur = title or cur
+            continue
+        cm = re.search(r'_c\(\s*(?:f?)"([a-z0-9_]+)"', line)
+        if cm:
+            id2sec[cm.group(1)] = cur
+    return id2sec
+
+
+def _generated_section(cid):
+    """Section for controls emitted by f-string loops in panel_layout.py, which
+    parse_sections() cannot see (the id isn't a literal). Mirror the `# ---- TITLE ----`
+    marker each loop lives under so its widgets group with their hand-written siblings."""
+    if re.match(r"^snap\d+$", cid):
+        return "PRESETS / SNAPSHOTS"
+    if re.match(r"^seq_ring_\d+$", cid):
+        return "SEQ / SCALE"
+    if re.match(r"^seq_slot_[A-Z]$", cid):
+        return "SLOTS / COMMIT"
+    if re.match(r"^seq_grid_\d+_\d+$", cid):
+        return "PATTERN GRID"
+    return "PANEL"
+
+
 def build_descriptors(panel_path):
     recv = panel_receives(panel_path)
+    id2sec = parse_sections()
     out = []
     skipped = []
     for c in PL.CONTROLS:
@@ -115,8 +151,7 @@ def build_descriptors(panel_path):
             "hi": c.get("hi", 1.0),
             "default": c.get("default", 0.0),
             "initSend": bool(c.get("init_send", True)),
-            "x": svg.get("x"),
-            "y": svg.get("y"),
+            "section": id2sec.get(cid) or _generated_section(cid),
         }
         if wk == "switch":
             d["labels"] = switch_labels(c)
@@ -133,39 +168,59 @@ export const PANEL_W = %(W)d, PANEL_H = %(H)d;
 export const CONTROLS = %(CONTROLS)s;
 
 const CSS = `
-.lg-panel { position: relative; background:#26282b; color:#ece8da;
-  font:11px/1.2 ui-monospace,Menlo,Consolas,monospace; border:1px solid #3a3d40; }
-.lg-ctl { position:absolute; box-sizing:border-box; }
-.lg-ctl label { display:block; font-size:9px; letter-spacing:.04em; color:#c8cacd;
-  white-space:nowrap; margin-bottom:2px; }
-.lg-ctl .lg-val { font-size:9px; color:#9fd0a0; }
-.lg-ctl input[type=range]{ width:96px; }
-.lg-ctl.lg-flow { position:static; display:inline-block; margin:6px 10px; vertical-align:top; }
-.lg-panel.lg-flow-mode { padding:8px; }
-.lg-btn { background:#3a3d40; color:#ece8da; border:1px solid #55585c; padding:3px 8px;
-  cursor:pointer; font:inherit; }
-.lg-btn:active { background:#55585c; }
-select.lg-sw { background:#1c1e20; color:#ece8da; border:1px solid #55585c; font:inherit; }
+.lg-panel { background:#1c1e20; color:#ece8da;
+  font:11px/1.3 ui-monospace,Menlo,Consolas,monospace;
+  display:flex; flex-direction:column; gap:14px; padding:14px;
+  box-sizing:border-box; }
+.lg-sec { border:1px solid #34373b; border-radius:6px; background:#26282b;
+  box-sizing:border-box; }
+.lg-sec-h { font-size:9.5px; letter-spacing:.18em; font-weight:700; color:#9fd0a0;
+  padding:6px 10px; border-bottom:1px solid #34373b; text-transform:uppercase; }
+.lg-sec-b { display:flex; flex-wrap:wrap; gap:8px; padding:10px; }
+.lg-ctl { box-sizing:border-box; display:flex; flex-direction:column; gap:3px;
+  min-width:104px; max-width:160px; padding:6px 8px; border:1px solid #34373b;
+  border-radius:4px; background:#2b2e31; }
+.lg-ctl label { font-size:8.5px; letter-spacing:.05em; color:#c8cacd; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; }
+.lg-ctl .lg-val { font-size:9px; color:#9fd0a0; align-self:flex-end; }
+.lg-ctl input[type=range]{ width:100%%; accent-color:#9fd0a0; margin:0; }
+.lg-ctl input[type=checkbox]{ align-self:flex-start; accent-color:#9fd0a0; width:16px; height:16px; }
+.lg-ctl.lg-btnctl { min-width:0; padding:0; border:0; background:none; justify-content:center; }
+.lg-btn { width:100%%; background:#3a3d40; color:#ece8da; border:1px solid #55585c;
+  border-radius:4px; padding:6px 10px; cursor:pointer; font:inherit; white-space:nowrap; }
+.lg-btn:hover { background:#45484c; } .lg-btn:active { background:#9fd0a0; color:#1c1e20; }
+select.lg-sw { width:100%%; background:#1c1e20; color:#ece8da; border:1px solid #55585c;
+  border-radius:3px; font:inherit; padding:2px; }
 `;
 
-/* buildControls(engine, container, {flow}) — create DOM controls and wire them to the engine.
- * flow=true ignores SVG coordinates and lays controls out in normal flow (used headless / on
- * narrow screens). Returns a map id -> {set(v), el}. */
+/* buildControls(engine, container) — create DOM controls grouped by panel section and wire
+ * them to the engine. Responsive flow layout (works at any viewport width; the wide SVG
+ * panel is the visual spec, this is layout parity per Plans/web_build.md). Returns a map
+ * id -> {set(v), el}. (opts kept for back-compat; layout is always responsive flow.) */
 export function buildControls(engine, container, opts = {}) {
-  const flow = !!opts.flow;
   if (!document.getElementById('lg-panel-style')) {
     const s = document.createElement('style'); s.id = 'lg-panel-style';
     s.textContent = CSS; document.head.appendChild(s);
   }
   container.classList.add('lg-panel');
-  if (flow) { container.classList.add('lg-flow-mode'); }
-  else { container.style.width = PANEL_W + 'px'; container.style.height = PANEL_H + 'px'; }
+
+  // group controls into their panel sections, preserving first-seen order
+  const order = [], byS = {};
+  for (const c of CONTROLS) {
+    const sec = c.section || 'PANEL';
+    if (!byS[sec]) { byS[sec] = []; order.push(sec); }
+    byS[sec].push(c);
+  }
 
   const handles = {};
-  for (const c of CONTROLS) {
+  for (const sec of order) {
+    const box = document.createElement('div'); box.className = 'lg-sec';
+    const h = document.createElement('div'); h.className = 'lg-sec-h'; h.textContent = sec;
+    const body = document.createElement('div'); body.className = 'lg-sec-b';
+    box.appendChild(h); box.appendChild(body); container.appendChild(box);
+  for (const c of byS[sec]) {
     const wrap = document.createElement('div');
-    wrap.className = 'lg-ctl' + (flow ? ' lg-flow' : '');
-    if (!flow && c.x != null && c.y != null) { wrap.style.left = c.x + 'px'; wrap.style.top = c.y + 'px'; }
+    wrap.className = 'lg-ctl' + (c.kind === 'button' ? ' lg-btnctl' : '');
     wrap.dataset.id = c.id;
 
     const lab = document.createElement('label');
@@ -201,8 +256,9 @@ export function buildControls(engine, container, opts = {}) {
       wrap.appendChild(b);
       setter = () => engine.sendBang(c.recv);
     }
-    container.appendChild(wrap);
+    body.appendChild(wrap);
     handles[c.id] = { set: setter, el: wrap };
+  }
   }
   return handles;
 }
