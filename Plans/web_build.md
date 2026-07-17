@@ -8,10 +8,16 @@ recommendations, begin arc A").** **Arc A Steps 1–2 core PROVEN headless (Seq 
 0.141421 / MAX 0.200000); **all 15 ligase sources compile under emcc and `[ligase~]` instantiates
 + processes audio in WASM** (no "couldn't create"; no kiss_fft hazard — fog/FFT was removed). A7
 license audit confirmed: libpd/pure-data BSD + Emscripten MIT/NCSA → the GPL-2 web build is
-distributable with NO relicense. Foundation in `web/` (`build_wasm.sh`, `host_headless.c`, test
-patches, README). Remaining Arc A: rigorous exact-baseline engine-identity test in WASM, browser
-AudioWorklet + HTML host, `emit_web.py` GUI, audio-in + reel MEMFS/Blob I/O, GitHub Actions →
-Pages. Two arcs: **A. web deployment** (in progress), **B. primase~ trigger/clock** (queued).
+distributable with NO relicense. **Arc A COMPLETE + verified (Seq 93):** engine-identity in WASM reproduces the exact native
+baseline (RMS 0.372309 / frames 132288 / buffer 0.330109; ≤1-ULP cross-target float delta on the
+saved reel, gate metrics exact — characterized, no engine change); single-threaded AudioWorklet +
+HTML player (no SharedArrayBuffer/COOP/COEP — plain-Pages-safe); `docs/ui/emit_web.py` = the FOURTH
+emitter (289 web controls driving the engine over the `lgR_*` bus); getUserMedia audio-in (opt-in),
+reel import (file→MEMFS→load) + export (save→MEMFS→Blob); `.github/workflows/web-deploy.yml` builds
+emsdk+libpd+ligase, runs the identity gate as a required check, and deploys to Pages. Orchestrator
+independently re-verified (identity RMS reproduced; headless-chromium boot injects all 289 controls;
+YAML valid; src/ untouched). First Pages deploy is owner-triggered (Settings → Pages → GitHub
+Actions). Two arcs: **A. web deployment DONE**; **B. primase~ trigger/clock — queued next.**
 **Tracked in:** `QUEUE.md` §4a (prototyping/UI/VST/web arc).
 **Related:** `Plans/vst_plugin.md` (the SAME compiled-in constraint — a third deploy target),
 `Plans/pd_panel_prototype.md` (`panel_layout.py` becomes a fourth emitter here),
