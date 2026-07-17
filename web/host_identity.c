@@ -49,6 +49,10 @@ static void dump_reel(const char *memfs_path){
 }
 
 void ligase_tilde_setup(void);
+#ifdef WITH_PRIMASE
+void primase_setup(void);   /* Arc B: compiled in when PRIMASE_DIR set; registering an
+                             * unused class must not perturb the engine-identity baseline */
+#endif
 static void pdprint(const char *s){ fputs(s, stderr); }
 
 #define SR        44100
@@ -126,6 +130,10 @@ int main(void){
   libpd_set_printhook(pdprint);
   libpd_init();
   ligase_tilde_setup();                       /* statically compiled-in external */
+#ifdef WITH_PRIMASE
+  primase_setup();                            /* Arc B: registered but unused by the identity
+                                               * patches — output must stay bit-for-bit the same */
+#endif
   libpd_init_audio(2, 2, SR);
   libpd_start_message(1); libpd_add_float(1.0f); libpd_finish_message("pd", "dsp");
 

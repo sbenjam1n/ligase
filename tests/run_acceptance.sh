@@ -107,6 +107,35 @@ mb=$(md5sum /tmp/harm_v5_b.morph 2>/dev/null | cut -d' ' -f1)
 loaded=$(grep -c 'morph loaded from' "$TMP/out")
 if [ -n "$ma" ] && [ "$ma" = "$mb" ] && [ "$loaded" -ge 1 ]; then report harmonic_schema_v5 1 "md5 stable $ma"; else report harmonic_schema_v5 0 "a=$ma b=$mb loaded=$loaded"; fi
 
+# --- primase pairing (Plans/web_build.md Arc B): primase = master rhythm clock driving
+#     ligase's stut. primase is a SEPARATE external repo; locate its built binary at the repo
+#     root (the bundle/CI drop point), a $PRIMASE_PD override, or a /workspace/primase sibling
+#     checkout. SKIP gracefully (does not fail the suite) when primase is not available. ---
+echo "== primase pairing (Arc B: primase master clock -> ligase stut) =="
+PRIMASE_PATH=""
+for d in "$ROOT" "${PRIMASE_PD:-}" /workspace/primase; do
+    [ -n "$d" ] || continue
+    if [ -f "$d/primase.pd_linux" ] || [ -f "$d/primase.pd_darwin" ]; then PRIMASE_PATH=$d; break; fi
+done
+if [ -z "$PRIMASE_PATH" ]; then
+    printf 'SKIP  %-42s %s\n' primase_pairing "(no primase external; set PRIMASE_PD or drop primase.pd_linux at repo root)"
+else
+    # 8 one-shot events -> 8 primase bangs -> 8 ligase stut triggers (1:1); clock-lock (delay
+    # quantization tracking primase's grid) present after the 2-bang BPM warmup; the patch also
+    # self-asserts PRIMASE_N_PASS iff exactly 8 events fired.
+    run_pd tests/primase/pair_acceptance.pd -path "$PRIMASE_PATH"
+    bangs=$(grep -c 'PRIMASE_EV: bang' "$TMP/out")
+    stut=$(grep -c 'stut triggered' "$TMP/out")
+    locked=$(grep -c 'quantized spacing' "$TMP/out")
+    npass=$(grep -cE 'PRIMASE_N_PASS: bang$' "$TMP/out")
+    nfail=$(grep -cE 'PRIMASE_N_FAIL: ' "$TMP/out")
+    if [ "$stut" -eq 8 ] && [ "$bangs" -eq 8 ] && [ "$npass" -ge 1 ] && [ "$nfail" -eq 0 ] && [ "$locked" -ge 1 ]; then
+        report primase_pairing 1 "8 events -> 8 stut (1:1), $locked clock-locked, N_PASS"
+    else
+        report primase_pairing 0 "want 8 stut/8 bangs/N_PASS/no-FAIL/locked>0 got stut=$stut bangs=$bangs npass=$npass nfail=$nfail locked=$locked -- see $TMP/out"
+    fi
+fi
+
 pkill -9 pd 2>/dev/null
 rm -rf "$TMP"
 echo "--------------------------------------------------------------"

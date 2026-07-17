@@ -17,10 +17,13 @@ dist/
 
 # Web build (Plans/web_build.md) — build outputs; sources are tracked
 web/obj/
+web/obj_primase/
 web/host_test.js
 web/host_test.wasm
 web/host_identity.js
 web/host_identity.wasm
+web/host_primase.js
+web/host_primase.wasm
 web/ligase_wasm.js
 web/ligase_wasm.wasm
 web/*.data

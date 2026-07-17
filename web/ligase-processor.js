@@ -72,6 +72,9 @@ class LigaseProcessor extends AudioWorkletProcessor {
 
     this._init();
     this._setupLigase();                              // register the compiled-in external
+    // Arc B (Plans/web_build.md B3): if primase was compiled into this WASM module,
+    // register it too, right after ligase — harmless-absent when built without PRIMASE_DIR.
+    if (mod._primase_setup) { c('primase_setup', null, [])(); }
     // AudioWorklet's sampleRate global is the graph rate; libpd adapts its 64-block to it.
     this._initAudio(2, 2, sampleRate);                // 2 in, 2 out
 

@@ -7,6 +7,9 @@
 #include <stdlib.h>
 #include "z_libpd.h"
 void ligase_tilde_setup(void);
+#ifdef WITH_PRIMASE
+void primase_setup(void);   /* Arc B: optional sibling external, compiled in when PRIMASE_DIR set */
+#endif
 static void pdprint(const char *s){ fprintf(stderr, "%s", s); }
 int main(int argc, char **argv){
   const char *patch = argc > 1 ? argv[1] : "test_sine.pd";
@@ -15,6 +18,9 @@ int main(int argc, char **argv){
   libpd_set_printhook(pdprint);
   libpd_init();
   ligase_tilde_setup();                 /* register the statically compiled-in external */
+#ifdef WITH_PRIMASE
+  primase_setup();                      /* Arc B: register [primase] alongside [ligase~] */
+#endif
   libpd_init_audio(2, 2, 48000);
   libpd_start_message(1); libpd_add_float(1.0f); libpd_finish_message("pd", "dsp");
   if (!libpd_openfile(patch, ".")) { fprintf(stderr, "FAIL: open %s\n", patch); return 1; }

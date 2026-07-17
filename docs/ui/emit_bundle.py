@@ -57,7 +57,21 @@ CONTENTS = [
     # exist; the darwin binary only exists when the bundle is built on the Mac.
     ("ligase~.pd_linux", "ligase~.pd_linux", False),
     ("ligase~.pd_darwin", "ligase~.pd_darwin", False),
+    # OPTIONAL primase (Plans/web_build.md Arc B, B3). primase is an EXTERNAL
+    # dependency — a separate repo, NOT vendored here. The desktop bundle rides it
+    # along ONLY when the builder has copied the built binary into the ligase repo
+    # root (same present-if-built pattern as ligase~.pd_darwin). To include it:
+    #   make -C /path/to/primase PD_PATH=/usr/include/pd   # build primase.pd_linux
+    #   cp /path/to/primase/primase.pd_linux .             # into the ligase repo root
+    #   make bundle                                        # primase now rides along
+    # The ligase_primase.pd demo patch is added iff a primase binary is present, so
+    # the bundle never ships a patch referencing a missing external.
+    ("primase.pd_linux", "primase.pd_linux", False),
+    ("primase.pd_darwin", "primase.pd_darwin", False),
 ]
+
+# Present-if-primase: bundled only when at least one primase external rode along.
+PRIMASE_PATCH = ("pd/ligase_primase.pd", "ligase_primase.pd")
 
 ZIP_DATE = (2026, 7, 6, 0, 0, 0)   # fixed timestamp -> deterministic archive
 
@@ -67,6 +81,7 @@ def build():
     meta_bytes = (json.dumps(META, indent=2) + "\n").encode()
     files.append((f"{PKG}/meta.json", meta_bytes))
     externals = 0
+    primase = 0
     for src, name, required in CONTENTS:
         path = os.path.join(ROOT, src)
         if not os.path.exists(path):
@@ -78,9 +93,22 @@ def build():
             files.append((f"{PKG}/{name}", f.read()))
         if name.startswith("ligase~.pd_"):
             externals += 1
+        if name.startswith("primase.pd_"):
+            primase += 1
     if externals == 0:
         sys.exit("emit_bundle: no compiled external found (run `make` first; "
                  "build on the Mac to include ligase~.pd_darwin)")
+    # The primase demo patch rides along only when a primase external is present,
+    # so the bundle never references an absent object.
+    if primase > 0:
+        src, name = PRIMASE_PATCH
+        with open(os.path.join(ROOT, src), "rb") as f:
+            files.append((f"{PKG}/{name}", f.read()))
+        print(f"emit_bundle: note — primase present ({primase} external(s)); "
+              f"bundling {name} demo patch")
+    else:
+        print("emit_bundle: note — no primase external at repo root; primase "
+              "clock demo not bundled (see CONTENTS comment to include it)")
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
@@ -114,12 +142,19 @@ def verify(names):
         for key in ("Title", "Author", "Version", "FolderName"):
             assert meta.get(key), f"meta.json missing {key}"
         # 3. contained patch set is byte-identical to the emitted ones
-        for src, name, _ in CONTENTS:
+        for src, name, _ in list(CONTENTS) + [(*PRIMASE_PATCH, False)]:
             arc = f"{PKG}/{name}"
             if arc not in entries:
                 continue
             with open(os.path.join(ROOT, src), "rb") as f:
                 assert z.read(arc) == f.read(), f"{arc} differs from {src}"
+        # 3b. the primase demo patch rides along IFF a primase external is present
+        primase_ext = any(e.endswith((".pd_linux", ".pd_darwin"))
+                          and e.rsplit("/", 1)[-1].startswith("primase.")
+                          for e in entries)
+        primase_patch = f"{PKG}/{PRIMASE_PATCH[1]}" in entries
+        assert primase_ext == primase_patch, \
+            "primase demo patch presence must match primase external presence"
         # 4. at least one platform external rode along
         assert any(e.endswith((".pd_linux", ".pd_darwin")) for e in entries), \
             "no external in bundle"
