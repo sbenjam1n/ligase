@@ -1,0 +1,96 @@
+# web-deploy.yml — build ligase to WASM and publish to GitHub Pages (Plans/web_build.md Arc A,
+# Step 5). SINGLE-THREADED, plain-Pages safe: the artifact is static files only, no COOP/COEP
+# headers are required or set (GitHub Pages can't set them anyway). The Step-2 engine-identity
+# node test runs as a REQUIRED check — a baseline regression FAILS the build before deploy.
+#
+# First run is owner-triggered: enable Pages in repo Settings -> Pages -> "Build and deployment"
+# -> Source = "GitHub Actions". Then push to the default branch (or run the workflow manually).
+name: web-deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'web/**'
+      - 'docs/ui/**'
+      - 'pd/ligase_panel.pd'
+      - '.github/workflows/web-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; don't cancel an in-progress deploy.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  EMSDK_VERSION: "6.0.3"      # pinned for reproducibility — the Seq-92 proven toolchain
+  EMSDK: ${{ github.workspace }}/.deps/emsdk
+  LIBPD_DIR: ${{ github.workspace }}/.deps/libpd
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Emscripten SDK
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk "$EMSDK"
+          "$EMSDK/emsdk" install "$EMSDK_VERSION"
+          "$EMSDK/emsdk" activate "$EMSDK_VERSION"
+
+      - name: Build libpd static WASM archive
+        run: |
+          source "$EMSDK/emsdk_env.sh"
+          git clone --depth 1 --recurse-submodules https://github.com/libpd/libpd "$LIBPD_DIR"
+          cd "$LIBPD_DIR"
+          emcmake cmake -B build_wasm -DCMAKE_BUILD_TYPE=Release
+          emmake make -C build_wasm -j4
+          emar rcs build_wasm/libpd_static.a $(find build_wasm/CMakeFiles/libpd.dir -name '*.o')
+          test -f build_wasm/libpd_static.a
+
+      # ---- REQUIRED GATE: engine identity in WASM (Step 2). Must pass before we deploy. ----
+      - name: Engine-identity gate (WASM reproduces the native baseline)
+        run: |
+          source "$EMSDK/emsdk_env.sh"
+          TARGET=identity web/build_wasm.sh
+          node web/check_identity.mjs
+
+      - name: Build the browser AudioWorklet module (Step 3)
+        run: |
+          source "$EMSDK/emsdk_env.sh"
+          TARGET=worklet web/build_wasm.sh
+
+      - name: Generate the web control surface (Step 4 — emit_web.py)
+        run: python3 docs/ui/emit_web.py
+
+      - name: Assemble the static site
+        run: web/assemble_site.sh
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

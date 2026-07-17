@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>ligase~ headless test harness</title></head>
+<body>
+<div id="out">harness loaded</div>
+<script type="module">
+/* Headless verification harness (Plans/web_build.md Steps 3-4). Exposes an API on window so a
+ * Playwright/chromium driver can exercise the real worklet path without an audio device:
+ *   window.lg.selftest(seconds)  -> {ready, peak, prints}      (DSP produces nonzero audio)
+ *   window.lg.readback(id,value) -> {sent, echoed}             (lgR_ drive -> lgS_ readback)
+ *   window.lg.reelRoundtrip()    -> {loadedLen, savedBytes, wavOK}  (MEMFS import + export)
+ *   window.lg.micWiring()        -> {graphBuilt}               (audio-in graph, no live mic)
+ */
+import { LigaseEngine } from './ligase-host.js';
+
+const log = (m) => { document.getElementById('out').textContent += '\n' + m; };
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function makeEngine(patchUrl) {
+  const patch = await (await fetch(patchUrl)).text();
+  const eng = new LigaseEngine({ base: './' });
+  const prints = []; eng.onPrint((t) => prints.push(t.replace(/\n$/, '')));
+  let peak = 0; eng.onScope((p) => { if (p > peak) peak = p; });
+  await eng.start({ patch });
+  return { eng, prints, getPeak: () => peak };
+}
+
+window.lg = {
+  async selftest(seconds = 2) {
+    const { eng, prints, getPeak } = await makeEngine('./worklet_selftest.pd');
+    await sleep(seconds * 1000);
+    return { ready: true, sampleRate: eng.ctx.sampleRate, peak: getPeak(), prints: prints.slice(-8) };
+  },
+
+  async readback(id = 'grainsize', value = 0.73) {
+    const { eng, prints } = await makeEngine('./ligase_panel.pd');
+    await sleep(400);
+    let echoed = null;
+    eng.watch('lgS_' + id, (v) => { echoed = v; });
+    await sleep(150);
+    eng.setFloat('lgR_' + id, value);
+    // wait for the iemgui echo to round-trip back over the port
+    for (let i = 0; i < 40 && echoed === null; i++) await sleep(50);
+    return { sent: value, echoed, prints: prints.slice(-4) };
+  },
+
+  async reelRoundtrip() {
+    const { eng, prints } = await makeEngine('./ligase_panel.pd');
+    await sleep(400);
+    // Build a tiny valid stereo 32-bit float WAV in-page (0.25 s @ 44100, a quiet ramp).
+    const sr = 44100, frames = 11025, ch = 2;
+    const dataBytes = frames * ch * 4;
+    const buf = new ArrayBuffer(44 + dataBytes);
+    const dv = new DataView(buf);
+    const wr4 = (o, s) => { for (let i = 0; i < 4; i++) dv.setUint8(o + i, s.charCodeAt(i)); };
+    wr4(0, 'RIFF'); dv.setUint32(4, 36 + dataBytes, true); wr4(8, 'WAVE');
+    wr4(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 3, true); dv.setUint16(22, ch, true);
+    dv.setUint32(24, sr, true); dv.setUint32(28, sr * ch * 4, true); dv.setUint16(32, ch * 4, true); dv.setUint16(34, 32, true);
+    wr4(36, 'data'); dv.setUint32(40, dataBytes, true);
+    for (let i = 0; i < frames; i++) {
+      const v = 0.5 * Math.sin(2 * Math.PI * 220 * i / sr);
+      dv.setFloat32(44 + (i * ch) * 4, v, true);
+      dv.setFloat32(44 + (i * ch + 1) * 4, v, true);
+    }
+    await eng.loadReel(buf.slice(0));           // -> /tmp/reel.wav in MEMFS -> `load`
+    // wait for the engine to report the loaded reel length
+    let loadedLen = null;
+    for (let i = 0; i < 40; i++) {
+      await sleep(50);
+      const m = prints.join('\n').match(/loaded [^\n]*?\((\d+) samples\)/);
+      if (m) { loadedLen = +m[1]; break; }
+    }
+    // export (guarded so the gate never hangs)
+    const blob = await Promise.race([eng.saveReel(), sleep(4000).then(() => null)]);
+    if (!blob) return { loadedLen, savedBytes: 0, wavOK: false, fmt: 0, prints: prints.slice(-6) };
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const hdr = String.fromCharCode(...bytes.slice(0, 4)) + String.fromCharCode(...bytes.slice(8, 12));
+    const fmt = new DataView(bytes.buffer).getUint16(20, true);
+    return { loadedLen, savedBytes: bytes.length, wavOK: hdr === 'RIFFWAVE', fmt, prints: prints.slice(-6) };
+  },
+
+  async micWiring() {
+    // getUserMedia can't be granted headless; verify the graph *construction* only.
+    const { eng } = await makeEngine('./worklet_selftest.pd');
+    let graphBuilt = false, err = null;
+    try {
+      // Stub getUserMedia to return a silent oscillator-backed MediaStream substitute.
+      const dest = eng.ctx.createMediaStreamDestination();
+      const osc = eng.ctx.createOscillator(); osc.connect(dest); osc.start();
+      navigator.mediaDevices.getUserMedia = async () => dest.stream;
+      await eng.enableMic();                 // exercises createMediaStreamSource(...).connect(node)
+      graphBuilt = !!eng.micSource;
+      eng.disableMic();
+    } catch (e) { err = String(e); }
+    return { graphBuilt, err };
+  },
+};
+log('ready');
+</script>
+</body></html>
