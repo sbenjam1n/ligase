@@ -271,6 +271,8 @@ const CSS = `
 .lg-joypad .cur::after { top:7px; left:-6px; height:1px; width:28px; }
 /* VU meter segment (positioned absolutely; driven live by engine.onVU) */
 .lg-vuseg { position:absolute; width:9px; height:8px; background:#2c2f34; pointer-events:none; }
+/* live scope canvas (phosphor XY trace over the scope bed) */
+.lg-scope { position:absolute; pointer-events:none; }
 `;
 
 function fmt(v) { v = +v; return Math.abs(v) >= 100 ? v.toFixed(0) : (Number.isInteger(v) ? String(v) : v.toFixed(2)); }
@@ -485,6 +487,33 @@ export function buildControls(engine, container, opts = {}) {
   };
   paintVU(meters[0], 0); paintVU(meters[1], 0);
   if (engine.onVU) engine.onVU((l, r) => { paintVU(meters[0], l); paintVU(meters[1], r); });
+
+  // --- live SCOPE XY (Lorenz / grain constellation) — a phosphor canvas over the scope bed
+  // (SDX,SDY,S mirror emit_svg.py), fed by engine.onScopeXY(x, y) windows from the worklet. ---
+  const SCX = 1158, SCY = 760, SCS = 216;
+  const cvs = document.createElement('canvas');
+  cvs.className = 'lg-scope'; cvs.width = SCS; cvs.height = SCS;
+  cvs.style.left = SCX + 'px'; cvs.style.top = SCY + 'px';
+  cvs.style.width = SCS + 'px'; cvs.style.height = SCS + 'px';
+  overlay.appendChild(cvs);
+  const g = cvs.getContext('2d');
+  g.fillStyle = '#0a0c0e'; g.fillRect(0, 0, SCS, SCS);
+  let smax = 0.001;                       // running magnitude for auto-scale (slow decay)
+  if (engine.onScopeXY) engine.onScopeXY((x, y) => {
+    const N = Math.min(x.length, y.length);
+    let m = smax * 0.9;
+    for (let i = 0; i < N; i++) { const ax = Math.abs(x[i]), ay = Math.abs(y[i]);
+      if (ax > m) m = ax; if (ay > m) m = ay; }
+    smax = Math.max(m, 1e-4);
+    g.fillStyle = 'rgba(10,12,14,0.22)'; g.fillRect(0, 0, SCS, SCS);   // phosphor fade
+    g.strokeStyle = '#79c98b'; g.lineWidth = 1; g.beginPath();
+    for (let i = 0; i < N; i++) {
+      const px = (x[i] / smax * 0.46 + 0.5) * SCS;
+      const py = (0.5 - y[i] / smax * 0.46) * SCS;
+      if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.stroke();
+  });
 
   return handles;
 }

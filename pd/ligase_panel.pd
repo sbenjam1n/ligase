@@ -650,6 +650,17 @@
 #X obj 400 500 s lg_state9;
 #X connect 1 8 75 0;
 #X text 500 540 scope taps: outlets 10/11 (scope_x~/scope_y~). connect an [oscilloscope~] here in plugdata for the SCOPE display \; left unconnected for headless vanilla pd;
+#X obj 700 470 table scope_x_arr 256;
+#X obj 700 500 table scope_y_arr 256;
+#X obj 500 470 tabwrite~ scope_x_arr;
+#X obj 600 470 tabwrite~ scope_y_arr;
+#X connect 1 9 79 0;
+#X connect 1 10 80 0;
+#X obj 500 410 loadbang;
+#X obj 500 440 metro 33;
+#X connect 81 0 82 0;
+#X connect 82 0 79 0;
+#X connect 82 0 80 0;
 #X restore 60 1040 pd engine;
 #N canvas 80 80 1000 2000 wiring 0;
 #X text 10 10 generated control wiring: lgS_* -> engine messages on lg_engine;
