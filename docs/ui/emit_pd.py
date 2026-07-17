@@ -545,6 +545,21 @@ def build_engine(controls):
     cv.comment(500, 540, "scope taps: outlets 10/11 (scope_x~/scope_y~). connect an "
                          "[oscilloscope~] here in plugdata for the SCOPE display; "
                          "left unconnected for headless vanilla pd")
+    # SCOPE XY tap (web build): window scope_x~/scope_y~ into two named arrays the
+    # AudioWorklet reads via libpd_read_array to draw the live XY display. Harmless in
+    # vanilla/plugdata (just two recording arrays + a 30 Hz metro); outlets 10/11 are
+    # indices 9/10 (state = outlet 9 = index 8, connected above).
+    cv.obj(700, 470, "table scope_x_arr 256")
+    cv.obj(700, 500, "table scope_y_arr 256")
+    sxw = cv.obj(500, 470, "tabwrite~ scope_x_arr")
+    syw = cv.obj(600, 470, "tabwrite~ scope_y_arr")
+    cv.connect(lig, 9, sxw, 0)
+    cv.connect(lig, 10, syw, 0)
+    slb = cv.obj(500, 410, "loadbang")
+    smt = cv.obj(500, 440, "metro 33")
+    cv.connect(slb, 0, smt, 0)
+    cv.connect(smt, 0, sxw, 0)
+    cv.connect(smt, 0, syw, 0)
     return cv
 
 

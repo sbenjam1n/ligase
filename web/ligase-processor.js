@@ -56,6 +56,7 @@ class LigaseProcessor extends AudioWorkletProcessor {
     this._bang        = c('libpd_bang', 'number', ['string']);
     this._symbol      = c('libpd_symbol', 'number', ['string', 'string']);
     this._bind        = c('libpd_bind', 'number', ['string']);
+    this._readArray   = c('libpd_read_array', 'number', ['number', 'string', 'number', 'number']);
     this._setPrint    = c('libpd_set_printhook', null, ['number']);
     this._setFloat    = c('libpd_set_floathook', null, ['number']);
     this._setupLigase = c('ligase_tilde_setup', null, []);
@@ -97,6 +98,8 @@ class LigaseProcessor extends AudioWorkletProcessor {
     this._inPtr  = this.mod._malloc(n * 4);
     this._outPtr = this.mod._malloc(n * 4);
     this._n = n;
+    this._scopeLen = 256;                              // XY window read from scope_x/y_arr
+    this._scopePtr = this.mod._malloc(this._scopeLen * 4);
     this.ticks = this.quantum / this.blocksize;       // 2
 
     this.ready = true;
@@ -202,6 +205,20 @@ class LigaseProcessor extends AudioWorkletProcessor {
       this.port.postMessage({ type: 'scope', peak });
       this.port.postMessage({ type: 'vu', l: peakL, r: peakR });
       this._scopeN = 0; this._peakL = 0; this._peakR = 0;
+    }
+
+    // Scope XY: read the two windowed arrays (scope_x~/scope_y~) ~30 Hz and ship the frame
+    // to the main thread, which draws the phosphor XY trace. read_array returns 0 if the
+    // array is absent (e.g. a patch without the tap) — then x/y stay zero, harmless.
+    this._sxN = (this._sxN || 0) + 1;
+    if (this._sxN >= 12 && this._readArray) {
+      const N = this._scopeLen, base = this._scopePtr >> 2;
+      this._readArray(this._scopePtr, 'scope_x_arr', 0, N);
+      const x = this.mod.HEAPF32.slice(base, base + N);
+      this._readArray(this._scopePtr, 'scope_y_arr', 0, N);
+      const y = this.mod.HEAPF32.slice(base, base + N);
+      this.port.postMessage({ type: 'scopexy', x, y }, [x.buffer, y.buffer]);
+      this._sxN = 0;
     }
 
     // Deferred reel save readback (engine wrote to MEMFS on a previous block).

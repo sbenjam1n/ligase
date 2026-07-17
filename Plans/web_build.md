@@ -82,9 +82,12 @@ answers for audio-in and reel file I/O without a native filesystem.
     ring+grid pins respond), placed at the SAME `panel_layout` coordinates the SVG drew them,
     so the overlay tracks the art at any scale. This is pixel parity with the silkscreen, not
     just layout parity. The panel renders on page load (the engine buffers control input until
-    Start arms audio). **Phased follow-ups** (static SVG art for now, wired later): the
-    mod-matrix pin field, joystick-pad drag (`joy_x`/`joy_y` → IN 23/24), and live scope/VU
-    display (need engine signal taps back to the main thread).
+    Start arms audio). **Every interactive surface is live (as-built, Seq 96–98):** all
+    knobs/switches/toggles/buttons, the tone-ring + pattern-grid pins, the 352-pin **mod
+    matrix** (`lgR_mx_i_j` → matrix_connect), the **morph joystick** (`joy_x`/`joy_y` → IN
+    23/24), the **VU meters** (per-channel output peaks from the worklet), and the **scope XY**
+    (ligase~ outlets 10/11 windowed into arrays the worklet reads via `libpd_read_array`, drawn
+    on a phosphor canvas). Only the reel-waveform idea was dropped (out of the panel spec).
 - **Audio in:** `getUserMedia` → a Web Audio source → the AudioWorklet feeding `[adc~]`.
   Opt-in (mic permission; HTTPS satisfied by Pages). Default OFF (many sessions are reel-only).
 - **Reel I/O without a filesystem** (`[openpanel]→load` has nothing to open):
