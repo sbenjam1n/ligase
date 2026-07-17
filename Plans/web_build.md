@@ -17,7 +17,13 @@ reel import (file→MEMFS→load) + export (save→MEMFS→Blob); `.github/workf
 emsdk+libpd+ligase, runs the identity gate as a required check, and deploys to Pages. Orchestrator
 independently re-verified (identity RMS reproduced; headless-chromium boot injects all 289 controls;
 YAML valid; src/ untouched). First Pages deploy is owner-triggered (Settings → Pages → GitHub
-Actions). Two arcs: **A. web deployment DONE**; **B. primase~ trigger/clock — queued next.**
+Actions). **Arc B DONE + verified (Seq 94):** primase~ (separate repo, not vendored) drives ligase as a
+rhythm brain — `pd/ligase_primase.pd` (outlet-0 bang → stut + ligase's cycle clock; position →
+grainstart; velocity → amplitude); optional in the desktop bundle + compiled into the WASM build
+(`PRIMASE_DIR`); `tests/primase/` self-asserting pairing (8→8 stut, clock-locked). Verified: WASM
+identity gate STILL 0.372309 with primase compiled in; no ligase/primase engine change. **Both arcs
+DONE.** Owner gates remain: enable Pages (first deploy); primase LICENSE (B6, distribution blocker);
+deferred B4 panel CLOCK-SRC switch + primase.c `(t_method)` cast cleanup (upstream) are B-items.
 **Tracked in:** `QUEUE.md` §4a (prototyping/UI/VST/web arc).
 **Related:** `Plans/vst_plugin.md` (the SAME compiled-in constraint — a third deploy target),
 `Plans/pd_panel_prototype.md` (`panel_layout.py` becomes a fourth emitter here),
