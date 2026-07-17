@@ -21,6 +21,7 @@ export class LigaseEngine {
     this._watchers = {};       // recv -> [cb...]
     this._prints = [];         // print listeners
     this._saveResolvers = [];  // pending saveReel() promises
+    this._preStart = [];       // control messages issued before start() — flushed on start
     this._readyResolve = null;
     this.ready = new Promise((res) => { this._readyResolve = res; });
   }
@@ -56,6 +57,10 @@ export class LigaseEngine {
     });
     this.node.port.onmessage = (e) => this._onmsg(e.data);
     this.node.connect(this.ctx.destination);
+    // (re)register every watch and replay any control messages issued before start()
+    for (const send of Object.keys(this._watchers)) this.node.port.postMessage({ type: 'watch', send });
+    for (const msg of this._preStart) this.node.port.postMessage(msg);
+    this._preStart = [];
     if (this.ctx.resume) { try { await this.ctx.resume(); } catch (_) {} }
     return this.ready;
   }
@@ -80,14 +85,17 @@ export class LigaseEngine {
     }
   }
 
-  /* --- control surface (lgR_ bus + ligase messages) --- */
-  setFloat(recv, value) { this.node.port.postMessage({ type: 'float', recv, value: +value }); }
-  sendBang(recv) { this.node.port.postMessage({ type: 'bang', recv }); }
-  sendSymbol(recv, value) { this.node.port.postMessage({ type: 'symbol', recv, value: String(value) }); }
-  sendMsg(recv, atoms) { this.node.port.postMessage({ type: 'msg', recv, atoms }); }
+  /* --- control surface (lgR_ bus + ligase messages) ---
+   * Messages issued before start() are buffered and replayed once the worklet exists, so the
+   * panel can render and accept input before audio is armed. */
+  _ctl(msg) { if (this.node) this.node.port.postMessage(msg); else this._preStart.push(msg); }
+  setFloat(recv, value) { this._ctl({ type: 'float', recv, value: +value }); }
+  sendBang(recv) { this._ctl({ type: 'bang', recv }); }
+  sendSymbol(recv, value) { this._ctl({ type: 'symbol', recv, value: String(value) }); }
+  sendMsg(recv, atoms) { this._ctl({ type: 'msg', recv, atoms }); }
   watch(send, cb) {
     (this._watchers[send] || (this._watchers[send] = [])).push(cb);
-    this.node.port.postMessage({ type: 'watch', send });
+    if (this.node) this.node.port.postMessage({ type: 'watch', send });
   }
 
   /* --- reel import: File/Blob/ArrayBuffer -> worklet MEMFS -> `load` --- */

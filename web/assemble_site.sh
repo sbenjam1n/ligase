@@ -14,6 +14,8 @@ need() { [ -f "$1" ] || { echo "assemble_site: missing $1 — run the build firs
 for f in index.html ligase-host.js ligase-processor.js ligase_controls.js ligase_wasm.js ligase_wasm.wasm; do
   need "$HERE/$f"; cp "$HERE/$f" "$SITE/"
 done
+# The rendered SVG silkscreen — the web UI's panel backdrop (index.html fetches it flat).
+need "$ROOT/docs/ui/ligase_synthi_panel.svg"; cp "$ROOT/docs/ui/ligase_synthi_panel.svg" "$SITE/"
 # Engine patch + optional grain cap. index.html fetches ./ligase_panel.pd (flat).
 need "$ROOT/pd/ligase_panel.pd"; cp "$ROOT/pd/ligase_panel.pd" "$SITE/"
 # The panel references its paired sub-patches; ship them if present (harmless if unused).

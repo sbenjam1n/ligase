@@ -48,8 +48,15 @@ const engine = new LigaseEngine({ base: './' });
 engine.onPrint((t) => log(t.replace(/\n$/, '')));
 let started = false;
 
-// Web UI is always responsive flow (works at any width). See Plans/web_build.md.
-const flow = true;  // always responsive flow — absolute/SVG-coordinate mode retired
+// Render the SVG panel + live overlay immediately on load. The engine buffers control input
+// until audio is armed (Start), so the instrument is visible and clickable right away.
+(async () => {
+  try {
+    const svg = await (await fetch('./ligase_synthi_panel.svg')).text();
+    buildControls(engine, $('controls'), { svg });
+    log('panel ready — ' + document.querySelectorAll('.lg-w').length + ' controls (press Start to arm audio)');
+  } catch (e) { log('panel load failed: ' + e); }
+})();
 
 $('start').addEventListener('click', async () => {
   if (started) return;
@@ -58,12 +65,11 @@ $('start').addEventListener('click', async () => {
     const patch = await (await fetch('./ligase_panel.pd')).text();
     await engine.start({ patch });
     sendDefaults(engine);
-    buildControls(engine, $('controls'), { flow });
     started = true;
     $('mic').disabled = false; $('save').disabled = false;
     $('start').textContent = '● running'; $('start').classList.add('on');
     status('running @ ' + Math.round(engine.ctx.sampleRate) + ' Hz');
-    log('engine ready — ' + document.querySelectorAll('.lg-ctl').length + ' controls');
+    log('engine armed — audio running');
   } catch (e) { status('error'); log('start failed: ' + e); $('start').disabled = false; }
 });
 
