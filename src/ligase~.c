@@ -5409,6 +5409,9 @@ static param_range_t* get_param_range_by_name(ligase_t *x, const char *name) {
     if (strcmp(name, "modout3") == 0) return &x->modout3_range;
     if (strcmp(name, "modout4") == 0) return &x->modout4_range;
 
+    // Morph route global base rate — an LFO/chaos-modulatable multiplier on route leg speed.
+    if (strcmp(name, "morph_rate") == 0) return x->morph ? &x->morph->rate_range : NULL;
+
     return NULL;
 }
 
@@ -8440,6 +8443,16 @@ static void ligase_morph_power(ligase_t *x, t_floatarg p) {
     post("ligase~: morph IDW power = %.2f", p);
 }
 
+// morph_rate <v>: the global relative base rate — a multiplier on every route leg's speed
+// (higher = faster). Used while rate_range is disabled; `param_range morph_rate <min> <max>`
+// makes it LFO/chaos-modulatable like any other param.
+static void ligase_morph_rate(ligase_t *x, t_floatarg f) {
+    if (!x->morph) return;
+    float v = f; if (v < 0.05f) v = 0.05f; else if (v > 8.0f) v = 8.0f;
+    x->morph->base_rate = v;
+    post("ligase~: morph base rate = %.3f (route leg-speed multiplier)", v);
+}
+
 // morph_cursor <0|1>: 0 = message-driven cursor (default); 1 = CV cursor (signal inlets 22/23 drive
 // cursor_x/cursor_y per block). A running route overrides it. (v1.1; honours the CV-driven invariant.)
 static void ligase_morph_cursor(ligase_t *x, t_floatarg on) {
@@ -8601,7 +8614,15 @@ static void morph_step(ligase_t *x, int n) {
     morph_waypoint_t *wp = &m->route[m->route_leg];
     float rate = (wp->rate > 0.0001f) ? wp->rate : 0.0001f;
 
-    m->route_leg_t += ((float)n / sr) / rate;
+    // Global relative base rate: scales every leg (per-leg rates keep their ratios). The
+    // multiplier is base_rate, or the swept band value when a generator drives rate_range.
+    float mult = m->rate_range.enabled
+               ? sample_param_range(&m->rate_range, &x->scheduler->perlin_state, m->base_rate)
+               : m->base_rate;
+    if (mult < 0.05f) mult = 0.05f;
+    float eff = rate / mult;                    // higher multiplier -> shorter leg -> faster
+    if (eff < 0.0001f) eff = 0.0001f;
+    m->route_leg_t += ((float)n / sr) / eff;
     float t = (m->route_leg_t > 1.0f) ? 1.0f : m->route_leg_t;
     float et = morph_curve(t, wp->curve);
     float cx = m->route_from_x + (wp->x - m->route_from_x) * et;
@@ -8625,7 +8646,9 @@ static void morph_step(ligase_t *x, int n) {
 // surface (points + cursor + route). A magic+version+size header rejects incompatible files
 // (a struct-layout change bumps sizeof, so old files are refused rather than read as garbage).
 #define MORPH_FILE_MAGIC   0x4D4F5250u   /* 'MORP' */
-#define MORPH_FILE_VERSION 4u   /* v4: morph_state_t grew for schema v5 (HARMONIC LAYER —
+#define MORPH_FILE_VERSION 5u   /* v5: morph_state_t grew a global base_rate + rate_range (the
+                                   modulatable route leg-speed multiplier).
+                                   v4: morph_state_t grew for schema v5 (HARMONIC LAYER —
                                    the 16x2 scale-slot arrays in every snapshot). v3 grew it
                                    for schema v4 (SOURCE SHAPE params + MORPH_SCALAR_COUNT
                                    64->96); v2 for schema v3 (generator params +
@@ -9477,6 +9500,7 @@ LIGASE_PUBLIC void ligase_tilde_setup(void) {
     class_addmethod(ligase_class, (t_method)ligase_morph_y,       gensym("morph_y"),       A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_interp,  gensym("morph_interp"),  A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_power,   gensym("morph_power"),   A_DEFFLOAT, 0);
+    class_addmethod(ligase_class, (t_method)ligase_morph_rate,    gensym("morph_rate"),    A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_cursor,  gensym("morph_cursor"),  A_DEFFLOAT, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_include, gensym("morph_include"), A_GIMME, 0);
     class_addmethod(ligase_class, (t_method)ligase_morph_exclude, gensym("morph_exclude"), A_GIMME, 0);

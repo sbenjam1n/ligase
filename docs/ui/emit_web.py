@@ -320,13 +320,16 @@ function createMorphSurface(engine, overlay) {
   cv.style.width = S + 'px'; cv.style.height = S + 'px';
   overlay.appendChild(cv);
   const g = cv.getContext('2d');
-  const st = { pts: [], wps: [], cx: 0.55, cy: 0.45, sel: null, nextId: 0, running: false, anim: 0, t0: 0, from: null, legRate: 1.5 };
+  const st = { pts: [], wps: [], cx: 0.55, cy: 0.45, sel: null, nextId: 0, running: false, anim: 0, t0: 0, from: null, baseRate: 1.0 };
+  const WP_RATE = 1.0;                       // default per-leg duration (seconds) for a new waypoint
   const clamp = (v) => Math.max(0, Math.min(1, v));
   const px = (v) => v * S;
-  // RATE slider (bottom strip) — seconds per route leg; sent per waypoint as morph_route's rate.
-  const R0 = 46, R1 = 150, RY = S - 8, RMIN = 0.2, RMAX = 6.0, RBAND = S - 16;
+  // BASE-RATE slider (bottom strip) — the global relative multiplier on every leg (engine's
+  // modulatable `morph_rate`). Per-leg rates live on each waypoint (wheel over it to set).
+  const R0 = 52, R1 = 150, RY = S - 8, RMIN = 0.1, RMAX = 4.0, RBAND = S - 16;
   const rateToX = (r) => R0 + (r - RMIN) / (RMAX - RMIN) * (R1 - R0);
   const xToRate = (xp) => Math.round((RMIN + clamp((xp - R0) / (R1 - R0)) * (RMAX - RMIN)) / 0.05) * 0.05;
+  const wpHit = (x, y) => st.wps.find((w) => Math.hypot(w.x - x, w.y - y) < 0.055);
 
   function draw() {
     g.fillStyle = '#141619'; g.fillRect(0, 0, S, S);
@@ -339,7 +342,12 @@ function createMorphSurface(engine, overlay) {
       path.forEach((p, i) => { const x = px(p.x), y = px(p.y); i ? g.lineTo(x, y) : g.moveTo(x, y); });
       g.stroke(); g.setLineDash([]);
     }
-    st.wps.forEach((p) => { g.fillStyle = '#8a6d3b'; g.beginPath(); g.arc(px(p.x), px(p.y), 3, 0, 7); g.fill(); });
+    st.wps.forEach((p, i) => {
+      g.fillStyle = (p === st.sel) ? '#e8c47c' : '#8a6d3b';
+      g.beginPath(); g.arc(px(p.x), px(p.y), 3.5, 0, 7); g.fill();
+      g.fillStyle = '#b79a63'; g.font = '7px ui-monospace,monospace'; g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillText(p.rate.toFixed(1) + 's', px(p.x) + 5, px(p.y) - 4);
+    });
     st.pts.forEach((p) => {
       const x = px(p.x), y = px(p.y);
       g.beginPath(); g.arc(x, y, 7, 0, 7);
@@ -354,20 +362,20 @@ function createMorphSurface(engine, overlay) {
     g.beginPath(); g.moveTo(cxp - 11, cyp); g.lineTo(cxp + 11, cyp); g.moveTo(cxp, cyp - 11); g.lineTo(cxp, cyp + 11); g.stroke();
     if (!st.pts.length) {
       g.fillStyle = '#6b7075'; g.font = '8px ui-monospace,monospace'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-      g.fillText('SNAP drops a snapshot here', S / 2, S - 50);
-      g.fillText('drag = morph · shift-click = route pt · dblclick pt = remove', S / 2, S - 38);
+      g.fillText('SNAP drops a snapshot · drag = morph', S / 2, S - 50);
+      g.fillText('shift-click = route pt (wheel it = leg rate) · dblclick = remove', S / 2, S - 38);
     }
-    // RATE strip (route leg duration)
+    // BASE-RATE strip — the global multiplier (engine morph_rate); modulatable
     g.fillStyle = '#0f1113'; g.fillRect(0, RBAND, S, S - RBAND);
     g.fillStyle = '#8a6d3b'; g.font = 'bold 7px ui-monospace,monospace'; g.textAlign = 'left'; g.textBaseline = 'middle';
-    g.fillText('RATE', 6, RY);
+    g.fillText('BASE', 6, RY);
     g.strokeStyle = '#3a3d40'; g.lineWidth = 2; g.lineCap = 'round';
     g.beginPath(); g.moveTo(R0, RY); g.lineTo(R1, RY); g.stroke();
-    const hx = rateToX(st.legRate);
+    const hx = rateToX(st.baseRate);
     g.strokeStyle = '#8a6d3b'; g.beginPath(); g.moveTo(R0, RY); g.lineTo(hx, RY); g.stroke();
     g.fillStyle = '#e8c47c'; g.beginPath(); g.arc(hx, RY, 4, 0, 7); g.fill();
     g.fillStyle = '#b9bec4'; g.textAlign = 'left';
-    g.fillText(st.legRate.toFixed(2) + ' s/leg', R1 + 8, RY);
+    g.fillText('×' + st.baseRate.toFixed(2), R1 + 8, RY);
   }
 
   const rectXY = (e) => { const r = cv.getBoundingClientRect();
@@ -376,24 +384,39 @@ function createMorphSurface(engine, overlay) {
   const msg = (...a) => engine.sendMsg('lg_engine', a);
   function setCursor(x, y, send) { st.cx = x; st.cy = y; if (send) { engine.setFloat('lgR_joy_x', x); engine.setFloat('lgR_joy_y', y); } draw(); }
 
+  const setBase = (v) => { st.baseRate = Math.max(RMIN, Math.min(RMAX, v)); msg('morph_rate', st.baseRate); draw(); };
   let mode = null, dragPt = null;
   cv.addEventListener('pointerdown', (e) => {
     const { x, y } = rectXY(e);
-    if (y * S >= RBAND) { mode = 'rate'; st.legRate = xToRate(x * S); draw();
+    if (y * S >= RBAND) { mode = 'rate'; setBase(xToRate(x * S));
       try { cv.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
-    if (e.shiftKey) { st.wps.push({ x, y }); draw(); return; }
+    if (e.shiftKey) { const w = { x, y, rate: WP_RATE }; st.wps.push(w); st.sel = w; draw(); return; }
+    const wp = wpHit(x, y);
+    if (wp) { st.sel = wp; mode = 'wp'; dragPt = wp; draw();
+      try { cv.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
     const p = hit(x, y);
     if (p) { st.sel = p; dragPt = p; mode = 'pt'; draw(); }
-    else { mode = 'cur'; setCursor(x, y, true); }
+    else { st.sel = null; mode = 'cur'; setCursor(x, y, true); }
     try { cv.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault();
   });
   cv.addEventListener('pointermove', (e) => { if (!mode) return; const { x, y } = rectXY(e);
-    if (mode === 'rate') { st.legRate = xToRate(x * S); draw(); }
+    if (mode === 'rate') { setBase(xToRate(x * S)); }
+    else if (mode === 'wp' && dragPt) { dragPt.x = x; dragPt.y = y; draw(); }
     else if (mode === 'pt' && dragPt) { dragPt.x = x; dragPt.y = y; msg('morph_point', dragPt.id, x, y); draw(); }
     else if (mode === 'cur') setCursor(x, y, true); });
   const end = () => { mode = null; dragPt = null; };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
-  cv.addEventListener('dblclick', (e) => { const { x, y } = rectXY(e); const p = hit(x, y);
+  // wheel over a waypoint tunes ITS per-leg rate; elsewhere it nudges the base rate
+  cv.addEventListener('wheel', (e) => { e.preventDefault(); const { x, y } = rectXY(e);
+    const wp = wpHit(x, y) || (st.wps.includes(st.sel) ? st.sel : null);
+    const d = -Math.sign(e.deltaY) * 0.1;
+    if (wp) { wp.rate = Math.max(0.1, Math.min(8, Math.round((wp.rate + d) / 0.1) * 0.1)); }
+    else { setBase(Math.round((st.baseRate + d) / 0.05) * 0.05); }
+    draw(); }, { passive: false });
+  cv.addEventListener('dblclick', (e) => { const { x, y } = rectXY(e);
+    const wp = wpHit(x, y);
+    if (wp) { st.wps = st.wps.filter((q) => q !== wp); if (st.sel === wp) st.sel = null; draw(); return; }
+    const p = hit(x, y);
     if (p) { msg('morph_unplace', p.id); msg('snapshot_clear', p.id);
       st.pts = st.pts.filter((q) => q !== p); if (st.sel === p) st.sel = null; draw(); } });
 
@@ -402,14 +425,19 @@ function createMorphSurface(engine, overlay) {
     const p = { id, x: st.cx, y: st.cy, label }; st.pts.push(p); st.sel = p; draw(); }
   function stop() { msg('morph_stop'); st.running = false; if (st.anim) { cancelAnimationFrame(st.anim); st.anim = 0; } draw(); }
   function run() {
-    const path = st.wps.length ? st.wps.slice() : st.pts.map((p) => ({ x: p.x, y: p.y }));
-    if (!path.length) return; const rate = st.legRate;
-    msg('morph_route_clear'); path.forEach((p) => msg('morph_route', p.x, p.y, rate, 3)); msg('morph_run', 1);
+    const legs = st.wps.length ? st.wps.map((w) => ({ x: w.x, y: w.y, rate: w.rate }))
+                               : st.pts.map((p) => ({ x: p.x, y: p.y, rate: WP_RATE }));
+    if (!legs.length) return;
+    msg('morph_rate', st.baseRate);           // global multiplier (engine scales every leg)
+    msg('morph_route_clear'); legs.forEach((l) => msg('morph_route', l.x, l.y, l.rate, 3)); msg('morph_run', 1);
     st.running = true; st.t0 = performance.now(); st.from = { x: st.cx, y: st.cy };
-    const total = path.length * rate;
+    const durs = legs.map((l) => Math.max(0.05, l.rate) / st.baseRate);   // seconds per leg (base-scaled)
+    const total = durs.reduce((a, b) => a + b, 0);
     const tick = (now) => { if (!st.running) return;
-      const el = ((now - st.t0) / 1000) % total, leg = Math.floor(el / rate), lt = (el - leg * rate) / rate;
-      const a = leg === 0 ? st.from : path[leg - 1], b = path[leg], s = lt * lt * (3 - 2 * lt);
+      let el = ((now - st.t0) / 1000) % total, leg = 0;
+      while (leg < durs.length - 1 && el >= durs[leg]) { el -= durs[leg]; leg++; }
+      const lt = clamp(el / durs[leg]);
+      const a = leg === 0 ? st.from : legs[leg - 1], b = legs[leg], s = lt * lt * (3 - 2 * lt);
       st.cx = a.x + (b.x - a.x) * s; st.cy = a.y + (b.y - a.y) * s; draw();
       st.anim = requestAnimationFrame(tick); };
     st.anim = requestAnimationFrame(tick);

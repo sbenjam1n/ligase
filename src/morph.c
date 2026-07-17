@@ -14,6 +14,7 @@ void morph_state_init(morph_state_t *m) {
     m->idw_power   = 2.0f;
     m->cursor_x    = 0.5f;
     m->cursor_y    = 0.5f;
+    m->base_rate   = 1.0f;   // route leg-speed multiplier (rate_range memset-disabled)
     // selection tree defaults to ALL fields included
     for (int i = 0; i < MORPH_INCLUDE_COUNT; i++) m->included[i] = 1;
 }

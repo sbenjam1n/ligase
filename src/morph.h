@@ -144,6 +144,13 @@ typedef struct {
     float route_leg_t;              // 0..1 progress within the current leg
     float route_from_x, route_from_y; // leg start coordinate
     int   route_loop;               // loop the path?
+
+    // GLOBAL BASE RATE — a relative multiplier on EVERY route leg's rate: the per-leg rates
+    // keep their ratios, base_rate scales them all (higher = faster). LFO/chaos-modulatable
+    // via rate_range (`param_range morph_rate <min> <max>` + a generator), exactly like every
+    // other modulatable param. base_rate is the value used while rate_range is disabled.
+    float         base_rate;        // default 1.0
+    param_range_t rate_range;       // optional modulation band on the base rate
 } morph_state_t;
 
 // ── Pure helpers (no struct _ligase access; implemented in morph.c) ──────────
