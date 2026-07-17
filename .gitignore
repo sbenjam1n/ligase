@@ -31,3 +31,5 @@ web/*.data
 web/ligase_controls.js
 # assembled static site (assemble_site.sh)
 web/site/
+# session scratch (temp verification scripts, WAVs, test patches)
+scratchpad/
