@@ -320,9 +320,13 @@ function createMorphSurface(engine, overlay) {
   cv.style.width = S + 'px'; cv.style.height = S + 'px';
   overlay.appendChild(cv);
   const g = cv.getContext('2d');
-  const st = { pts: [], wps: [], cx: 0.55, cy: 0.45, sel: null, nextId: 0, running: false, anim: 0, t0: 0, from: null };
+  const st = { pts: [], wps: [], cx: 0.55, cy: 0.45, sel: null, nextId: 0, running: false, anim: 0, t0: 0, from: null, legRate: 1.5 };
   const clamp = (v) => Math.max(0, Math.min(1, v));
   const px = (v) => v * S;
+  // RATE slider (bottom strip) — seconds per route leg; sent per waypoint as morph_route's rate.
+  const R0 = 46, R1 = 150, RY = S - 8, RMIN = 0.2, RMAX = 6.0, RBAND = S - 16;
+  const rateToX = (r) => R0 + (r - RMIN) / (RMAX - RMIN) * (R1 - R0);
+  const xToRate = (xp) => Math.round((RMIN + clamp((xp - R0) / (R1 - R0)) * (RMAX - RMIN)) / 0.05) * 0.05;
 
   function draw() {
     g.fillStyle = '#141619'; g.fillRect(0, 0, S, S);
@@ -350,9 +354,20 @@ function createMorphSurface(engine, overlay) {
     g.beginPath(); g.moveTo(cxp - 11, cyp); g.lineTo(cxp + 11, cyp); g.moveTo(cxp, cyp - 11); g.lineTo(cxp, cyp + 11); g.stroke();
     if (!st.pts.length) {
       g.fillStyle = '#6b7075'; g.font = '8px ui-monospace,monospace'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
-      g.fillText('SNAP drops a snapshot here', S / 2, S - 30);
-      g.fillText('drag = morph · shift-click = route pt · dblclick pt = remove', S / 2, S - 18);
+      g.fillText('SNAP drops a snapshot here', S / 2, S - 50);
+      g.fillText('drag = morph · shift-click = route pt · dblclick pt = remove', S / 2, S - 38);
     }
+    // RATE strip (route leg duration)
+    g.fillStyle = '#0f1113'; g.fillRect(0, RBAND, S, S - RBAND);
+    g.fillStyle = '#8a6d3b'; g.font = 'bold 7px ui-monospace,monospace'; g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillText('RATE', 6, RY);
+    g.strokeStyle = '#3a3d40'; g.lineWidth = 2; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(R0, RY); g.lineTo(R1, RY); g.stroke();
+    const hx = rateToX(st.legRate);
+    g.strokeStyle = '#8a6d3b'; g.beginPath(); g.moveTo(R0, RY); g.lineTo(hx, RY); g.stroke();
+    g.fillStyle = '#e8c47c'; g.beginPath(); g.arc(hx, RY, 4, 0, 7); g.fill();
+    g.fillStyle = '#b9bec4'; g.textAlign = 'left';
+    g.fillText(st.legRate.toFixed(2) + ' s/leg', R1 + 8, RY);
   }
 
   const rectXY = (e) => { const r = cv.getBoundingClientRect();
@@ -364,6 +379,8 @@ function createMorphSurface(engine, overlay) {
   let mode = null, dragPt = null;
   cv.addEventListener('pointerdown', (e) => {
     const { x, y } = rectXY(e);
+    if (y * S >= RBAND) { mode = 'rate'; st.legRate = xToRate(x * S); draw();
+      try { cv.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
     if (e.shiftKey) { st.wps.push({ x, y }); draw(); return; }
     const p = hit(x, y);
     if (p) { st.sel = p; dragPt = p; mode = 'pt'; draw(); }
@@ -371,7 +388,8 @@ function createMorphSurface(engine, overlay) {
     try { cv.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault();
   });
   cv.addEventListener('pointermove', (e) => { if (!mode) return; const { x, y } = rectXY(e);
-    if (mode === 'pt' && dragPt) { dragPt.x = x; dragPt.y = y; msg('morph_point', dragPt.id, x, y); draw(); }
+    if (mode === 'rate') { st.legRate = xToRate(x * S); draw(); }
+    else if (mode === 'pt' && dragPt) { dragPt.x = x; dragPt.y = y; msg('morph_point', dragPt.id, x, y); draw(); }
     else if (mode === 'cur') setCursor(x, y, true); });
   const end = () => { mode = null; dragPt = null; };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
@@ -385,7 +403,7 @@ function createMorphSurface(engine, overlay) {
   function stop() { msg('morph_stop'); st.running = false; if (st.anim) { cancelAnimationFrame(st.anim); st.anim = 0; } draw(); }
   function run() {
     const path = st.wps.length ? st.wps.slice() : st.pts.map((p) => ({ x: p.x, y: p.y }));
-    if (!path.length) return; const rate = 1.5;
+    if (!path.length) return; const rate = st.legRate;
     msg('morph_route_clear'); path.forEach((p) => msg('morph_route', p.x, p.y, rate, 3)); msg('morph_run', 1);
     st.running = true; st.t0 = performance.now(); st.from = { x: st.cx, y: st.cy };
     const total = path.length * rate;
