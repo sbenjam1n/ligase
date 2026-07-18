@@ -2,6 +2,8 @@
 
 A granular synthesizer/sampler/looper/delay external for [Pure Data](https://puredata.info/) with real-time recording, splice-based sample organization, multi-mode filtering, distortion, and chaotic parameter modulation.
 
+You can try out the still-in-development UI here: https://sbenjam1n.github.io/ligase/
+
 ## Features
 
 - **Asynchronous granular synthesis** with configurable grain pool (1-2000 grains)
