@@ -4,6 +4,9 @@ A granular synthesizer/sampler/looper/delay external for [Pure Data](https://pur
 
 You can try out the still-in-development UI here: https://sbenjam1n.github.io/ligase/
 
+<img width="2456" height="1096" alt="image" src="https://github.com/user-attachments/assets/941c279c-3f4c-4ebe-b502-ac1a7811cfc8" />
+
+
 ## Features
 
 - **Asynchronous granular synthesis** with configurable grain pool (1-2000 grains)
