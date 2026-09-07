@@ -6,10 +6,9 @@
  */
 (function () {
   const listeners = {};
-  const emit = (ev) => {
+  const emit = (ev, ...args) => {
     const l = listeners[ev]; if (!l) return;
-    const args = Array.prototype.slice.call(arguments, 1);
-    for (const cb of l) { try { cb.apply(null, args); } catch (e) { console.error('bridge', ev, e); } }
+    for (const cb of l) { try { cb(...args); } catch (e) { console.error('bridge', ev, e); } }
   };
   const b64 = (s) => {
     try { return decodeURIComponent(escape(atob(s))); } catch (e) { try { return atob(s); } catch (_) { return ''; } }

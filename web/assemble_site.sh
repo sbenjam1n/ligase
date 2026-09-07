@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # assemble_site.sh — gather the deployable static site into web/site/ (Plans/web_build.md Step 5).
 # Everything the browser needs, flat, so it serves off plain GitHub Pages with no COOP/COEP:
-#   index.html, ligase-host.js, ligase-processor.js, ligase_controls.js (emit_web output),
+#   index.html, ligase-host.js, ligase-processor.js, ligase_panel_logic.js (the panel brain),
+#   ligase_controls.js (emit_web output),
 #   ligase_wasm.js/.wasm (TARGET=worklet build), the engine patch(es), ligase.conf.
 # web/site/ is a build output (gitignored). Run after build_wasm.sh TARGET=worklet + emit_web.py.
 set -euo pipefail
@@ -11,7 +12,7 @@ SITE="$HERE/site"
 rm -rf "$SITE"; mkdir -p "$SITE"
 
 need() { [ -f "$1" ] || { echo "assemble_site: missing $1 — run the build first" >&2; exit 1; }; }
-for f in index.html ligase-host.js ligase-processor.js ligase_controls.js ligase_wasm.js ligase_wasm.wasm; do
+for f in index.html ligase-host.js ligase-processor.js ligase_panel_logic.js ligase_controls.js ligase_wasm.js ligase_wasm.wasm; do
   need "$HERE/$f"; cp "$HERE/$f" "$SITE/"
 done
 # The rendered SVG silkscreen — the web UI's panel backdrop (index.html fetches it flat).

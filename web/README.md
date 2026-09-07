@@ -70,8 +70,13 @@ lgR_/lgS_ readback, MEMFS reel load/save, mic-graph wiring — via `test_harness
   `pd quit` (the harness controls block count), for the identity gate.
 - `worklet_selftest.pd` — noise→ligase→dac self-source for the Step-3 DSP-nonzero check.
 - `ligase-processor.js` — the AudioWorkletProcessor (one WASM engine on the audio thread).
-- `ligase-host.js` — main-thread orchestration (Web Audio, port bus, reel/mic).
-- `index.html` — the deployable player shell (start / mic / reel load+export + generated GUI).
+- `ligase-host.js` — main-thread orchestration (Web Audio, port bus, reel/mic) + `webBridge()`, the
+  browser side of the panel-bridge contract (`docs/ui/panel_bridge.md`).
+- `ligase_panel_logic.js` — the hand-written panel BRAIN (`createPanel(bridge, CONTROLS, TABLES)`):
+  every bind kind + every `special` of `panel_layout.py`, ported from the Pd wiring. DOM-free.
+- `test_panel_logic.mjs` — node tests for the brain + bridge against the generated descriptors
+  (`node web/test_panel_logic.mjs`; regenerates `ligase_controls.js` if missing).
+- `index.html` — the deployable player shell (start / mic / reel load+export / Web MIDI + computer-keyboard notes + the panel).
 - `test_harness.html` — headless verification API (test-only; not deployed).
 - `assemble_site.sh` — gathers the flat static site into `web/site/`.
 - (generated: `ligase_controls.js` from `docs/ui/emit_web.py`; outputs `obj/`, `host_*.js/.wasm`,

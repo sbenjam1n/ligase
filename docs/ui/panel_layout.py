@@ -144,8 +144,8 @@ CONTROLS = [
 
     # ---------- F. GRAIN ENVELOPE + PITCH/MIDI ----------
     _c("env_type", "switch", dict(x=140, y=704, w=140, labels=["PARA", "TRAP", "COS", "GAUS", "EXP"], sel=2, title="TYPE"),
-       ("msgmap", ["envelope 0", "envelope 1", "envelope 2", None, None]), lo=0, hi=4, default=2,
-       note="engine implements 0-2 only; GAUS/EXP are silkscreen-forward positions (no message)"),
+       ("msgmap", ["envelope 0", "envelope 1", "envelope 2", "envelope 3", "envelope 4"]), lo=0, hi=4, default=2,
+       note="engine envelope 0-4: parabolic, trapezoidal, cosine, gaussian, exponential (3/4 accepted since the envelope 3/4 patch)"),
     _c("skew", "knob", dict(x=262, y=712, name="SKEW", rng="0 – 1", inlet="IN 20", cap="white", pos=0.5),
        ("inlet", 20), lo=0.0, hi=1.0, default=0.5),
     _c("saw_cycles", "knob", dict(x=322, y=712, name="SAW CYC", rng="0 – 64", inlet="MSG", cap="grey", pos=0.1, small=True),
@@ -460,6 +460,35 @@ XPNDR_FIELDS = {
 # OFF=NONE(0), PERL=PERLIN_1D(2), LRNZ=LORENZ(4), NBDY=NBODY(5), SPHR=SPHERE(6),
 # RAND=RAND(1), PAT=PATTERN(10). rand_instance is 0-based.
 XPNDR_SOURCE_CODES = [0, 2, 4, 5, 6, 1, 10]
+
+
+# XPNDR band MIN/MAX scaling: the MIN/MAX knobs are 0-1 panel sliders; the panel brain
+# (web/ligase_panel_logic.js, the plugin UI) maps them into the band field's natural engine
+# range before `snapbuf_set <band_field> min|max <v>` (the historical "normalized 0-1 raw
+# field units" seam). Keys = *_range field names (XPNDR_FIELDS band_field); a field absent
+# here spans [0, 1]. Ranges follow src/ligase~.c update_inlets / param_range validation.
+XPNDR_BAND_RANGES = {
+    "moog_cutoff_range": [20, 20000],
+    "moog_resonance_range": [0, 4],
+    "grainsize_range": [0.001, 2],
+    "iot_range": [0.0005, 2],
+    "speed_range": [-4, 4],
+    "scanrate_range": [-8, 8],
+    "maxgrains_range": [1, 200],
+    "gdelay_range": [0, 9.5],
+    "smear_frequency_range": [20, 20000],
+    "smear_stages_range": [0, 48],
+    "smear_feedback_range": [-0.99, 0.99],
+    "smear_pitch_semitones_range": [-24, 24],
+    "smear_pitch_fine_range": [-0.5, 0.5],
+    "pitch_semitones_range": [-24, 24],
+    "pitch_fine_range": [-0.5, 0.5],
+    "saw_cycles_range": [0, 64],
+    "dist_pregain_range": [0.1, 10],
+    "dist_drive_pos_range": [1, 20],
+    "dist_drive_neg_range": [1, 20],
+    "amplitude_range": [0, 2],
+}
 
 
 # ---------- DISTORTION preset knob -> message bundles (a preset = a message bundle) ----------

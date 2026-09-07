@@ -18,9 +18,11 @@
  *   {type:'saveReel', path}              -> msg 'save'; then read FS -> post {type:'reelBytes'}
  *   {type:'micEnable', on}               -> (host wires the graph; this just notes state)
  * Outbound to host:
- *   {type:'ready', sampleRate, blocksize}
+ *   {type:'ready', sampleRate, blocksize, hooks}   hooks = message/list hooks available (outlet 9)
  *   {type:'print', text}
  *   {type:'value', recv, value}          (a watched lgS_/state float)
+ *   {type:'msg', recv, sel, atoms}       (a watched receiver got a message or list; sel='list' for
+ *                                         lists — ligase~ outlet 9 arrives on lg_state9 this way)
  *   {type:'reelBytes', path, bytes}      (transferable ArrayBuffer)
  */
 
@@ -59,6 +61,11 @@ class LigaseProcessor extends AudioWorkletProcessor {
     this._readArray   = c('libpd_read_array', 'number', ['number', 'string', 'number', 'number']);
     this._setPrint    = c('libpd_set_printhook', null, ['number']);
     this._setFloat    = c('libpd_set_floathook', null, ['number']);
+    // message + list hooks (outlet-9 replies on lg_state9). Guarded: a WASM built before these
+    // were exported (build_wasm.sh LIGASE_EXPORTS) still boots — just without out9 traffic.
+    const hasHooks = typeof mod._libpd_set_messagehook === 'function' && typeof mod._libpd_set_listhook === 'function';
+    this._setMessage  = hasHooks ? c('libpd_set_messagehook', null, ['number']) : null;
+    this._setList     = hasHooks ? c('libpd_set_listhook', null, ['number']) : null;
     this._setupLigase = c('ligase_tilde_setup', null, []);
 
     // Register print + float hooks as C callbacks (ALLOW_TABLE_GROWTH + addFunction).
@@ -70,6 +77,30 @@ class LigaseProcessor extends AudioWorkletProcessor {
     }, 'vif');
     this._setPrint(printHook);
     this._setFloat(floatHook);
+    if (hasHooks) {
+      // t_atom on wasm32 = 8 bytes: int32 a_type (1 = A_FLOAT, 2 = A_SYMBOL) + a 4-byte union
+      // (float, or a t_symbol* whose first field is the char *s_name).
+      const readAtoms = (argc, argv) => {
+        const out = [];
+        for (let i = 0; i < argc; i++) {
+          const p = argv + i * 8;
+          const type = mod.getValue(p, 'i32');
+          if (type === 1) out.push(mod.getValue(p + 4, 'float'));
+          else if (type === 2) out.push(mod.UTF8ToString(mod.getValue(mod.getValue(p + 4, '*'), '*')));
+          else out.push(null);
+        }
+        return out;
+      };
+      const messageHook = mod.addFunction((recvPtr, selPtr, argc, argv) => {
+        this.port.postMessage({ type: 'msg', recv: mod.UTF8ToString(recvPtr), sel: mod.UTF8ToString(selPtr), atoms: readAtoms(argc, argv) });
+      }, 'viiii');
+      const listHook = mod.addFunction((recvPtr, argc, argv) => {
+        this.port.postMessage({ type: 'msg', recv: mod.UTF8ToString(recvPtr), sel: 'list', atoms: readAtoms(argc, argv) });
+      }, 'viii');
+      this._setMessage(messageHook);
+      this._setList(listHook);
+    }
+    this.hasHooks = hasHooks;
 
     this._init();
     this._setupLigase();                              // register the compiled-in external
@@ -87,6 +118,9 @@ class LigaseProcessor extends AudioWorkletProcessor {
       const h = this._openfile('patch.pd', '/');
       if (!h) this.port.postMessage({ type: 'error', text: 'libpd_openfile failed' });
     }
+    // The engine's state outlet (outlet 9) is published on the lg_state9 bus by the panel
+    // patch; bind it so the message/list hooks relay every reply (get_params, snapbuf, ...).
+    if (hasHooks && !this.watched.lg_state9) this.watched.lg_state9 = this._bind('lg_state9');
     // DSP on.
     this._startMsg(1); this._addFloat(1); this._finishMsg('pd', 'dsp');
 
@@ -103,7 +137,7 @@ class LigaseProcessor extends AudioWorkletProcessor {
     this.ticks = this.quantum / this.blocksize;       // 2
 
     this.ready = true;
-    this.port.postMessage({ type: 'ready', sampleRate, blocksize: this.blocksize });
+    this.port.postMessage({ type: 'ready', sampleRate, blocksize: this.blocksize, hooks: hasHooks });
     // Flush any queued control messages that arrived before boot.
     if (this._queue) { for (const m of this._queue) this._apply(m); this._queue = null; }
   }

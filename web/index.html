@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ligase~ — browser</title>
+<link rel="icon" href="data:,">
 <style>
   :root { color-scheme: dark; }
   body { margin:0; background:#1c1e20; color:#ece8da;
@@ -21,6 +22,13 @@
     font-size:11px; color:#9a9d9f; white-space:pre-wrap; }
   #drop { border:1px dashed #55585c; padding:5px 10px; border-radius:2px; }
   #drop.hot { border-color:#9fd0a0; color:#9fd0a0; }
+  /* on-screen MIDI keyboard: one octave + C, mirrors the computer-key map */
+  #keys { display:flex; gap:2px; align-items:flex-end; padding:6px 12px; border-top:1px solid #3a3d40; }
+  #keys .k { width:26px; height:34px; border:1px solid #55585c; border-radius:0 0 3px 3px; background:#ece8da; color:#26282b;
+    font:10px/1 ui-monospace,monospace; display:flex; align-items:flex-end; justify-content:center; padding-bottom:3px; cursor:pointer; user-select:none; }
+  #keys .k.b { background:#26282b; color:#ece8da; height:22px; width:20px; margin:0 -11px; z-index:1; align-items:flex-start; padding-top:2px; }
+  #keys .k.down { background:#e8c47c; color:#26282b; }
+  #keys .lbl { color:#9a9d9f; font-size:11px; margin-right:10px; align-self:center; }
 </style>
 </head>
 <body>
@@ -28,35 +36,56 @@
   <h1>ligase~</h1>
   <button id="start">▶ Start audio</button>
   <button id="mic" disabled>🎙 Mic: off</button>
+  <button id="midi" title="Web MIDI input → the engine's midi message">🎹 MIDI</button>
   <label class="file">📂 Load reel<input id="loadfile" type="file" accept=".wav,audio/wav" hidden></label>
   <span id="drop">…or drop a WAV here</span>
   <button id="save" disabled>💾 Export reel</button>
   <span id="status">idle</span>
 </header>
 <div id="panelwrap"><div id="controls"></div></div>
+<div id="keys"><span class="lbl">KEYS · a–k white, w e t y u sharps, z/x octave</span></div>
 <div id="log"></div>
 
 <script type="module">
-import { LigaseEngine } from './ligase-host.js';
-import { buildControls, sendDefaults } from './ligase_controls.js';
+import { LigaseEngine, webBridge } from './ligase-host.js';
+import { createPanel } from './ligase_panel_logic.js';
+import { buildControls, sendDefaults, CONTROLS, TABLES } from './ligase_controls.js';
 
 const $ = (id) => document.getElementById(id);
 const log = (m) => { const el = $('log'); el.textContent += m + '\n'; el.scrollTop = el.scrollHeight; };
 const status = (m) => { $('status').textContent = m; };
 
 const engine = new LigaseEngine({ base: './' });
-engine.onPrint((t) => log(t.replace(/\n$/, '')));
-let started = false;
+// The bridge (docs/ui/panel_bridge.md): panel brain <-> libpd/WASM engine. The panel's own
+// SELECT REEL / EXPORT REEL buttons route to the shell's file controls through host().
+const bridge = webBridge(engine, CONTROLS, {
+  host: (action) => { if (action === 'load_reel') $('loadfile').click(); else if (action === 'save_reel') $('save').click(); },
+});
+bridge.on('print', (t) => log(t.replace(/\n$/, '')));
+const surface = createPanel(bridge, CONTROLS, TABLES);
+let handles = null, started = false;
+window.__ligase = { engine, bridge, surface, get handles() { return handles; } };   // test / console hook
 
 // Render the SVG panel + live overlay immediately on load. The engine buffers control input
 // until audio is armed (Start), so the instrument is visible and clickable right away.
 (async () => {
   try {
     const svg = await (await fetch('./ligase_synthi_panel.svg')).text();
-    buildControls(engine, $('controls'), { svg });
-    log('panel ready — ' + document.querySelectorAll('.lg-w').length + ' controls (press Start to arm audio)');
+    handles = buildControls(surface, $('controls'), { svg });
+    surface.attach(handles);
+    log('panel ready — ' + document.querySelectorAll('.lg-w').length + ' widgets (press Start to arm audio)');
   } catch (e) { log('panel load failed: ' + e); }
 })();
+
+// header status line: transport / splice / bpm from the bridge's assembled status
+bridge.on('status', (st) => {
+  if (!started) return;
+  const bits = ['running @ ' + Math.round(engine.ctx.sampleRate) + ' Hz'];
+  if (st.bpm) bits.push(st.bpm.toFixed(1) + ' bpm');
+  if (typeof st.splice === 'number') bits.push('splice ' + st.splice + '/' + st.splices);
+  if (st.playing) bits.push('PLAY'); if (st.recording) bits.push('REC');
+  status(bits.join(' · '));
+});
 
 $('start').addEventListener('click', async () => {
   if (started) return;
@@ -64,12 +93,12 @@ $('start').addEventListener('click', async () => {
   try {
     const patch = await (await fetch('./ligase_panel.pd')).text();
     await engine.start({ patch });
-    sendDefaults(engine);
+    sendDefaults(surface);
     started = true;
     $('mic').disabled = false; $('save').disabled = false;
     $('start').textContent = '● running'; $('start').classList.add('on');
     status('running @ ' + Math.round(engine.ctx.sampleRate) + ' Hz');
-    log('engine armed — audio running');
+    log('engine armed — audio running' + (engine.hooks ? '' : ' (this WASM has no outlet-9 hooks: status readbacks unavailable)'));
   } catch (e) { status('error'); log('start failed: ' + e); $('start').disabled = false; }
 });
 
@@ -82,6 +111,7 @@ $('mic').addEventListener('click', async () => {
 
 $('loadfile').addEventListener('change', async (e) => {
   const f = e.target.files[0]; if (!f) return;
+  if (!started) { log('press Start first, then load the reel'); return; }
   await engine.loadReel(f); log('loaded reel: ' + f.name + ' (' + f.size + ' bytes -> MEMFS)');
 });
 
@@ -90,16 +120,66 @@ const drop = $('drop');
 ['dragleave', 'drop'].forEach((ev) => drop.addEventListener(ev, () => drop.classList.remove('hot')));
 drop.addEventListener('drop', async (e) => {
   e.preventDefault(); const f = e.dataTransfer.files[0]; if (!f) return;
+  if (!started) { log('press Start first, then drop the reel'); return; }
   await engine.loadReel(f); log('dropped reel: ' + f.name);
 });
 
 $('save').addEventListener('click', async () => {
+  if (!started) return;
   status('exporting…');
   const blob = await engine.saveReel();
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = 'ligase_reel.wav';
   document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
   status('running'); log('exported reel (' + blob.size + ' bytes)');
+});
+
+// ---- MIDI input: computer keyboard + on-screen keys + Web MIDI -> bridge.note(ch, note, vel) ----
+// a–k = white notes from C3 (MIDI 60), w e t y u = the sharps, z / x = octave down / up.
+const KEYMAP = { a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12 };
+const KEYLABELS = [['a', 'C'], ['w', 'C#'], ['s', 'D'], ['e', 'D#'], ['d', 'E'], ['f', 'F'], ['t', 'F#'], ['g', 'G'], ['y', 'G#'], ['h', 'A'], ['u', 'A#'], ['j', 'B'], ['k', 'C']];
+let octave = 0;
+const held = new Map();                          // key -> note (so an octave change still releases)
+const keyEls = {};
+const noteOn = (key) => { if (held.has(key)) return; const n = 60 + 12 * octave + KEYMAP[key]; if (n < 1 || n > 127) return;
+  held.set(key, n); surface.note(1, n, 100); if (keyEls[key]) keyEls[key].classList.add('down'); };
+const noteOff = (key) => { const n = held.get(key); if (n == null) return; held.delete(key); surface.note(1, n, 0);
+  if (keyEls[key]) keyEls[key].classList.remove('down'); };
+const typing = (e) => /^(INPUT|TEXTAREA|SELECT)$/.test((e.target && e.target.tagName) || '');
+window.addEventListener('keydown', (e) => {
+  if (typing(e) || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z') { octave = Math.max(-4, octave - 1); log('keyboard octave ' + octave); return; }
+  if (k === 'x') { octave = Math.min(4, octave + 1); log('keyboard octave ' + octave); return; }
+  if (k in KEYMAP) { noteOn(k); e.preventDefault(); }
+});
+window.addEventListener('keyup', (e) => { const k = e.key.toLowerCase(); if (k in KEYMAP) noteOff(k); });
+window.addEventListener('blur', () => { for (const k of [...held.keys()]) noteOff(k); });
+for (const [key, name] of KEYLABELS) {
+  const el = document.createElement('div'); el.className = 'k' + (name.includes('#') ? ' b' : ''); el.textContent = key; el.title = name;
+  el.addEventListener('pointerdown', (e) => { e.preventDefault(); noteOn(key); try { el.setPointerCapture(e.pointerId); } catch (_) {} });
+  el.addEventListener('pointerup', () => noteOff(key)); el.addEventListener('pointercancel', () => noteOff(key));
+  $('keys').appendChild(el); keyEls[key] = el;
+}
+
+// Web MIDI (when the browser has it): note on/off from every input -> bridge.note
+let midiAccess = null;
+$('midi').addEventListener('click', async () => {
+  if (midiAccess) { for (const inp of midiAccess.inputs.values()) inp.onmidimessage = null; midiAccess = null;
+    $('midi').classList.remove('on'); $('midi').textContent = '🎹 MIDI'; log('Web MIDI off'); return; }
+  if (!navigator.requestMIDIAccess) { log('Web MIDI is not available in this browser'); return; }
+  try {
+    midiAccess = await navigator.requestMIDIAccess();
+    const wire = (inp) => { inp.onmidimessage = (ev) => {
+      const [stat, d1, d2] = ev.data; const type = stat & 0xf0, ch = (stat & 0x0f) + 1;
+      if (type === 0x90 && d2 > 0) surface.note(ch, d1, d2);
+      else if (type === 0x80 || (type === 0x90 && d2 === 0)) surface.note(ch, d1, 0);
+    }; };
+    for (const inp of midiAccess.inputs.values()) wire(inp);
+    midiAccess.onstatechange = (ev) => { if (ev.port && ev.port.type === 'input' && ev.port.state === 'connected') wire(ev.port); };
+    $('midi').classList.add('on'); $('midi').textContent = '🎹 MIDI: ' + midiAccess.inputs.size + ' in';
+    log('Web MIDI on — ' + midiAccess.inputs.size + ' input(s)');
+  } catch (e) { log('Web MIDI denied: ' + e); }
 });
 </script>
 </body>

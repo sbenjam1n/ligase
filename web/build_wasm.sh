@@ -102,10 +102,11 @@ else
   #   - ENVIRONMENT=web,worker              -> no node/shell glue paths.
   #   - WASM_ASYNC_COMPILATION=0            -> synchronous instantiate from a passed wasmBinary
   #                                            (AudioWorkletGlobalScope has no fetch()).
-  #   - ALLOW_TABLE_GROWTH + addFunction    -> register JS print/float hooks as C callbacks.
+  #   - ALLOW_TABLE_GROWTH + addFunction    -> register JS print/float/message/list hooks as C
+  #                                            callbacks (message/list = outlet-9 replies on lg_state9).
   # The full libpd C API is exported so the worklet drives the engine (process, messages,
   # the lgR_/lgS_ bus, reel MEMFS I/O).
-  LIGASE_EXPORTS='["_libpd_init","_libpd_clear_search_path","_libpd_add_to_search_path","_libpd_init_audio","_libpd_process_float","_libpd_openfile","_libpd_closefile","_libpd_start_message","_libpd_add_float","_libpd_add_symbol","_libpd_finish_message","_libpd_finish_list","_libpd_float","_libpd_symbol","_libpd_bang","_libpd_bind","_libpd_unbind","_libpd_set_printhook","_libpd_set_floathook","_libpd_blocksize","_libpd_read_array","_ligase_tilde_setup","_malloc","_free"]'
+  LIGASE_EXPORTS='["_libpd_init","_libpd_clear_search_path","_libpd_add_to_search_path","_libpd_init_audio","_libpd_process_float","_libpd_openfile","_libpd_closefile","_libpd_start_message","_libpd_add_float","_libpd_add_symbol","_libpd_finish_message","_libpd_finish_list","_libpd_float","_libpd_symbol","_libpd_bang","_libpd_bind","_libpd_unbind","_libpd_set_printhook","_libpd_set_floathook","_libpd_set_messagehook","_libpd_set_listhook","_libpd_blocksize","_libpd_read_array","_ligase_tilde_setup","_malloc","_free"]'
   # When primase is compiled in, export its setup so the worklet host can register it too
   # (Plans/web_build.md B3 web). Harmless-absent: the processor calls it only if present.
   if [ ${#PRIMASE_FLAGS[@]} -gt 0 ]; then

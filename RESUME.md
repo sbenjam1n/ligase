@@ -42,7 +42,10 @@ this is the "where we are / how to continue" digest._
    `webBridge` in the browser (lgR_/lg_engine + outlet-9 message/list hooks, keyboard + Web MIDI)
    and over `plugin/ui/bridge.js` in the plugin (parameters + the transient `cmd` state + base64
    live channels). Seams closed: real splice LED/ENTER, MASTER, ENV GAUS/EXP, SCOPE VIEW, XPNDR
-   band scaling + VALUE LED, scope-follows-FAMILY, quantize snap.
+   band scaling + VALUE LED, scope-follows-FAMILY, quantize snap. Verified: 32/32 node tests;
+   browser prototype headless 32/32 with the real WASM engine (661 widgets, 0 errors); plugin page
+   headless 16/16 with a mocked DPF bridge (0 errors); SVG identity gate empty; regenerated Pd panel
+   loads with 0 errors.
 3. **Engine fixes in `src/`** (regression-exact — reel byte-identical, 14/14 acceptance):
    per-instance Perlin table (was a process global, corrupting a second instance), per-object
    organize jitter filter (was a function static), `envelope 3/4` accepted, `get_params` now
