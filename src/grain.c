@@ -196,13 +196,13 @@ float sample_scale_semitones(const pitch_scale_t *scale, perlin_state_t *perlin_
 
         case RAND_TYPE_PERLIN_1D: {
             float coord_1d = perlin_state->noise_1d_coord[instance] + perlin_state->instance_offset_1d[instance];
-            random_value = (perlin1d(coord_1d) + 1.0f) * 0.5f;
+            random_value = (perlin1d(perlin_state, coord_1d) + 1.0f) * 0.5f;
             break;
         }
 
         case RAND_TYPE_PERLIN_2D: {
             float coord_2d_x = perlin_state->noise_2d_coord_x[instance] + perlin_state->instance_offset_2d[instance];
-            random_value = (perlin2d(coord_2d_x, 0.5f) + 1.0f) * 0.5f;
+            random_value = (perlin2d(perlin_state, coord_2d_x, 0.5f) + 1.0f) * 0.5f;
             break;
         }
 
@@ -321,7 +321,7 @@ float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, flo
             // Use 1D Perlin noise with instance offset for decorrelation
             // (returns -1.0 to 1.0, map to 0.0 to 1.0)
             float coord_1d = perlin_state->noise_1d_coord[instance] + perlin_state->instance_offset_1d[instance];
-            random_value = (perlin1d(coord_1d) + 1.0f) * 0.5f;
+            random_value = (perlin1d(perlin_state, coord_1d) + 1.0f) * 0.5f;
             break;
         }
 
@@ -329,7 +329,7 @@ float sample_param_range(param_range_t *range, perlin_state_t *perlin_state, flo
             // Use 2D Perlin noise with base_value as Y coordinate and instance offset
             // (returns -1.0 to 1.0, map to 0.0 to 1.0)
             float coord_2d_x = perlin_state->noise_2d_coord_x[instance] + perlin_state->instance_offset_2d[instance];
-            random_value = (perlin2d(coord_2d_x, perlin_2d_y) + 1.0f) * 0.5f;
+            random_value = (perlin2d(perlin_state, coord_2d_x, perlin_2d_y) + 1.0f) * 0.5f;
             break;
         }
 
@@ -434,7 +434,7 @@ float mod_source_value(perlin_state_t *ps, int source) {
     }
     if (source >= MOD_SRC_PERLIN1 && source <= MOD_SRC_PERLIN4) {
         int i = source - MOD_SRC_PERLIN1;
-        return (perlin1d(ps->noise_1d_coord[i] + ps->instance_offset_1d[i]) + 1.0f) * 0.5f;
+        return (perlin1d(ps, ps->noise_1d_coord[i] + ps->instance_offset_1d[i]) + 1.0f) * 0.5f;
     }
     if (source >= MOD_SRC_LORENZ1 && source <= MOD_SRC_LORENZ4) {
         int i = source - MOD_SRC_LORENZ1;
@@ -824,8 +824,8 @@ scheduler_t* scheduler_create(envelope_t *env, int sample_rate) {
         sched->perlin_state.rand_seed[i] = base_seed + i * 12345;
     }
 
-    // Initialize one Perlin permutation table (shared by all instances)
-    perlin_init(base_seed);
+    // Initialize THIS engine's Perlin permutation table (per instance — see types.h)
+    perlin_init(&sched->perlin_state, base_seed);
 
     // Initialize 4 1D coordinates to 0 with unique offsets (large primes for decorrelation)
     float offsets_1d[4] = {0.0f, 1000.0f, 2003.0f, 3001.0f};

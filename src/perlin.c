@@ -22,28 +22,31 @@ static unsigned char perlin_base[256] = {
     138,236,205,93,222,114,67,29,24,72,243,141,128,195,78,66,215,61,156,180
 };
 
-// Permutation table (256 entries, duplicated for wrapping)
-unsigned char perlin_perm[512];
+// Initialize the per-instance permutation table with a seed. A small local LCG (the same
+// constants glibc's rand() family derives from) replaces srand()/rand(): the shuffle is
+// self-contained, so instantiating an engine never perturbs process-global libc random
+// state (or another engine instance's table — the table lives in perlin_state_t now).
+void perlin_init(perlin_state_t *state, unsigned int seed) {
+    unsigned char *perm = state->perm;
 
-// Initialize permutation table with seed
-void perlin_init(unsigned int seed) {
     // Copy base pattern
     for (int i = 0; i < 256; i++) {
-        perlin_perm[i] = perlin_base[i];
+        perm[i] = perlin_base[i];
     }
 
-    // Shuffle using seed
-    srand(seed);
+    // Shuffle using seed (Fisher-Yates driven by a local LCG)
+    unsigned int lcg = seed ? seed : 0x9E3779B9u;
     for (int i = 255; i > 0; i--) {
-        int j = rand() % (i + 1);
-        unsigned char temp = perlin_perm[i];
-        perlin_perm[i] = perlin_perm[j];
-        perlin_perm[j] = temp;
+        lcg = lcg * 1103515245u + 12345u;
+        int j = (int)((lcg >> 16) % (unsigned int)(i + 1));
+        unsigned char temp = perm[i];
+        perm[i] = perm[j];
+        perm[j] = temp;
     }
 
     // Duplicate for wrapping (avoids modulo operations)
     for (int i = 0; i < 256; i++) {
-        perlin_perm[256 + i] = perlin_perm[i];
+        perm[256 + i] = perm[i];
     }
 }
 
@@ -77,7 +80,8 @@ static inline float grad1d(int hash, float x) {
 }
 
 // Optimized 1D Perlin noise
-float perlin1d(float x) {
+float perlin1d(const perlin_state_t *state, float x) {
+    const unsigned char *perlin_perm = state->perm;
     // Find unit grid cell containing point
     int X = (int)floorf(x) & 255;  // Bitwise AND for wrapping
 
@@ -109,7 +113,8 @@ static inline float grad2d(int hash, float x, float y) {
 }
 
 // Optimized 2D Perlin noise
-float perlin2d(float x, float y) {
+float perlin2d(const perlin_state_t *state, float x, float y) {
+    const unsigned char *perlin_perm = state->perm;
     // Find unit grid cell containing point
     int X = (int)floorf(x) & 255;  // Bitwise AND for wrapping
     int Y = (int)floorf(y) & 255;

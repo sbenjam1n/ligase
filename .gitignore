@@ -33,3 +33,9 @@ web/ligase_controls.js
 web/site/
 # session scratch (temp verification scripts, WAVs, test patches)
 scratchpad/
+
+# plugin build outputs
+plugin/build/
+plugin/bin/
+plugin/resources/
+plugin/tests/build/

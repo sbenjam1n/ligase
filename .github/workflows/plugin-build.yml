@@ -1,0 +1,63 @@
+# plugin-build.yml — build ligase as a plugin (VST3 / VST2 / CLAP / LV2 / JACK; + AU on macOS) with
+# the DPF submodule, run the engine-identity gate (the hosted engine must reproduce the native
+# AUTOMATED_TEST_PROCEDURE baseline bit-for-bit) and the CLAP host smoke test, and publish the
+# binaries as workflow artifacts.
+name: plugin-build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'plugin/**'
+      - 'docs/ui/**'
+      - 'web/ligase_panel_logic.js'
+      - '.github/workflows/plugin-build.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'plugin/**'
+      - 'docs/ui/**'
+      - 'web/ligase_panel_logic.js'
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential python3 libx11-dev libxext-dev libxrandr-dev libxcursor-dev libdbus-1-dev libgl-dev
+      - name: Engine identity gate (hosted engine == native Pd baseline)
+        run: make -C plugin/tests
+      - name: Build plugin (all formats)
+        run: make -C plugin -j4
+      - name: CLAP host smoke test (audio in -> reel -> MIDI playback -> state round trip)
+        run: make -C plugin/tests clap
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ligase-plugins-linux-x86_64
+          path: plugin/bin
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Engine identity gate
+        run: make -C plugin/tests
+      - name: Build plugin (all formats incl. AU)
+        run: make -C plugin -j4
+      - name: CLAP host smoke test
+        run: make -C plugin/tests clap CLAP_BIN=$(pwd)/plugin/bin/ligase.clap/Contents/MacOS/ligase
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: ligase-plugins-macos
+          path: plugin/bin

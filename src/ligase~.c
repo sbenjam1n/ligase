@@ -367,6 +367,11 @@ struct _ligase {
     // Headless mode: 0=disabled (full 0.0-1.0 range), 1=enabled (epsilon thresholds for SOS/grain_start)
     int headless_mode;
 
+    // Last organize CV value applied to splice_organize (jitter filter). PER OBJECT: this was a
+    // function-local static in ligase_update_inlets, so two instances in one process (two plugin
+    // instances) suppressed each other's splice navigation.
+    float last_organize;
+
     // Sample rate
     int sample_rate;
 
@@ -663,12 +668,11 @@ static void ligase_update_inlets(ligase_t *x,
 
     if (should_update_organize) {
         // Only update if value changed significantly (avoid jitter)
-        static float last_organize = -1.0f;
-        if (fabsf(organize_val - last_organize) > 0.001f) {
+        if (fabsf(organize_val - x->last_organize) > 0.001f) {
             if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: Calling splice_organize...\n");
             splice_organize(&x->reel->splices, organize_val);
             if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: splice_organize returned\n");
-            last_organize = organize_val;
+            x->last_organize = organize_val;
         }
     }
 
@@ -3465,8 +3469,16 @@ static void ligase_envelope(ligase_t *x, t_floatarg type) {
             new_type = ENVELOPE_COSINE;
             type_name = "cosine";
             break;
+        case 3:
+            new_type = ENVELOPE_GAUSSIAN;      // envelope.c has always generated these two;
+            type_name = "gaussian";            // the panel's GAUS/EXP positions now reach them
+            break;
+        case 4:
+            new_type = ENVELOPE_EXPONENTIAL;
+            type_name = "exponential";
+            break;
         default:
-            post("ligase~: invalid envelope type %d (use 0=parabolic, 1=trapezoidal, 2=cosine)", env_type);
+            post("ligase~: invalid envelope type %d (use 0=parabolic, 1=trapezoidal, 2=cosine, 3=gaussian, 4=exponential)", env_type);
             return;
     }
 
@@ -6975,6 +6987,83 @@ static void ligase_get_params(ligase_t *x) {
     // Output BPM
     SETFLOAT(&argv[0], x->bpm);
     outlet_anything(x->x_state_out, gensym("bpm"), 1, argv);
+
+    // Transport / reel readbacks (additive — outlet-9 consumers [route] what they want).
+    // These give a control surface a real splice display and record/play state instead of a
+    // panel-side counter (the historical "current splice is console-only" seam).
+    {
+        t_atom a2[2];
+        SETFLOAT(&a2[0], (float)x->reel->splices.current_splice);
+        SETFLOAT(&a2[1], (float)x->reel->splices.count);
+        outlet_anything(x->x_state_out, gensym("splice"), 2, a2);
+        SETFLOAT(&a2[0], (float)x->reel->length);
+        SETFLOAT(&a2[1], (float)x->reel->sample_rate);
+        outlet_anything(x->x_state_out, gensym("reel"), 2, a2);
+        SETFLOAT(&argv[0], (float)(x->is_playing != 0));
+        outlet_anything(x->x_state_out, gensym("playing"), 1, argv);
+        SETFLOAT(&argv[0], (float)(x->recorder->is_recording != 0));
+        outlet_anything(x->x_state_out, gensym("recording"), 1, argv);
+        SETFLOAT(&argv[0], (float)x->recorder->mode);
+        outlet_anything(x->x_state_out, gensym("rec_mode"), 1, argv);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Host status API (src/ligase_status.h) — a read-only snapshot of transport/reel/morph state for
+// an embedding host (the VST/CLAP plugin reads this at UI rate instead of parsing outlet 9).
+// Pure reads of plain fields; safe to call between perform calls from the host's control thread.
+// ---------------------------------------------------------------------------------------------
+#include "ligase_status.h"
+
+void ligase_status(const void *obj, ligase_status_t *st) {
+    const ligase_t *x = (const ligase_t *)obj;
+    memset(st, 0, sizeof(*st));
+    if (!x || !x->reel || !x->recorder || !x->scheduler) return;
+    st->sample_rate       = x->sample_rate;
+    st->reel_length       = x->reel->length;
+    st->reel_capacity     = x->reel->capacity;
+    st->splice_count      = x->reel->splices.count;
+    st->splice_current    = x->reel->splices.current_splice;
+    if (x->reel->splices.count > 0) {
+        uint32_t s0 = 0, s1 = 0;
+        splice_get_bounds(&x->reel->splices, x->reel->splices.current_splice, (int)x->reel->length, &s0, &s1);
+        st->splice_start = (int)s0;
+        st->splice_end   = (int)s1;
+    }
+    st->playing           = x->is_playing != 0;
+    st->triggering        = x->is_triggering != 0;
+    st->recording         = x->recorder->is_recording != 0;
+    st->record_mode       = (int)x->recorder->mode;
+    st->record_position   = x->recorder->record_position;
+    st->playback_position = x->playback_position;
+    st->bpm               = (float)x->bpm;
+    st->clock_running     = x->clock_running != 0;
+    st->poly              = x->scheduler->poly_enabled != 0;
+    st->voice_count       = x->scheduler->voice_count;
+    st->pitch_mode        = (int)x->scheduler->pitch_control.mode;
+    st->midi_note         = x->scheduler->pitch_control.midi_note;
+    st->max_grains        = x->scheduler->max_grains;
+    st->pool_size         = x->scheduler->pool_size;
+    {
+        int n = 0;
+        for (grain_t *g = x->scheduler->active_list; g && n < x->scheduler->pool_size; g = g->next) n++;
+        st->active_grains = n;
+    }
+    st->headless          = x->headless_mode;
+    st->delay_mode        = x->grain_delay ? (int)x->grain_delay->mode : 0;
+    st->smear_mode        = x->smear_mode;
+    st->playhead_mode     = (int)x->playhead_mode;
+    st->snapbuf_has       = x->snapbuf_has;
+    st->snapbuf_audition  = x->snapbuf_audition;
+    if (x->morph) {
+        st->morph_cursor_x = x->morph->cursor_x;
+        st->morph_cursor_y = x->morph->cursor_y;
+        st->morph_points   = x->morph->point_count;
+        st->morph_route_len = x->morph->route_len;
+        st->morph_running  = x->morph->route_active;
+        for (int i = 0; i < MORPH_MAX_SNAPSHOTS && i < 64; i++)
+            if (x->morph->snaps[i].in_use) st->snapshot_mask |= (1ull << i);
+    }
 }
 
 // @endregion:ligase_pd.pd_external.methods.query.get_params
@@ -7268,6 +7357,7 @@ static void *ligase_new(void) {
     x->fx_shadow.gdelay_tone = 0.5f; x->fx_shadow.gdelay_mix = 0.0f;
 
     // Initialize parameters
+    x->last_organize = -1.0f;   // organize jitter filter: no CV applied yet
     x->grain_size = 0.1f;
     x->grain_start = 0.5f;
     x->speed = 1.0f;

@@ -3704,3 +3704,21 @@ All messages are routable lists
 Limitations
 
 No quantization state - timesig/quant settings not exported
+
+
+## Hosting ligase~ outside Pure Data (plugin build)
+
+`plugin/` hosts the identical engine as a VST3/VST2/CLAP/LV2/AU/JACK plugin (`docs/plugin_build.md`).
+Everything documented in this manual — every message selector, inlet and outlet — is the plugin's
+control vocabulary; the GUI is the same control surface as the Pd panel and the browser build.
+
+Changes made for hosting (all backward compatible in Pd):
+
+- `envelope <type>` now accepts `3` (gaussian) and `4` (exponential) in addition to 0–2; the tables
+  always existed in `envelope.c`.
+- `get_params` additionally reports `splice <current> <count>`, `reel <length_samples> <rate>`,
+  `playing <0|1>`, `recording <0|1>` and `rec_mode <0|1|2>` on outlet 9, so a control surface can
+  show the real current splice and transport state.
+- Two instances in one process no longer share state (the Perlin permutation table and the
+  organize-CV jitter filter are per instance).
+- `src/ligase_status.h` exposes a read-only status snapshot (`ligase_status()`) for hosts.

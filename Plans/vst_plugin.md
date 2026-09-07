@@ -2,7 +2,12 @@
 
 **Owner:** SLB
 **Date:** 2026-07-05
-**Status:** PLANNED (GATE A — owner decisions below; recommendations flagged [R]).
+**Status:** v2 (native engine extraction) DELIVERED 2026-09-07 — `plugin/` (DPF: VST3/VST2/CLAP/LV2/JACK
++ AU), see `docs/plugin_build.md`. The v1 plugdata route was NOT taken: DPF's ISC licence and its own
+VST3 ABI keep the combined work GPL-2.0-only (GATE A.2 resolved by construction). GATE A.3 widened: every
+panel control with an engine binding is a host parameter (`docs/ui/emit_plugin.py`). Owner gates that
+remain: DAW hands-on on the Mac (AU/VST3 load, GUI in WKWebView), ear-test of the default DIST ON level.
+_Original plan text follows for provenance._
 **GATE A.2 (license) DEFERRED by owner 2026-07-06** ("I can set the license later, no one
 is using it but us right now") — personal-use builds are unaffected; the decision must land
 before any *distribution* of a combined plugdata/VST3 build. Not a blocker for v1 build work.

@@ -736,6 +736,12 @@ typedef struct {
     // 4 random seeds (one for each rand instance)
     unsigned int rand_seed[4];
 
+    // Perlin permutation table (256 entries, duplicated for wrapping). PER INSTANCE: it used
+    // to be a process-wide global written by perlin_init(), which meant creating a second
+    // engine (a second plugin instance) reshuffled the table under the first instance's
+    // running audio thread. Now every engine owns its own table (seeded in scheduler_create).
+    unsigned char perm[512];
+
     // 4 Lorenz attractor instances
     lorenz_state_t lorenz[4];
 

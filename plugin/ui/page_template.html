@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ligase</title>
+<style>
+  html, body { margin:0; padding:0; background:#c9cbce; color:#26282b; overflow:hidden; height:100%;
+    font:12px/1.4 ui-monospace,Menlo,Consolas,monospace; -webkit-user-select:none; user-select:none; }
+  #controls { width:100%; }
+  #controls .lg-stage { max-width:none; }
+  #bar { position:fixed; left:0; right:0; bottom:0; height:18px; background:#1c1e20; color:#9fd0a0;
+    font-size:11px; line-height:18px; padding:0 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #bar b { color:#ece8da; }
+</style>
+</head>
+<body>
+<div id="controls"></div>
+<div id="bar"><b>ligase~</b> <span id="status">starting…</span></div>
+<script type="text/plain" id="ligase-svg">__SVG__</script>
+<script>const LIGASE_PARAMS = __PARAMS__;</script>
+<script>__CONTROLS_JS__</script>
+<script>__LOGIC_JS__</script>
+<script>__BRIDGE_JS__</script>
+<script>
+(function () {
+  const bridge = window.LigaseBridge;
+  bridge.init(LIGASE_PARAMS);
+  const surface = createPanel(bridge, CONTROLS, TABLES);
+  const svg = document.getElementById('ligase-svg').textContent;
+  const handles = buildControls(surface, document.getElementById('controls'), { svg: svg });
+  surface.attach(handles);
+  const bar = document.getElementById('status');
+  let lastLog = '';
+  bridge.on('print', (t, err) => { lastLog = (err ? '! ' : '') + t; bar.textContent = lastLog; });
+  bridge.on('status', (st) => {
+    bar.textContent = 'splice ' + (st.splice + 1) + '/' + st.splices + ' · reel ' + (st.reelSr ? (st.reelLen / st.reelSr).toFixed(1) : '0.0') + ' s'
+      + (st.playing ? ' · PLAY' : '') + (st.recording ? ' · REC' : '') + (st.bpm > 0 ? ' · ' + st.bpm.toFixed(1) + ' bpm' : '')
+      + ' · grains ' + st.activeGrains + (st.voices ? ' · voices ' + st.voices : '') + (lastLog ? '   |   ' + lastLog : '');
+  });
+  bridge.on('panel', (obj) => { if (surface.setPanelState) surface.setPanelState(obj); });
+  // persist the panel-side state (debounced) so a DAW project reopens the surface as left
+  let saveT = 0;
+  const schedSave = () => { clearTimeout(saveT); saveT = setTimeout(() => { if (surface.getPanelState) bridge.savePanel(surface.getPanelState()); }, 800); };
+  const origSet = surface.set.bind(surface), origBang = surface.bang.bind(surface);
+  surface.set = (id, v) => { origSet(id, v); schedSave(); };
+  surface.bang = (id) => { origBang(id); schedSave(); };
+  // computer-keyboard MIDI: a s d f g h j k = C D E F G A B C, w e t y u = sharps, z / x = octave
+  let octave = 4;
+  const keymap = { a:0, w:1, s:2, e:3, d:4, f:5, t:6, g:7, y:8, h:9, u:10, j:11, k:12 };
+  const held = {};
+  window.addEventListener('keydown', (e) => {
+    if (e.repeat) return;
+    if (e.key === 'z') { octave = Math.max(0, octave - 1); return; }
+    if (e.key === 'x') { octave = Math.min(8, octave + 1); return; }
+    const semi = keymap[e.key]; if (semi === undefined) return;
+    const note = 12 * (octave + 1) + semi; if (note < 1 || note > 127) return;
+    held[e.key] = note; bridge.note(1, note, 100);
+  });
+  window.addEventListener('keyup', (e) => { const n = held[e.key]; if (n === undefined) return; delete held[e.key]; bridge.note(1, n, 0); });
+  if (typeof sendDefaults === 'function') { /* the DSP side already applied the panel defaults; only the visuals need them */ }
+  bar.textContent = 'ready — ' + Object.keys(handles).length + ' controls';
+})();
+</script>
+</body>
+</html>

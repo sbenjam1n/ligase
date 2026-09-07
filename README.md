@@ -27,6 +27,15 @@ You can try out the still-in-development UI here: https://sbenjam1n.github.io/li
 grains → delay → [RECORDING] → smear → distortion → Moog → dac~
 ```
 
+## Plugin (VST3 / VST2 / CLAP / LV2 / AU / JACK)
+
+The same engine runs in a DAW: `plugin/` hosts `ligase~` through a small Pure Data API shim
+(the engine compiles unmodified and is bit-identical to the Pd build), with audio in
+(recording), MIDI in (chordal poly, CC map, pitch bend, program change → snapshots), host
+transport → tempo clock, every panel control as an automatable parameter, full project state,
+and the SVG control surface as the GUI. Build: `git submodule update --init --recursive &&
+make -C plugin`. See [docs/plugin_build.md](docs/plugin_build.md).
+
 ## Requirements
 
 - [Pure Data](https://puredata.info/) (Pd)

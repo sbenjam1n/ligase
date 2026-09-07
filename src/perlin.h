@@ -7,11 +7,10 @@
 
 // @region:ligase_pd.utils.random.perlin.tables Precomputed Permutation Tables
 
-// Permutation table for Perlin noise (256 entries, duplicated for wrapping)
-extern unsigned char perlin_perm[512];
-
-// Initialize permutation table with seed
-void perlin_init(unsigned int seed);
+// Initialize this state's permutation table (perlin_state_t.perm) with a seed. The shuffle
+// uses a local PRNG — NOT srand()/rand() — so building one engine never disturbs the libc
+// random stream of the host process or of another engine instance.
+void perlin_init(perlin_state_t *state, unsigned int seed);
 
 // Reset Perlin noise coordinates for a specific instance (0-3)
 void perlin_reset_coords(perlin_state_t *state, int instance);
@@ -23,7 +22,7 @@ void perlin_reset_coords(perlin_state_t *state, int instance);
 // Optimized 1D Perlin noise function
 // Returns value in range [-1.0, 1.0]
 // Uses single-precision float math for efficiency
-float perlin1d(float x);
+float perlin1d(const perlin_state_t *state, float x);
 
 // @endregion:ligase_pd.utils.random.perlin.perlin_1d
 
@@ -32,7 +31,7 @@ float perlin1d(float x);
 // Optimized 2D Perlin noise function
 // Returns value in range [-1.0, 1.0]
 // Uses single-precision float math and bitwise operations for efficiency
-float perlin2d(float x, float y);
+float perlin2d(const perlin_state_t *state, float x, float y);
 
 // @endregion:ligase_pd.utils.random.perlin.perlin_2d
 
