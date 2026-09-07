@@ -362,7 +362,7 @@ matrix_connect <source> <dest> <depth> - Add/update a routing connection (depth 
   pitch_scale_slot, smear_pitch_scale_slot, scale_rotate, smear_scale_rotate
   Destinations, per-grain (applied at grain trigger): speed, grainsize, grain_start,
   amplitude, pan, pitch_fine
-matrix_disconnect <source> <dest> - Disable a connection (kept; re-connect re-enables)
+matrix_disconnect <source> <dest> - Disable a connection (kept; re-connect re-enables; a full matrix reuses inert slots)
 matrix_clear - Remove all connections (matrix inert)
 matrix_dump - Post current connections to the console
 env_follow_ms <0-60000> - Envelope follower release time in ms (default 30; 0 = instant)
@@ -458,7 +458,7 @@ Patterns (TidalCycles Mini-Notation)
 pattern <param|pitch|slot> <tokens...> - Step-sequence a parameter (or pitch) from a mini-notation pattern
 pattern event <action> <tokens...> - FIRE events from a pattern: grain | splice | retrig | gate | bang ('trigger' = accepted alias)
 pattern_cycle <N/D> <N/D> ... - Quantization-cycle length as musical durations at the detected BPM (default = 1 bar)
-pattern_clear <param|pitch|slot> - Detach a pattern; restore the prior source (pitch -> OFF; slot also resets an event tag)
+pattern_clear <param|pitch|slot> - Detach a pattern; restore the prior source AND the band's prior enabled/min/max (pitch -> OFF; slot also resets an event tag)
 pattern_debug <0|1> - Log step / event / semitone changes to stderr (off by default)
 
 Tokens are space-separated: values 0..1 for params or scale degrees for pitch; < > alternation
@@ -3033,7 +3033,9 @@ Up to 32 connections. Unknown source or destination names are rejected with an e
 the matrix unchanged.
 
 matrix_disconnect <source> <dest> - Disable that connection (the slot is kept; a later
-matrix_connect of the same pair re-enables it in place).
+matrix_connect of the same pair re-enables it in place). When all 32 slots are taken, a
+matrix_connect of a NEW pair reclaims a disconnected slot instead of refusing, so a control
+surface can re-patch freely; only 32 simultaneously ENABLED connections are ever possible.
 
 matrix_clear - Remove all connections. Instantly restores exact pre-matrix behavior.
 
@@ -3362,7 +3364,9 @@ morph_power <p> sets the IDW sharpness (default 2.0; higher pulls the blend tigh
 
 CV cursor: morph_cursor 1 hands the cursor to the two rightmost signal inlets (morph X / morph Y),
 so a physical XY joystick or any CV can drive the surface at signal rate (clamped to [0,1]); morph_cursor 0
-returns to the message cursor. A running route overrides both.
+returns to the message cursor. A running route overrides both. The cursor position follows the CV pair
+even before the first point is placed (so morph_state and a panel cursor stay live); the blend itself
+starts with the first point.
 morph_interp selects the weighting kernel — 0 = IDW/Shepard (cheap, global), 1 = natural-neighbour (a
 sampled/grid Sibson approximation: local, no overshoot, the faithful Metasurface character; a touch more
 CPU, best for a static cursor than a fast route).
@@ -3645,7 +3649,9 @@ speed, grainsize, grainstart, amplitude, pan, maxgrains, distortion
 
 query <param> and get_params return:
 
-Inlet/ last message value when modulation is disabled
+Inlet / last message value when modulation is disabled — the EFFECTIVE value the block used: a
+driving inlet's sample, or the message base when the inlet is unpatched (headless 1). `sos` reports
+the S.O.S. mix actually applied in Morphagene mode.
 
 Current modulated value when modulation is active
 
@@ -3722,3 +3728,9 @@ Changes made for hosting (all backward compatible in Pd):
 - Two instances in one process no longer share state (the Perlin permutation table and the
   organize-CV jitter filter are per instance).
 - `src/ligase_status.h` exposes a read-only status snapshot (`ligase_status()`) for hosts.
+- `get_params` reports the value each parameter block actually used (the message base when its
+  inlet is unpatched — it used to report the raw inlet sample, i.e. 0), and `sos` reports the
+  Morphagene mix applied rather than the recorder crossfade.
+- `matrix_connect` reclaims a disconnected slot when all 32 are allocated; `pattern_clear <param>`
+  restores the band's prior enabled/min/max (the attach forces enabled and may widen a collapsed
+  band to 0..1); the CV morph cursor tracks inlets 22/23 before the first point is placed.

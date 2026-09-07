@@ -95,7 +95,12 @@ def build():
         else:
             b = bind[0]
             if b == "inlet":
-                entry.update(kind="inlet", inlet=int(bind[1]))
+                if cid in ("joy_x", "joy_y"):
+                    entry.update(kind="special", sel="morph")     # `morph <x> <y>` from both axes
+                else:
+                    sel = PL.INLET_SELECTORS.get(int(bind[1]))
+                    stut = PL.INLET_STUT_SELECTORS.get(int(bind[1]))
+                    entry.update(kind="inlet", inlet=int(bind[1]), sel=sel, stut=stut)
             elif b == "msg":
                 entry.update(kind="msg", sel=bind[1])
             elif b == "msgmap":
@@ -156,7 +161,7 @@ def emit_header(params, path):
     out.append("#ifndef LIGASE_PARAMS_H\n#define LIGASE_PARAMS_H\n")
     out.append("typedef enum { LP_INLET, LP_MSG, LP_MSG2, LP_MSGMAP, LP_TOGGLE, LP_SPECIAL, LP_TRIGGER, LP_OUTPUT } lp_kind_t;\n")
     out.append("typedef struct {\n    const char *id; const char *name; const char *group; lp_kind_t kind;\n"
-               "    int inlet; const char *sel; const char *const *map; int nmap; const char *const *labels;\n"
+               "    int inlet; const char *sel; const char *stut; const char *const *map; int nmap; const char *const *labels;\n"
                "    float lo, hi, def; int is_int, is_bool, is_log, init_send, pow2; const char *unit;\n} lp_param_t;\n")
     tables = []
     for p in params:
@@ -174,9 +179,9 @@ def emit_header(params, path):
     kindmap = dict(inlet="LP_INLET", msg="LP_MSG", msg2="LP_MSG2", msgmap="LP_MSGMAP", toggle="LP_TOGGLE",
                    special="LP_SPECIAL", trigger="LP_TRIGGER", output="LP_OUTPUT")
     for p in params:
-        out.append("    { %s, %s, %s, %s, %d, %s, %s, %d, %s, %sf, %sf, %sf, %d, %d, %d, %d, %d, %s }," % (
+        out.append("    { %s, %s, %s, %s, %d, %s, %s, %s, %d, %s, %sf, %sf, %sf, %d, %d, %d, %d, %d, %s }," % (
             c_str(p["id"]), c_str(p["name"]), c_str(p["group"]), kindmap[p["kind"]],
-            int(p.get("inlet", -1)), c_str(p["sel"]) if p.get("sel") else "NULL",
+            int(p.get("inlet", -1)), c_str(p["sel"]) if p.get("sel") else "NULL", c_str(p["stut"]) if p.get("stut") else "NULL",
             ("lp_map_%s" % p["id"]) if p.get("map") else "NULL", len(p.get("map") or []),
             ("lp_labels_%s" % p["id"]) if p.get("labels") else "NULL",
             repr(float(p["lo"])), repr(float(p["hi"])), repr(float(p["default"])),

@@ -10,6 +10,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 3,
+  "sel": "grainsize",
+  "stut": null,
   "unit": "s"
  },
  {
@@ -23,6 +25,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 4,
+  "sel": "grainstart",
+  "stut": null,
   "unit": ""
  },
  {
@@ -36,6 +40,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 5,
+  "sel": "speed",
+  "stut": null,
   "unit": ""
  },
  {
@@ -49,6 +55,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 9,
+  "sel": "iot",
+  "stut": null,
   "unit": "s"
  },
  {
@@ -62,6 +70,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 10,
+  "sel": "maxgrains",
+  "stut": null,
   "is_int": true,
   "unit": ""
  },
@@ -76,6 +86,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 21,
+  "sel": "amplitude",
+  "stut": null,
   "unit": ""
  },
  {
@@ -89,6 +101,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 6,
+  "sel": "organize",
+  "stut": null,
   "unit": ""
  },
  {
@@ -102,6 +116,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 8,
+  "sel": "sos",
+  "stut": null,
   "unit": ""
  },
  {
@@ -199,6 +215,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 7,
+  "sel": "scanrate",
+  "stut": null,
   "unit": ""
  },
  {
@@ -299,6 +317,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 11,
+  "sel": "gdelay_time",
+  "stut": "stut_reps",
   "unit": "s"
  },
  {
@@ -312,6 +332,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 12,
+  "sel": "gdelay_feed",
+  "stut": "stut_reduction",
   "unit": ""
  },
  {
@@ -325,6 +347,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 13,
+  "sel": "gdelay_tone",
+  "stut": "stut_spacing",
   "unit": ""
  },
  {
@@ -338,6 +362,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 14,
+  "sel": "gdelay_mix",
+  "stut": null,
   "unit": ""
  },
  {
@@ -414,6 +440,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 16,
+  "sel": "moog_cutoff",
+  "stut": null,
   "unit": "Hz",
   "log": true
  },
@@ -428,6 +456,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 17,
+  "sel": "moog_resonance",
+  "stut": null,
   "unit": ""
  },
  {
@@ -441,6 +471,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 18,
+  "sel": "moog_mix",
+  "stut": null,
   "unit": ""
  },
  {
@@ -454,6 +486,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 15,
+  "sel": null,
+  "stut": null,
   "unit": ""
  },
  {
@@ -568,6 +602,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 20,
+  "sel": "env_skew",
+  "stut": null,
   "unit": ""
  },
  {
@@ -607,6 +643,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 19,
+  "sel": null,
+  "stut": null,
   "unit": "note"
  },
  {
@@ -723,6 +761,8 @@
   "init_send": true,
   "kind": "inlet",
   "inlet": 22,
+  "sel": "pan",
+  "stut": null,
   "unit": ""
  },
  {
@@ -791,8 +831,8 @@
   "hi": 1.0,
   "default": 0.55,
   "init_send": true,
-  "kind": "inlet",
-  "inlet": 23,
+  "kind": "special",
+  "sel": "morph",
   "unit": ""
  },
  {
@@ -804,8 +844,8 @@
   "hi": 1.0,
   "default": 0.45,
   "init_send": true,
-  "kind": "inlet",
-  "inlet": 24,
+  "kind": "special",
+  "sel": "morph",
   "unit": ""
  },
  {

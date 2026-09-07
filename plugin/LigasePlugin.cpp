@@ -201,16 +201,67 @@ void LigasePlugin::onOutlet(void* user, int outlet, const char* sel, int argc, c
 
 /* ---- defaults: the panel's loadbang contract --------------------------------------------- */
 void LigasePlugin::applyDefaults() {
-    /* emit_pd.py load contract: the surface IS the hardware (every inlet driven), the scope shows
-     * the Lorenz butterfly, the morph cursor is the CV pair (inlets 23/24 = joy_x/joy_y) */
-    ligase_engine_send_text(fEngine, "headless 0; scope_tap lorenz 1; morph_cursor 1");
+    /* Software-host contract (panel_layout.INLET_SELECTORS): the knobs are the parameters' MESSAGE
+     * bases and the signal inlets stay unpatched (headless 1), so snapshot recall, the metasurface
+     * blend and XPNDR ASSIGN move every knob; the morph cursor is the message form (`morph x y`).
+     * Only the CV-only inlets (smear mix, MIDI note) are driven as signals. Scope: Lorenz butterfly. */
+    ligase_engine_send_text(fEngine, "headless 1; scope_tap lorenz 1; morph_cursor 0");
     for (uint32_t i = 0; i < LIGASE_PARAM_COUNT; i++) {
         const lp_param_t& p = LIGASE_PARAMS[i];
         if (p.kind == LP_OUTPUT || p.kind == LP_TRIGGER) continue;
-        if (p.kind == LP_INLET) { ligase_engine_set_inlet(fEngine, p.inlet - 1, p.def, 0.0f); continue; }
+        if (p.kind == LP_INLET) {
+            fRamp[i].cur = p.def; fRamp[i].to = p.def; fRamp[i].left = 0; fRamp[i].active = false;
+            if (p.sel) sendKnobMessage(i, p.def); else ligase_engine_set_inlet(fEngine, p.inlet - 1, p.def, 0.0f);
+            continue;
+        }
+        if (p.kind == LP_SPECIAL && !std::strcmp(p.sel, "morph")) continue;   /* once, below */
         if (!p.init_send) continue;
         applyParameter(i, p.def);
     }
+    sendMorphCursor();
+}
+
+/* `<sel> <value>` for a message-delivered knob. Stut mode (delay MODE 2) remaps the three delay
+ * knobs exactly like the engine remaps signal inlets 11/12/13: TIME 0-10 -> stut_reps 1-16,
+ * FDBK -> stut_reduction, TONE 0-1 -> stut_spacing 1..5000 ms (exponential). */
+void LigasePlugin::sendKnobMessage(uint32_t index, float v) {
+    const lp_param_t& p = LIGASE_PARAMS[index];
+    if (!p.sel) return;
+    char buf[128];
+    const bool stut = p.stut && (int)std::lround(fParamValue[LP_DELAY_MODE].load()) == 2;
+    if (stut && !std::strcmp(p.stut, "stut_reps")) {
+        float t = v < 0.f ? 0.f : (v > 10.f ? 10.f : v);
+        std::snprintf(buf, sizeof buf, "stut_reps %d", 1 + (int)((t / 10.f) * 15.f + 0.5f));
+    } else if (stut && !std::strcmp(p.stut, "stut_spacing")) {
+        float t = v < 0.f ? 0.f : (v > 1.f ? 1.f : v);
+        std::snprintf(buf, sizeof buf, "stut_spacing %.9g", (double)std::pow(5000.0f, t));
+    } else {
+        std::snprintf(buf, sizeof buf, "%s %.9g", stut ? p.stut : p.sel, (double)v);
+    }
+    ligase_engine_send_text(fEngine, buf);
+}
+
+void LigasePlugin::sendMorphCursor() {
+    char buf[96];
+    std::snprintf(buf, sizeof buf, "morph %.9g %.9g", (double)fParamValue[LP_JOY_X].load(), (double)fParamValue[LP_JOY_Y].load());
+    ligase_engine_send_text(fEngine, buf);
+}
+
+/* one inner block of glide for every ramping knob: the messages are sent with the engine's
+ * informational console output suppressed (errors still surface) */
+void LigasePlugin::stepRamps() {
+    bool any = false;
+    for (uint32_t i = 0; i < LIGASE_PARAM_COUNT; i++) if (fRamp[i].active) { any = true; break; }
+    if (!any) return;
+    ligase_engine_set_quiet(fEngine, 1);
+    for (uint32_t i = 0; i < LIGASE_PARAM_COUNT; i++) {
+        Ramp& r = fRamp[i];
+        if (!r.active) continue;
+        if (r.left <= 1) { r.cur = r.to; r.left = 0; r.active = false; }
+        else { r.cur += (r.to - r.cur) / (float)r.left; r.left--; }
+        sendKnobMessage(i, r.cur);
+    }
+    ligase_engine_set_quiet(fEngine, 0);
 }
 
 /* ---- ports / parameters / groups / states ------------------------------------------------- */
@@ -298,7 +349,15 @@ void LigasePlugin::applyParameter(uint32_t index, float value) {
     case LP_INLET: {
         float v = value;
         if (index == LP_LEVEL) v *= fVelGain;
-        ligase_engine_set_inlet(fEngine, p.inlet - 1, v, kGlideMs);
+        if (p.sel) {
+            /* message twin with the panel's [line~] glide: ramp over kGlideMs of inner blocks */
+            Ramp& r = fRamp[index];
+            const int blocks = (int)std::lround(kGlideMs * 0.001 * getSampleRate() / (double)kBlock);
+            if (blocks <= 1 || fRunCount == 0) { r.cur = v; r.to = v; r.left = 0; r.active = false; sendKnobMessage(index, v); }
+            else { r.to = v; r.left = blocks; r.active = true; }
+        } else {
+            ligase_engine_set_inlet(fEngine, p.inlet - 1, v, kGlideMs);
+        }
         break;
     }
     case LP_MSG:
@@ -340,6 +399,7 @@ void LigasePlugin::applyParameter(uint32_t index, float value) {
             if (k > 8) k = 8;
             ligase_engine_send_text(fEngine, LIGASE_DIST_PRESETS[k - 1]);
         }
+        else if (!std::strcmp(p.sel, "morph")) sendMorphCursor();
         else if (!std::strcmp(p.sel, "master")) fMaster.store(value);
         else if (!std::strcmp(p.sel, "clock_src")) { fClockHost.store(value > 0.5f ? 1 : 0); if (value <= 0.5f) fLastBeat = -1.0; }
         else if (!std::strcmp(p.sel, "midi_vel_amp")) fVelAmp.store(value);
@@ -626,6 +686,7 @@ void LigasePlugin::handleTransport(uint32_t frames) {
 }
 
 void LigasePlugin::processInnerBlock(const float* inL, const float* inR, float* outL, float* outR) {
+    stepRamps();
     ligase_engine_process(fEngine, inL, inR, outL, outR, fBlockSX, fBlockSY);
     const float g = fMaster.load();
     float pl = 0.f, pr = 0.f;

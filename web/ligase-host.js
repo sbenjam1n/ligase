@@ -163,8 +163,13 @@ const PARAM_LINES = new Set(['speed', 'grainsize', 'grainstart', 'organize', 'sc
 
 /* webBridge(engine, CONTROLS, opts) — the bridge object the panel brain talks to
  * (docs/ui/panel_bridge.md), on top of LigaseEngine:
- *   control(id, value, text)  inlet binds -> engine.setFloat('lgR_' + id) (the patch's line~ chain);
- *                             'master' -> host output gain; anything else -> msg(text)
+ *   control(id, value, text)  text != null -> msg(text) (a knob's MESSAGE TWIN: the software host
+ *                             delivers knobs as messages, see panel_layout.INLET_SELECTORS);
+ *                             a CV-only inlet (text null) -> engine.setFloat('lgR_' + id) (the
+ *                             patch's line~ chain); 'master' -> host output gain
+ *   arm()                     call once after engine.start(): headless 1 + message cursor, and
+ *                             every message-delivered CV chain parked at 0 (= unpatched), so the
+ *                             patch's own loadbang defaults never out-rank the knob messages
  *   msg(text)                 ';'-separated messages -> engine.sendMsg('lg_engine', atoms)
  *   note(ch, note, vel)       -> `midi <note> <vel> <ch>`
  *   host(action)              -> opts.host(action)  ('load_reel' | 'save_reel')
@@ -174,6 +179,7 @@ const PARAM_LINES = new Set(['speed', 'grainsize', 'grainstart', 'organize', 'sc
  * opts: { pollMs = 100, poll = true, host }. The poll starts once the engine reports ready. */
 export function webBridge(engine, CONTROLS, opts = {}) {
   const inletIds = new Set((CONTROLS || []).filter((c) => Array.isArray(c.bind) && c.bind[0] === 'inlet').map((c) => c.id));
+  const msgInletIds = new Set((CONTROLS || []).filter((c) => Array.isArray(c.bind) && c.bind[0] === 'inlet' && (c.msg || c.id === 'joy_x' || c.id === 'joy_y')).map((c) => c.id));
   const listeners = {};
   const emit = (ev, ...a) => { for (const cb of listeners[ev] || []) { try { cb(...a); } catch (e) { console.error('[bridge]', ev, e); } } };
   const on = (ev, cb) => { (listeners[ev] || (listeners[ev] = [])).push(cb); return () => off(ev, cb); };
@@ -187,9 +193,15 @@ export function webBridge(engine, CONTROLS, opts = {}) {
   };
   const pending = {};                  // id -> our own sends not yet echoed on lgS_<id>
   const control = (id, value, text) => {
-    if (inletIds.has(id)) { pending[id] = (pending[id] || 0) + 1; engine.setFloat('lgR_' + id, value); return; }
     if (id === 'master') { engine.setGain(value); return; }
-    if (text != null) msg(text);
+    if (text != null) { msg(text); return; }
+    if (inletIds.has(id)) { pending[id] = (pending[id] || 0) + 1; engine.setFloat('lgR_' + id, value); }
+  };
+  // software-host knob contract: the engine's inlets stay unpatched (headless 1) and the panel's
+  // message cursor drives the metasurface; the message-delivered CV chains are parked at 0
+  const arm = () => {
+    msg('headless 1; morph_cursor 0');
+    for (const id of msgInletIds) { pending[id] = (pending[id] || 0) + 1; engine.setFloat('lgR_' + id, 0); }
   };
   const note = (ch, n, vel) => engine.sendMsg('lg_engine', ['midi', Math.round(n), Math.round(vel), Math.round(ch || 1)]);
   const host = (action) => { if (typeof opts.host === 'function') return opts.host(action); };
@@ -233,6 +245,6 @@ export function webBridge(engine, CONTROLS, opts = {}) {
   engine.onVU((l, r) => emit('vu', l, r));
   engine.onScopeXY((x, y) => emit('scope', x, y));
 
-  return { control, msg, note, host, on, off, startPoll, stopPoll, tokenize, engine,
+  return { control, msg, note, host, arm, on, off, startPoll, stopPoll, tokenize, engine,
            get status() { return status; }, dispose: stopPoll };
 }

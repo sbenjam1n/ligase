@@ -8,8 +8,13 @@
  * bridge object:
  *
  *   bridge.control(id, value, text)   a BOUND control changed (text = composed message(s), ';'
- *                                     separated; null for inlet binds and the two plugin-parameter
- *                                     policy controls recmode/master)
+ *                                     separated). For an inlet bind the text is the knob's MESSAGE
+ *                                     TWIN (`grainsize 0.25`, panel_layout.INLET_SELECTORS; the
+ *                                     joystick composes `morph <x> <y>`): a software host delivers
+ *                                     it as a message (engine headless 1, inlets unpatched) so
+ *                                     snapshots / the metasurface / XPNDR ASSIGN can move the knob;
+ *                                     null = a CV-only inlet (smear mix, MIDI note) or the two
+ *                                     plugin-parameter policy controls recmode/master
  *   bridge.msg(text)                  free-form engine message(s) (';' separated)
  *   bridge.note(ch, note, vel)        optional MIDI note
  *   bridge.host(action)               optional host action ('load_reel' | 'save_reel')
@@ -100,6 +105,7 @@ export function createPanel(bridge, CONTROLS, TABLES = {}) {
     seqSlot: 0,
     xpLed: '',
     xpValueLed: '--',
+    placed: new Set(),          // snapshot slots placed as metasurface points (this panel's doing)
   };
   const displays = {};          // id -> last rendered display value
   let handles = null;
@@ -120,10 +126,11 @@ export function createPanel(bridge, CONTROLS, TABLES = {}) {
   };
   const display = (id, value) => { displays[id] = value; render(id, value); notify(id, value); };
   const control = (id, value, text) => {
+    if (text != null) noteFollow(text);
     if (typeof bridge.control === 'function') bridge.control(id, value, text == null ? null : text);
     else if (text != null && typeof bridge.msg === 'function') bridge.msg(text);
   };
-  const msg = (text) => { if (typeof bridge.msg === 'function') bridge.msg(text); };
+  const msg = (text) => { noteFollow(text); if (typeof bridge.msg === 'function') bridge.msg(text); };
 
   function coerce(c, value) {
     let x = +value;
@@ -151,11 +158,12 @@ export function createPanel(bridge, CONTROLS, TABLES = {}) {
     const meanings = tget(T.SHAPE_MEANINGS, id);
     const m = tget(meanings, shapeFamily());
     if (!m) return null;                                   // no meaning for this family: send nothing
-    const [sel, form, lo, hi] = m;
+    const [sel, form, lo, hi, tail] = m;
     const val = (lo == null || hi == null) ? value : lo + value * (hi - lo);
-    if (form === 'global') return `${sel} ${fmt(val)}`;
-    if (form === 'suffix') return `${sel}_${shapeInst()} ${fmt(val)}`;
-    return `${sel} ${shapeInst()} ${fmt(val)}`;           // inst2
+    const extra = Array.isArray(tail) && tail.length ? ' ' + tail.map(fmt).join(' ') : '';   // constant trailing args
+    if (form === 'global') return `${sel} ${fmt(val)}${extra}`;
+    if (form === 'suffix') return `${sel}_${shapeInst()} ${fmt(val)}${extra}`;
+    return `${sel} ${shapeInst()} ${fmt(val)}${extra}`;   // inst2
   }
 
   // ---- MATRIX --------------------------------------------------------------------------------
@@ -235,6 +243,19 @@ export function createPanel(bridge, CONTROLS, TABLES = {}) {
     for (let i = 0; i < 32; i++) render(`snap${i + 1}`, i === sel ? 1 : (st.captured.has(i) ? 2 : 0));
   }
   values.set('snap_slot_sel', 0);
+  function nextFreeSlot(from) {
+    for (let k = 1; k < 32; k++) { const s = (from + k) % 32; if (!st.captured.has(s)) return s; }
+    return from;
+  }
+  // Remove a metasurface point: the engine drops the point AND frees the snapshot slot
+  // (morph_unplace + snapshot_clear), the lamp clears, the canvas drops the marker.
+  function morphRemove(slot) {
+    slot = clamp(round(slot), 0, 31);
+    msg(`morph_unplace ${slot}; snapshot_clear ${slot}`);
+    st.captured.delete(slot); st.placed.delete(slot);
+    renderSnapLamps();
+    notify('morph_snap:removed', { slot });
+  }
   function renderSeqSlotLamps() { for (let i = 0; i < 16; i++) render(`seq_slot_${String.fromCharCode(65 + i)}`, i === st.seqSlot ? 1 : 0); }
 
   // ---- special handlers: name -> (id, value, c) ---------------------------------------------
@@ -266,8 +287,13 @@ export function createPanel(bridge, CONTROLS, TABLES = {}) {
     morph_snap(id) {
       const slot = vr('snap_slot_sel'), x = v('joy_x') ?? 0.5, y = v('joy_y') ?? 0.5;
       control(id, slot, `snapshot ${slot}; morph_point ${slot} ${fmt(x)} ${fmt(y)}`);
-      st.captured.add(slot); renderSnapLamps();
+      st.captured.add(slot); st.placed.add(slot);
       notify('morph_snap:placed', { slot, x, y, label: String(slot + 1) });   // the metasurface canvas places the point
+      // auto-advance to the next FREE slot (wrapping) so the next SNAP adds a point instead of
+      // overwriting this one; a full bank keeps the selection where it is
+      const next = nextFreeSlot(slot);
+      if (next !== slot) { values.set('snap_slot_sel', next); notify('snap_slot_sel', next); }
+      renderSnapLamps();
     },
     dist_preset(id, value) {
       const k = clamp(round(value), 1, 8);
@@ -397,6 +423,61 @@ export function createPanel(bridge, CONTROLS, TABLES = {}) {
     return name;
   }
 
+  // ---- inlet knobs: the message twin (software-host delivery) --------------------------------
+  // A CV knob's `msg` (panel_layout.INLET_SELECTORS) sets the same base the signal inlet would
+  // drive. In stut mode (delay MODE 2) the three delay knobs remap exactly like the engine remaps
+  // signal inlets 11/12/13: TIME 0-10 -> stut_reps 1-16, FDBK 0-1 -> stut_reduction, TONE 0-1 ->
+  // stut_spacing 1..5000 ms (exponential). The joystick composes the message cursor `morph x y`.
+  // null = a CV-only inlet (no message twin): the bridge drives the signal inlet instead.
+  const STUT_MODE = 2;
+  function inletText(c, value) {
+    if (c.id === 'joy_x' || c.id === 'joy_y') {
+      const x = c.id === 'joy_x' ? value : (v('joy_x') ?? 0.5), y = c.id === 'joy_y' ? value : (v('joy_y') ?? 0.5);
+      return `morph ${fmt(x)} ${fmt(y)}`;
+    }
+    if (!c.msg) return null;
+    if (c.stutMsg && vr('delay_mode') === STUT_MODE) {
+      if (c.stutMsg === 'stut_reps') return `stut_reps ${1 + Math.round((clamp(+value, 0, 10) / 10) * 15)}`;
+      if (c.stutMsg === 'stut_spacing') return `stut_spacing ${fmt(Math.pow(5000, clamp(+value, 0, 1)))}`;
+      return `${c.stutMsg} ${fmt(value)}`;
+    }
+    return `${c.msg} ${fmt(value)}`;
+  }
+
+  // ---- knob follow -----------------------------------------------------------------------------
+  // While the ENGINE moves the scalar bases (a metasurface blend, a running route, a snapshot
+  // recall, XPNDR ASSIGN / AUDITION / A-B, a loaded surface) the get_params readback on outlet 9
+  // re-seats every knob whose message twin matches, so the panel shows what the engine plays.
+  // Outside such a window the readback is ignored (a modulation band or matrix routing makes the
+  // readback the MODULATED value, not the base the knob holds). A knob touched within FOLLOW_MS
+  // keeps its own value, so a drag never fights a stale poll.
+  const FOLLOW_MS = 600, FOLLOW_WINDOW_MS = 1500;
+  const READBACK_ALIAS = { gdelay: 'gdelay_time' };            // get_params name -> selector
+  const followBySel = new Map();
+  for (const c of byId.values()) if (c.msg) followBySel.set(c.msg, c);
+  const touched = new Map();                                    // id -> time of our last send
+  const now = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+  let followUntil = 0, followRun = false;
+  const followActive = () => followRun || now() < followUntil;
+  function noteFollow(text) {
+    const t = String(text || '');
+    if (/(^|;)\s*morph_run\s+1\b/.test(t)) followRun = true;
+    else if (/(^|;)\s*(morph_stop|morph_pause|morph_run\s+0)\b/.test(t)) { followRun = false; followUntil = now() + FOLLOW_WINDOW_MS; }
+    if (/(^|;)\s*(morph|morph_x|morph_y|snapshot_recall|snapbuf_apply|snapbuf_audition|snapbuf_compare|morph_import|morph_load|load)\b/.test(t)) followUntil = now() + FOLLOW_WINDOW_MS;
+  }
+  function followParam(sel, val) {
+    if (!followActive()) return;
+    const c = followBySel.get(READBACK_ALIAS[sel] || sel);
+    if (!c || !isNum(val)) return;
+    if (c.stutMsg && vr('delay_mode') === STUT_MODE) return;           // stut mode: this readback is not this knob
+    if (c.id === 'level' && (v('midi_vel_amp') || 0) > 0) return;      // velocity scales what the engine sees
+    const t = touched.get(c.id);
+    if (t != null && now() - t < FOLLOW_MS) return;
+    const cur = values.get(c.id);
+    if (isNum(cur) && Math.abs(cur - val) <= 1e-6 * Math.max(1, Math.abs(val))) return;
+    setSilent(c.id, val);
+  }
+
   // ---- dispatch ------------------------------------------------------------------------------
   function dispatch(id, value, c) {
     const kind = bindKind(c);
@@ -405,7 +486,7 @@ export function createPanel(bridge, CONTROLS, TABLES = {}) {
       return;                                            // scope_view etc.: panel-side only
     }
     switch (kind) {
-      case 'inlet': control(id, value, null); break;
+      case 'inlet': touched.set(id, now()); control(id, value, inletText(c, value)); break;
       case 'msg': {
         const sel = bindArg(c);
         if (id === 'quantize' || id === 'delay_quantize') {
@@ -480,6 +561,7 @@ export function createPanel(bridge, CONTROLS, TABLES = {}) {
   }
   function onOut9(sel, args) {
     args = Array.isArray(args) ? args : [];
+    if (args.length === 1 && isNum(args[0])) { followParam(sel, args[0]); return; }   // a get_params scalar line
     if (sel !== 'snapbuf' || !args.length) return;
     const field = args[0];
     const { vf, bf } = xpAddress();
@@ -609,6 +691,8 @@ export function createPanel(bridge, CONTROLS, TABLES = {}) {
     has: (id) => byId.has(id),
     describe: (id) => byId.get(id) || null,
     msg: (text) => msg(text),
+    morphRemove,
+    morphPlaced: () => [...st.placed].sort((a, b) => a - b),
     note: (ch, note, vel) => { if (typeof bridge.note === 'function') bridge.note(ch, note, vel); },
     on: (event, cb) => sub(event, cb),
     display: {

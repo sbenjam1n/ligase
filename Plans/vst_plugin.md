@@ -7,6 +7,12 @@
 VST3 ABI keep the combined work GPL-2.0-only (GATE A.2 resolved by construction). GATE A.3 widened: every
 panel control with an engine binding is a host parameter (`docs/ui/emit_plugin.py`). Owner gates that
 remain: DAW hands-on on the Mac (AU/VST3 load, GUI in WKWebView), ear-test of the default DIST ON level.
+**Second pass (2026-09-07, later the same day):** every panel section verified against the RUNNING
+engine (`web/test_panel_engine.mjs`, 143/143). Software hosts now deliver knobs as the parameter's
+message base (`INLET_SELECTORS`, headless 1) so snapshots / the metasurface / XPNDR ASSIGN move every
+knob and knobs follow the engine; metasurface point removal + SNAP auto-advance; engine readback and
+slot fixes (`get_params` effective values, `sos`, matrix slot reuse, `pattern_clear` band restore, CV
+cursor tracking) — regression-exact (identity gate, 14/14 acceptance, CLAP host test).
 _Original plan text follows for provenance._
 **GATE A.2 (license) DEFERRED by owner 2026-07-06** ("I can set the license later, no one
 is using it but us right now") — personal-use builds are unaffected; the decision must land

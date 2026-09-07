@@ -93,6 +93,7 @@ $('start').addEventListener('click', async () => {
   try {
     const patch = await (await fetch('./ligase_panel.pd')).text();
     await engine.start({ patch });
+    bridge.arm();            // headless 1 + message cursor; CV chains parked (knobs are messages here)
     sendDefaults(surface);
     started = true;
     $('mic').disabled = false; $('save').disabled = false;

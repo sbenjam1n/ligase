@@ -20,9 +20,15 @@ plugin (`plugin/ui/bridge.js`, DPF web view). Nothing panel-shaped lives in eith
 bridge.msg(text)                 // engine message(s) in text form; ';' separates several
                                  //   "grainsize 0.25"  "matrix_connect lorenz1 moog_cutoff 500"  "pattern pitch [ 0 4 7 ]"
 bridge.control(id, value, text)  // a BOUND panel control changed: id = panel_layout id, value = ENGINE units,
-                                 //   text = the message the brain would send (null for inlet binds).
-                                 //   web:    inlet binds -> lgR_<id> (the patch's line~ chain); others -> bridge.msg(text)
-                                 //   plugin: controls that are host parameters -> setParameterValue; others -> msg(text)
+                                 //   text = the message the brain would send. For an INLET bind it is the knob's
+                                 //   MESSAGE TWIN ("grainsize 0.25", panel_layout.INLET_SELECTORS; stut mode remaps
+                                 //   the delay knobs; the joystick composes "morph <x> <y>"); null = a CV-only inlet
+                                 //   (smear mix, MIDI note) or the plugin-side policy controls recmode/master.
+                                 //   web:    text -> bridge.msg(text); a CV-only inlet -> lgR_<id> (the patch's line~ chain)
+                                 //   plugin: controls that are host parameters -> setParameterValue (the DSP composes the
+                                 //           same message, ramped over 20 ms with the console quiet); others -> msg(text)
+bridge.arm()                     // web only, once after engine.start(): `headless 1; morph_cursor 0` and every
+                                 //   message-delivered CV chain parked at 0 (= unpatched), before sendDefaults()
 bridge.note(ch, note, vel)       // optional: MIDI note (on-screen keyboard / computer keys)
 bridge.on(event, cb)             // subscribe; events:
 //  'status'  cb(st)   ~10-30 Hz  st = { splice, splices, spliceStart, spliceEnd, playing, recording, recMode,
@@ -30,6 +36,10 @@ bridge.on(event, cb)             // subscribe; events:
 //                                     snapbufHas, morph:{x,y,points,route,running} }   (fields may be missing on the web)
 //  'out9'    cb(selector, args)  outlet-9 replies: "snapbuf" [field, sub?, values...], "morph_state" lines,
 //                                get_params lines ("grainsize" [v], "splice" [cur, count], "playing" [0|1] ...)
+//                                KNOB FOLLOW: a get_params scalar line re-seats the knob whose message twin it is
+//                                while the engine moves the bases (1.5 s after morph/recall/ASSIGN, or while a
+//                                route runs; a knob touched < 600 ms ago keeps its value) -> the host must poll
+//                                get_params (web: 10 Hz bridge poll; plugin page: 4 Hz)
 //  'vu'      cb(l, r)            output peaks 0..1+
 //  'scope'   cb(x, y)            Float32Arrays, one XY window
 //  'control' cb(id, value)       the HOST changed a control (automation / preset) -> brain updates the widget only

@@ -54,6 +54,14 @@ scheduler timing: the saved reel is **byte-identical** to the one Pd produces (R
 * The 22 CV inlets and every message-bound panel control are **host parameters** in engine units
   (`docs/ui/emit_plugin.py` lists them; cutoff is logarithmic; grids are enumerated). Parameters
   are applied on the audio thread between inner blocks, like Pd messages between DSP ticks.
+* **Knobs are the message base** (`panel_layout.INLET_SELECTORS`): the engine runs `headless 1`
+  with its signal inlets unpatched and a CV knob's parameter is delivered as the inlet's message
+  twin (`grainsize 0.25`), ramped over the panel's 20 ms glide as one message per inner block with
+  the engine console quiet. That is what lets snapshot recall, the metasurface blend and XPNDR
+  ASSIGN move every knob (a driving inlet would re-assert its value every block — the Pd panel's
+  hardware model). The joystick is the message cursor (`morph <x> <y>`); only SMEAR MIX and MIDI
+  NOTE (no message twin) drive their signal inlets. Stut mode remaps TIME/FDBK/TONE to
+  `stut_reps`/`stut_reduction`/`stut_spacing` like the engine remaps the inlets.
 * Everything else (matrix routings, XPNDR, SEQ/SCALE, morph surface, source shapes) is sent as
   engine **messages** from the GUI through the transient `cmd` state; heavy file operations
   (`load`/`save`/`morph_*` files) run on the caller thread while the audio thread mutes.
@@ -87,6 +95,10 @@ state), `midimap`. Parameters are saved by the host.
 * `make -C plugin/tests clap` — loads the built CLAP, records noise through the audio input,
   plays it back, sends MIDI notes/CC, checks latency reporting and a state save/load into a
   second instance.
+* `make -C plugin/tests host && node web/test_panel_engine.mjs` — **panel × engine**: every panel
+  control driven through the panel brain into the hosted engine (`plugin/tests/engine_host.c`, a
+  line-protocol host), asserting the engine's own state afterwards (`get_params`, `snapbuf_get`,
+  `morph_state`, `matrix_dump`, the status struct); any engine error fails the case. 143 cases.
 * CI: `.github/workflows/plugin-build.yml` (Linux + macOS) runs both and uploads `plugin/bin`.
 
 ## Known limits / next
@@ -97,3 +109,5 @@ state), `midimap`. Parameters are saved by the host.
 * `sphere_kick`/Bencina scatter still use libc `rand()`; harmless but not per-instance deterministic.
 * The web-view GUI has been verified headless in Chromium; DAW-hosted screenshots on macOS/Linux
   are the owner's hands-on gate.
+* MIDI NOTE (the pitch inlet knob) is inert once a MIDI note has been received: the engine hands
+  the grain pitch destination to the `midi` message stream (engine rule, `midi_msg_active`).

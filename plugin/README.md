@@ -9,6 +9,7 @@ git submodule update --init --recursive
 make -C tests            # engine identity gate: the hosted engine == the Pd baseline, byte for byte
 make -j8                 # -> bin/  (every format for this OS)
 make -C tests clap       # headless DAW-style smoke test of the built CLAP
+make -C tests host && node ../web/test_panel_engine.mjs   # every panel control -> brain -> engine, engine state asserted
 ```
 
 Full documentation: [`../docs/plugin_build.md`](../docs/plugin_build.md). Surface/engine contract:

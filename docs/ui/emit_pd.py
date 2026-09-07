@@ -364,7 +364,9 @@ def build_shape(controls):
 
     # knob meaning chains
     for knob_id, fam_map in L.SHAPE_MEANINGS.items():
-        for fam, (sel, form, lo, hi) in sorted(fam_map.items()):
+        for fam, meaning in sorted(fam_map.items()):
+            sel, form, lo, hi = meaning[:4]
+            tail = "".join(" " + fnum(t) for t in (meaning[4] if len(meaning) > 4 else ()))   # constant trailing args
             r = cv.obj(20, yy, f"r {snd(knob_id)}")
             g = cv.obj(20, yy + 25, "spigot")
             rg = cv.obj(150, yy, f"r lg_famok_{fam}")
@@ -376,14 +378,14 @@ def build_shape(controls):
                 cv.connect(head, 0, e, 0)
                 head = e
             if form == "global":
-                m = cv.msg(20, yy + 75, f"{sel} \\$1")
+                m = cv.msg(20, yy + 75, f"{sel} \\$1{tail}")
                 cv.connect(head, 0, m, 0)
                 s = eng_send(20, yy + 100)
                 cv.connect(m, 0, s, 0)
             elif form == "inst2":
                 pk = cv.obj(20, yy + 75, "pack f f")
                 rr = cv.obj(280, yy + 50, "r lg_shape_inst1")
-                m = cv.msg(20, yy + 100, f"{sel} \\$2 \\$1")
+                m = cv.msg(20, yy + 100, f"{sel} \\$2 \\$1{tail}")
                 cv.connect(head, 0, pk, 0)
                 cv.connect(rr, 0, pk, 1)
                 cv.connect(pk, 0, m, 0)

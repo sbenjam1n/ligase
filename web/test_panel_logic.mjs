@@ -60,14 +60,28 @@ test('helpers: quantizeSnap + fmt', () => {
 });
 
 // ---- inlet / msg / msgmap / toggle / bang -------------------------------------------------
-test('inlet binds go to bridge.control(id, value, null) in engine units, clamped', () => {
+test('inlet binds go to bridge.control(id, value, <message twin>) in engine units, clamped', () => {
   const { bridge, surface } = panel();
   surface.set('grainsize', 0.25);
-  assert.deepEqual(bridge.calls, [{ kind: 'control', id: 'grainsize', value: 0.25, text: null }]);
+  assert.deepEqual(bridge.calls, [{ kind: 'control', id: 'grainsize', value: 0.25, text: 'grainsize 0.25' }]);
   surface.set('speed', 99);
   assert.equal(surface.getValue('speed'), 4);                 // hi clamp
   assert.equal(bridge.calls[1].value, 4);
+  assert.equal(bridge.calls[1].text, 'speed 4');
   assert.equal(INLET_TO_ID[3], 'grainsize');
+  bridge.reset();
+  surface.set('smr_mix', 0.3); surface.set('midi_note', 67);   // CV-only inlets: no message twin
+  assert.deepEqual(bridge.calls.map((c) => c.text), [null, null]);
+  bridge.reset();
+  surface.set('joy_x', 0.8); surface.set('joy_y', 0.2);         // the joystick is the message cursor
+  assert.deepEqual(bridge.calls.map((c) => c.text), ['morph 0.8 0.45', 'morph 0.8 0.2']);
+  bridge.reset();
+  surface.set('delay_mode', 2); bridge.reset();                 // stut mode remaps the delay knobs like inlets 11/12/13
+  surface.set('dly_time', 10); surface.set('dly_feed', 0.5); surface.set('dly_tone', 0.5);
+  assert.deepEqual(bridge.calls.map((c) => c.text), ['stut_reps 16', 'stut_reduction 0.5', 'stut_spacing 70.710678']);
+  surface.set('delay_mode', 0); bridge.reset();
+  surface.set('dly_time', 0.35);
+  assert.deepEqual(bridge.calls.map((c) => c.text), ['gdelay_time 0.35']);
 });
 
 test('msg binds: "<sel> <v>"; quantize knobs snap to the power-of-two grid (< 0.5 sends nothing)', () => {
@@ -108,7 +122,7 @@ test('toggle + bang binds', () => {
   const { bridge, surface } = panel();
   surface.set('loop', 0); surface.set('poly', 1); surface.bang('dist_on');
   surface.bang('stut_bang'); surface.bang('chord'); surface.bang('xp_compare');
-  assert.deepEqual(sentOf(bridge), ['loop 0', 'poly 1', 'distortion_enable 0', 'stut', 'chord 0 4 7', 'snapbuf_compare']);
+  assert.deepEqual(sentOf(bridge), ['loop 0', 'poly 1', 'distortion_enable 0', 'stut', 'chord 60 64 67', 'snapbuf_compare']);
 });
 
 // ---- transport ----------------------------------------------------------------------------
@@ -186,8 +200,20 @@ test('snapshot slots: panel 1-32 -> engine 0-31; STORE / RECALL / SNAP', () => {
   surface.bang('morph_snap');
   assert.deepEqual(sentOf(bridge), ['snapshot 31', 'morph_point 31 0.25 0.75']);
   assert.deepEqual(ev, [{ slot: 31, x: 0.25, y: 0.75, label: '32' }]);
+  // SNAP auto-advances to the next FREE slot (wrapping: 31 -> 0) so the next SNAP adds a point
+  assert.equal(surface.getValue('snap_slot_sel'), 0);
+  assert.deepEqual(surface.morphPlaced(), [31]);
+  assert.deepEqual(h.__log.filter(([id]) => id === 'snap32').slice(-1), [['snap32', 2]]);   // held, no longer selected
+  assert.deepEqual(h.__log.filter(([id]) => id === 'snap1').slice(-1), [['snap1', 1]]);     // the new selection
   bridge.emit('status', { snapshotMask: Array.from({ length: 64 }, (_, i) => (i === 0 ? 1 : 0)) });
-  assert.deepEqual(h.__log.filter(([id]) => id === 'snap1').slice(-1), [['snap1', 2]]);
+  assert.deepEqual(h.__log.filter(([id]) => id === 'snap1').slice(-1), [['snap1', 1]]);     // selected outranks held
+  // remove the placed point: engine point + slot freed, lamp cleared, canvas told
+  const gone = []; surface.watch('morph_snap:removed', (e) => gone.push(e));
+  bridge.reset(); surface.morphRemove(31);
+  assert.deepEqual(sentOf(bridge), ['morph_unplace 31', 'snapshot_clear 31']);
+  assert.deepEqual(gone, [{ slot: 31 }]);
+  assert.deepEqual(surface.morphPlaced(), []);
+  assert.deepEqual(h.__log.filter(([id]) => id === 'snap32').slice(-1), [['snap32', 0]]);
 });
 
 // ---- distortion presets -------------------------------------------------------------------
@@ -493,10 +519,11 @@ test('sendDefaults pushes every initSend default through the surface (patch load
   const { bridge, surface } = panel();
   sendDefaults(surface);
   const sent = sentOf(bridge);
-  const inletCalls = bridge.calls.filter((c) => c.kind === 'control' && c.text === null && Object.values(INLET_TO_ID).includes(c.id));
+  const inletCalls = bridge.calls.filter((c) => c.kind === 'control' && Object.values(INLET_TO_ID).includes(c.id));
   assert.equal(inletCalls.length, 22);                         // 20 CV knobs + the two joystick axes
-  assert.ok(inletCalls.some((c) => c.id === 'grainsize' && c.value === 0.1));
-  assert.ok(inletCalls.some((c) => c.id === 'joy_x' && c.value === 0.55));
+  assert.equal(inletCalls.filter((c) => c.text === null).length, 2);   // smear mix + MIDI note stay CV inlets
+  assert.ok(inletCalls.some((c) => c.id === 'grainsize' && c.value === 0.1 && c.text === 'grainsize 0.1'));
+  assert.ok(inletCalls.some((c) => c.id === 'joy_x' && c.value === 0.55 && /^morph 0\.55 /.test(c.text)));
   for (const m of ['envelope 2', 'playhead 2', 'delay_mode 0', 'smear_mode 0', 'pitch_mode 4', 'dist_emphasis_mode 1', 'pan_mode 2', 'spatial sphere', 'morph_interp 0', 'loop 1', 'poly 1', 'distortion_enable 1'])
     assert.ok(sent.includes(m), m);
   assert.ok(!sent.some((m) => /^(snapshot|shift|record|play|recinput|recsplice|stut|scope_tap|pattern)\b/.test(m)), 'no side-effect messages at load');

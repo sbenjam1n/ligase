@@ -216,6 +216,8 @@ int ligase_engine_send_text(ligase_engine_t *e, const char *text) {
     return failures;
 }
 
+void ligase_engine_set_quiet(ligase_engine_t *e, int quiet) { if (e) e->sh.quiet = quiet ? 1 : 0; }
+
 void ligase_engine_bang(ligase_engine_t *e, double time_ms) {
     double saved = e->sh.logical_time;
     if (time_ms >= 0.0) e->sh.logical_time = time_ms * TIMEUNITPERMSEC;

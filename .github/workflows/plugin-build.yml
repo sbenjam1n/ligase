@@ -38,6 +38,8 @@ jobs:
         run: make -C plugin -j4
       - name: CLAP host smoke test (audio in -> reel -> MIDI playback -> state round trip)
         run: make -C plugin/tests clap
+      - name: Panel x engine (every control through the panel brain into the hosted engine)
+        run: make -C plugin/tests host && node web/test_panel_engine.mjs
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:

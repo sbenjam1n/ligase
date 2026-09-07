@@ -180,6 +180,12 @@ def build_descriptors(panel_path):
             "default": c.get("default", 0.0),
             "initSend": bool(c.get("init_send", True)),
         }
+        if bind and bind[0] == "inlet":
+            # software-host delivery: the inlet's message twin (None = stays a CV inlet everywhere)
+            d["msg"] = PL.INLET_SELECTORS.get(int(bind[1]))
+            stut = PL.INLET_STUT_SELECTORS.get(int(bind[1]))
+            if stut:
+                d["stutMsg"] = stut
         if c.get("note"):
             d["note"] = c["note"]
         if wk != "virtual":
@@ -386,11 +392,15 @@ function knobSVG(r, cap) {
 
 /* createMorphSurface — the Bencina metasurface as a live canvas over the joystick bed
  * (JX,JY,JS = 812,760,216, mirroring emit_svg). Snapshots are placed as labelled points (the
- * label = the PRESETS slot number); the cursor blends between them (drives joy_x/joy_y = the CV
- * morph cursor through the brain); routes animate. Engine messages go through surface.msg():
- * morph_point / morph_unplace / snapshot_clear / morph_rate / morph_route(_clear) / morph_run /
- * morph_stop / morph_pause. SNAP itself is the brain's `morph_snap` special (snapshot <slot> +
- * morph_point <slot> <x> <y>); the canvas listens for it and places the point. */
+ * label = the PRESETS slot number); the cursor blends between them (drives joy_x/joy_y through
+ * the brain = the message cursor `morph <x> <y>` in the software hosts, the CV pair on hardware);
+ * routes animate. Engine messages go through surface.msg(): morph_point / morph_rate /
+ * morph_route(_clear) / morph_run / morph_stop / morph_pause. SNAP itself is the brain's
+ * `morph_snap` special (snapshot <slot> + morph_point <slot> <x> <y>); the canvas listens for it
+ * and places the point. REMOVE is the brain's surface.morphRemove(slot) (morph_unplace +
+ * snapshot_clear, lamp cleared): double-click, a double-tap (pointer-timed, so it also works
+ * under pointer capture / touch / WebKit), alt-click or right-click on a point, or Delete /
+ * Backspace with a point selected. */
 function createMorphSurface(surface, overlay) {
   const X = __JX__, Y = __JY__, S = __JS__;
   const cv = document.createElement('canvas');
@@ -444,7 +454,7 @@ function createMorphSurface(surface, overlay) {
     if (!st.pts.length) {
       g.fillStyle = '#6b7075'; g.font = '8px ui-monospace,monospace'; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
       g.fillText('SNAP = snapshot <PRESET slot> here · drag = morph', S / 2, S - 50);
-      g.fillText('shift-click = route pt (wheel it = leg rate) · dblclick = remove', S / 2, S - 38);
+      g.fillText('shift-click = route pt (wheel it = leg rate) · dbl/alt-click, Del = remove', S / 2, S - 38);
     }
     // BASE-RATE strip — the global multiplier (engine morph_rate); modulatable
     g.fillStyle = '#0f1113'; g.fillRect(0, RBAND, S, S - RBAND);
@@ -466,19 +476,45 @@ function createMorphSurface(surface, overlay) {
   function setCursor(x, y, send) { st.cx = x; st.cy = y; if (send) { surface.set('joy_x', x); surface.set('joy_y', y); } draw(); }
 
   const setBase = (v) => { st.baseRate = Math.max(RMIN, Math.min(RMAX, v)); msg('morph_rate', st.baseRate); draw(); };
+  // point removal: the brain owns the engine side (morph_unplace + snapshot_clear + lamp); the
+  // canvas drops the marker when the brain confirms ('morph_snap:removed') or right away if the
+  // brain predates morphRemove
+  const dropPt = (id) => { const p = st.pts.find((q) => q.id === id); if (!p) return;
+    st.pts = st.pts.filter((q) => q !== p); if (st.sel === p) st.sel = null; draw(); };
+  const removePt = (p) => { if (typeof surface.morphRemove === 'function') surface.morphRemove(p.id);
+    else { msg('morph_unplace', p.id); msg('snapshot_clear', p.id); } dropPt(p.id); };
+  const removeWp = (wp) => { st.wps = st.wps.filter((q) => q !== wp); if (st.sel === wp) st.sel = null; draw(); };
+  surface.watch('morph_snap:removed', (ev) => { if (ev && typeof ev === 'object') dropPt(ev.slot); });
   let mode = null, dragPt = null;
+  let lastTap = { t: 0, x: -1, y: -1 };                   // pointer-timed double-tap (pointerdown pairs)
+  const DBL_MS = 400, DBL_DIST = 0.05;
+  cv.tabIndex = 0;                                        // keyboard: Delete / Backspace remove the selection
+  cv.addEventListener('contextmenu', (e) => e.preventDefault());
   cv.addEventListener('pointerdown', (e) => {
     const { x, y } = rectXY(e);
+    try { cv.focus({ preventScroll: true }); } catch (_) {}
     if (y * S >= RBAND) { mode = 'rate'; setBase(xToRate(x * S));
       try { cv.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
     if (e.shiftKey) { const w = { x, y, rate: WP_RATE }; st.wps.push(w); st.sel = w; draw(); return; }
     const wp = wpHit(x, y);
-    if (wp) { st.sel = wp; mode = 'wp'; dragPt = wp; draw();
+    if (wp) {
+      if (e.button === 2 || e.altKey) { removeWp(wp); e.preventDefault(); return; }
+      st.sel = wp; mode = 'wp'; dragPt = wp; draw();
       try { cv.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); return; }
     const p = hit(x, y);
+    const t = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const dbl = p && (t - lastTap.t) < DBL_MS && Math.hypot(x - lastTap.x, y - lastTap.y) < DBL_DIST;
+    lastTap = { t, x, y };
+    if (p && (dbl || e.button === 2 || e.altKey)) { lastTap.t = 0; removePt(p); e.preventDefault(); return; }
     if (p) { st.sel = p; dragPt = p; mode = 'pt'; draw(); }
     else { st.sel = null; mode = 'cur'; setCursor(x, y, true); }
     try { cv.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault();
+  });
+  cv.addEventListener('keydown', (e) => {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      if (st.sel && st.pts.includes(st.sel)) { removePt(st.sel); e.preventDefault(); }
+      else if (st.sel && st.wps.includes(st.sel)) { removeWp(st.sel); e.preventDefault(); }
+    } else if (e.key === 'Escape') { st.sel = null; draw(); }
   });
   cv.addEventListener('pointermove', (e) => { if (!mode) return; const { x, y } = rectXY(e);
     if (mode === 'rate') { setBase(xToRate(x * S)); }
@@ -496,10 +532,9 @@ function createMorphSurface(surface, overlay) {
     draw(); }, { passive: false });
   cv.addEventListener('dblclick', (e) => { const { x, y } = rectXY(e);
     const wp = wpHit(x, y);
-    if (wp) { st.wps = st.wps.filter((q) => q !== wp); if (st.sel === wp) st.sel = null; draw(); return; }
+    if (wp) { removeWp(wp); return; }
     const p = hit(x, y);
-    if (p) { msg('morph_unplace', p.id); msg('snapshot_clear', p.id);
-      st.pts = st.pts.filter((q) => q !== p); if (st.sel === p) st.sel = null; draw(); } });
+    if (p) removePt(p); });
 
   // the brain's morph_snap special captured `snapshot <slot>` at the cursor: place / move its point
   function upsert(id, x, y, label) {
@@ -637,8 +672,12 @@ export function buildControls(surface, container, opts = {}) {
         const v = c.lo + pos * span; read.textContent = fmt(v);
         if (send) surface.set(c.id, v);
       };
-      let dragging = false, sy = 0, sp = 0;
-      const down = (e) => { dragging = true; sy = e.clientY; sp = pos; w.classList.add('live');
+      let dragging = false, sy = 0, sp = 0, lastDown = 0;
+      const down = (e) => {
+        const t = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        if (t - lastDown < 400) { lastDown = 0; apply((c.default - c.lo) / span, true); e.preventDefault(); return; }   // double-tap = default
+        lastDown = t;
+        dragging = true; sy = e.clientY; sp = pos; w.classList.add('live');
         try { k.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); };
       const move = (e) => { if (!dragging) return;
         apply(sp + (sy - e.clientY) / 180, true); };

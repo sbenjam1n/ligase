@@ -407,6 +407,8 @@ typedef struct {
     int invert;             // Invert modulation output (0=normal, 1=inverted)
     rand_type_t saved_rand_type;  // P2: prior source before a pattern attach (restored by pattern_clear)
     int saved_rand_instance;      // P2: prior instance before a pattern attach
+    int   saved_enabled;          // prior enabled flag before a pattern attach (restored by pattern_clear)
+    float saved_min, saved_max;   // prior band before the attach widened a degenerate one (restored)
 } param_range_t;
 
 // @endregion:ligase_pd.core.types.param_range

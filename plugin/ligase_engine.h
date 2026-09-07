@@ -58,6 +58,10 @@ int  ligase_engine_send_text(ligase_engine_t *e, const char *text);
  * the current block time. */
 void ligase_engine_bang(ligase_engine_t *e, double time_ms);
 
+/* Quiet mode: while set, the engine's informational post() lines are dropped (errors are still
+ * delivered). Hosts use it around bursts of per-block smoothing messages. */
+void ligase_engine_set_quiet(ligase_engine_t *e, int quiet);
+
 /* Signal inlets 2..23 as control values, held for the whole block (Pd's [sig~]) with an
  * optional linear glide of `glide_ms` (the panel's [line~] 20 ms). Inlets 0/1 are audio. */
 void  ligase_engine_set_inlet(ligase_engine_t *e, int inlet, float value, float glide_ms);

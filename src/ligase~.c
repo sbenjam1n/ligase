@@ -952,26 +952,35 @@ static void ligase_update_inlets(ligase_t *x,
     // These represent the ACTUAL values being used (inlet/message OR modulated when active)
     // Note: Per-grain parameters (speed, grainsize, grainstart, amplitude, pan, maxgrains)
     // will be updated with modulated values below if param_range is enabled
-    x->speed_current = speed_val;
-    x->grainsize_current = grain_size_val;
-    x->grainstart_current = grain_start_val;
-    x->organize_current = organize_val;
-    x->scanrate_current = scanrate_val;
+    // The EFFECTIVE value: the stored base the block actually uses after the inlet gating above
+    // (a driving inlet has just written it; an unpatched inlet in headless 1 leaves the message
+    // base in place). Reporting the raw inlet sample here made every message-set parameter read
+    // back as 0 whenever its inlet was unpatched.
+    x->speed_current = x->speed;
+    x->grainsize_current = x->grain_size;
+    x->grainstart_current = x->grain_start;
+    if (should_update_organize) x->organize_current = organize_val;   // organize is a nav action: last CV position
+    x->scanrate_current = x->scan_rate;
     x->sos_current = x->recorder ? x->recorder->crossfade_mix : x->sos_value;
-    x->iot_current = iot_value;
-    x->maxgrains_current = (float)maxgrains_value;
-    x->gdelay_time_current = gdelay_time;
-    x->gdelay_feedback_current = gdelay_feedback;
-    x->gdelay_tone_current = gdelay_tone;
-    x->gdelay_mix_current = gdelay_mix;
-    x->smear_current = smear_mix;   // inlet 15 -> smear mix
-    x->moog_cutoff_current = moog_cutoff;
-    x->moog_resonance_current = moog_resonance;
-    x->moog_mix_current = moog_mix;
+    x->iot_current = x->scheduler->iot;
+    x->maxgrains_current = (float)x->scheduler->max_grains;
+    x->gdelay_time_current = x->grain_delay->delay_time;
+    if (x->grain_delay->mode == DELAY_MODE_STUT && x->delay_stut) {
+        x->gdelay_feedback_current = x->delay_stut->gain_reduction;   // reported as stut_reduction
+        x->gdelay_tone_current = x->delay_stut->spacing_ms;       // reported as stut_spacing
+    } else {
+        x->gdelay_feedback_current = x->grain_delay->feedback;
+        x->gdelay_tone_current = x->grain_delay->tone;
+    }
+    x->gdelay_mix_current = x->grain_delay->mix;
+    x->smear_current = smear_mix;   // inlet 15 -> smear mix (inlet-only parameter: the CV IS the value)
+    x->moog_cutoff_current = x->moogladder ? x->moogladder->cutoff : moog_cutoff;
+    x->moog_resonance_current = x->moogladder ? x->moogladder->resonance : moog_resonance;
+    x->moog_mix_current = x->moogladder ? x->moogladder->mix : moog_mix;
     x->midi_current = midi_in[0];
-    x->env_skew_current = skew_value;
-    x->amplitude_current = amplitude_val;
-    x->pan_current = pan_val;
+    x->env_skew_current = x->envelope ? x->envelope->skew : skew_value;
+    x->amplitude_current = x->amplitude;
+    x->pan_current = x->pan;
     // @endregion:ligase_pd.pd_external.outlets.state.sampling
 
     //  Apply grain size quantization only if BPM is valid (prevent division by zero)
@@ -1879,6 +1888,7 @@ static void ligase_process_grains(ligase_t *x,
             }
             if (sos_mix < 0.0f) sos_mix = 0.0f;
             if (sos_mix > 1.0f) sos_mix = 1.0f;
+            x->sos_current = sos_mix;   // readback (get_params sos): the mix actually applied this block
 
             // Constant-power crossfade for smooth monitoring mix
             // Maintains constant perceived loudness across SOS range
@@ -1984,6 +1994,7 @@ static void ligase_process_grains(ligase_t *x,
             }
             if (sos_mix < 0.0f) sos_mix = 0.0f;
             if (sos_mix > 1.0f) sos_mix = 1.0f;
+            x->sos_current = sos_mix;   // readback (get_params sos): the passthrough VCA actually applied
 
             if (LIGASE_DEBUG) fprintf(stderr, "ligase_perform: x->sos_value=%f, sos_in[0]=%f, using sos_mix=%f for passthrough\n",
                     x->sos_value, sos_in[0], sos_mix);
@@ -2599,12 +2610,14 @@ null_ptr_error:
     // cursor; otherwise (v1.1) the CV cursor signal inlets do, when engaged via morph_cursor 1.
     if (x->morph && x->morph->route_active) {
         morph_step(x, n);
-    } else if (x->morph && x->morph->cursor_is_signal && x->morph->point_count > 0) {
+    } else if (x->morph && x->morph->cursor_is_signal) {
         float cx = morph_x_in[0], cy = morph_y_in[0];
         if (cx < 0.0f) cx = 0.0f; else if (cx > 1.0f) cx = 1.0f;
         if (cy < 0.0f) cy = 0.0f; else if (cy > 1.0f) cy = 1.0f;
+        // The cursor position tracks the CV pair even before the first point is placed (so a
+        // status/morph_state readback and a panel cursor stay live); the blend itself needs points.
         x->morph->cursor_x = cx; x->morph->cursor_y = cy;
-        morph_apply_at(x, cx, cy);
+        if (x->morph->point_count > 0) morph_apply_at(x, cx, cy);
     }
 
     ligase_update_inlets(x, grain_size_in, grain_start_in, speed_in, organize_in,
@@ -4031,6 +4044,9 @@ static void ligase_pattern_clear(ligase_t *x, t_symbol *s, int argc, t_atom *arg
     int slot = range->rand_instance;
     range->rand_type = range->saved_rand_type;            // restore FIRST (audio stops reading the slot)
     range->rand_instance = range->saved_rand_instance;
+    range->enabled = range->saved_enabled;                // the attach forced enabled=1 (and may have widened a
+    range->min = range->saved_min;                        // collapsed band to [0,1]): put the prior band back so
+    range->max = range->saved_max;                        // a cleared parameter is not left randomly modulated
     if (slot >= 0 && slot < PATTERN_SLOTS) {
         ps->pattern[slot].step_count = 0;                 // free the slot
         ps->pattern_phase[slot] = 0.0f;
@@ -4456,6 +4472,9 @@ static void ligase_pattern(ligase_t *x, t_symbol *s, int argc, t_atom *argv) {
             // remember the prior source so pattern_clear can restore it (don't clobber on re-load)
             attach_range->saved_rand_type = attach_range->rand_type;
             attach_range->saved_rand_instance = attach_range->rand_instance;
+            attach_range->saved_enabled = attach_range->enabled;   // ... and the prior band state, since the
+            attach_range->saved_min = attach_range->min;           // attach forces enabled=1 and may widen a
+            attach_range->saved_max = attach_range->max;           // collapsed band to [0,1] (see below)
         }
         attach_range->rand_type = RAND_TYPE_PATTERN;
         attach_range->rand_instance = slot;
@@ -5617,6 +5636,18 @@ static void ligase_matrix_connect(ligase_t *x, t_symbol *s, int argc, t_atom *ar
         }
     }
     if (sched->mod_conn_count >= MOD_MATRIX_MAX) {
+        // Full: reclaim an inert (disconnected) slot. Its enabled flag is already 0, so perform
+        // skips it while the fields are rewritten; enabled=1 is the single-word publish (LAST).
+        for (int i = 0; i < sched->mod_conn_count; i++) {
+            if (sched->mod_matrix[i].enabled) continue;
+            sched->mod_matrix[i].source = src;
+            sched->mod_matrix[i].dest   = dst;
+            sched->mod_matrix[i].depth  = depth;
+            sched->mod_matrix[i].enabled = 1;
+            post("ligase~: matrix %s -> %s depth %.4f (slot %d reused, %d/%d)",
+                 src_name, dst_name, depth, i, sched->mod_conn_count, MOD_MATRIX_MAX);
+            return;
+        }
         pd_error(x, "ligase~: matrix full (%d connections max)", MOD_MATRIX_MAX);
         return;
     }

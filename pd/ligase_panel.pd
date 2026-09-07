@@ -824,7 +824,7 @@
 #X connect 82 0 83 0;
 #X connect 83 0 84 0;
 #X obj 20 1925 r lgS_chord;
-#X msg 20 1950 chord 0 4 7;
+#X msg 20 1950 chord 60 64 67;
 #X obj 20 1975 s lg_engine;
 #X connect 85 0 86 0;
 #X connect 86 0 87 0;
@@ -1711,11 +1711,11 @@
 #X obj 150 4870 r lg_famok_5;
 #X connect 250 0 251 0;
 #X connect 252 0 251 1;
-#X obj 20 4920 expr 0+(1-0)*\$f1;
+#X obj 20 4920 expr 0+(0.01-0)*\$f1;
 #X connect 251 0 253 0;
 #X obj 20 4945 pack f f;
 #X obj 280 4920 r lg_shape_inst1;
-#X msg 20 4970 nbody_pump \$2 \$1;
+#X msg 20 4970 nbody_pump \$2 \$1 10;
 #X connect 253 0 254 0;
 #X connect 255 0 254 1;
 #X connect 254 0 256 0;

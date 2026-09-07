@@ -22,9 +22,23 @@ the shared panel brain (`web/ligase_panel_logic.js`) and the plugin (`plugin/`) 
       readbacks ◄──── status / out9 / vu / scope / print  ◄──── outlet 9, VU, scope taps, console ◄─────┘
 ```
 
-* **Signal inlets 1-24** (audio L/R + 22 CVs). The panel "IS the hardware": every CV knob drives
-  its inlet (engine runs `headless 0`, literal inlet values win). In the plugin each CV is a
-  DAW parameter in engine units with a 20 ms glide (the panel's `[line~]`).
+* **Signal inlets 1-24** (audio L/R + 22 CVs) — **two knob models, one layout**
+  (`panel_layout.INLET_SELECTORS`):
+  * *Pd panel = the hardware prototype*: every CV knob drives its signal inlet through a
+    `[line~]` and the engine runs `headless 0` (literal inlet values win). A driving inlet
+    re-asserts its value every block, so snapshot recall, the metasurface blend and XPNDR ASSIGN
+    cannot move a CV-driven knob — exactly like a physical knob (the modulation BAND still morphs).
+  * *Software hosts (browser prototype, plugin)*: a knob is the parameter's **message base**
+    (`grainsize 0.25`, the inlet's message twin), the engine runs `headless 1` with the inlets
+    unpatched, and the joystick is the message cursor (`morph <x> <y>`, `morph_cursor 0`). Every
+    knob is therefore captured by a snapshot, moved by recall / the metasurface / ASSIGN, and the
+    knob **follows the engine** (the brain re-seats it from `get_params` while the engine moves
+    the bases). The plugin keeps the panel's 20 ms glide as a per-block message ramp with the
+    console quiet. Only the two inlets without a message twin stay CV in every host: SMEAR MIX
+    (inlet 15) and MIDI NOTE (inlet 19 — and once a `midi` note message has been received the
+    engine owns that destination, so the knob is inert until the next `pitch_mode`; engine rule).
+    Stut mode remaps TIME/FDBK/TONE to `stut_reps` / `stut_reduction` / `stut_spacing` exactly as
+    the engine remaps the signal inlets.
 * **Messages**: everything else is a typed message on the main inlet (`grainsize 0.25`,
   `matrix_connect lorenz1 moog_cutoff 500`, `pattern pitch [ 0 4 7 ]`). Same text in both hosts.
 * **Readbacks**: outlet 9 (`get_params` replies incl. the NEW `splice/reel/playing/recording/
@@ -32,8 +46,9 @@ the shared panel brain (`web/ligase_panel_logic.js`) and the plugin (`plugin/`) 
   output peaks (VU), the console. The plugin adds a direct status struct
   (`src/ligase_status.h`) so LEDs and lamps are exact rather than polled text.
 * **Precedence** (`docs/modulation_layers.md`): driving inlet → morph route/cursor → last message;
-  `param_range` bands regenerate on top; the matrix sum is added last. A DAW automation lane
-  therefore always beats a morph blend on the same parameter.
+  `param_range` bands regenerate on top; the matrix sum is added last. In the software hosts a
+  knob IS a message, so a running route or a joystick move wins over a knob until the knob is
+  touched again (the knob shows the blend); the Pd panel's CV knobs always win.
 
 ## 1. Header jacks — IN L / IN R / OUT L / OUT R
 Silkscreen only. Browser: `[adc~]`/`[dac~]` (mic opt-in). Plugin: the stereo audio ports.
@@ -132,12 +147,18 @@ SCOPE TAP switch on FOLW, a FAMILY/INST change also retargets the scope (`scope_
 the behaviour `Plans/scope_taps.md` specified but nothing implemented.
 
 ## 12. MORPH METASURFACE — JOYSTICK · SNAP · ROUTE RUN · STOP · PAUSE · KERNEL · POWER
-The bed is a live canvas: drag = cursor (`joy_x`/`joy_y` = inlets 23/24, `morph_cursor 1`);
-SNAP = `snapshot <slot>` + `morph_point <slot> <x> <y>`; drag a point = `morph_point`; double-click =
-`morph_unplace` + `snapshot_clear`; shift-click = route waypoints; ROUTE RUN = `morph_route x y rate curve`
-legs + `morph_run 1`; STOP/PAUSE; KERNEL → `morph_interp 0|1`; POWER → `morph_power`; BASE rate strip →
-`morph_rate`. Plugin: joy_x/joy_y are DAW lanes (the most valuable automation: two floats drive the
-whole surface); points/route/power/cursor persist in the "voice" state (`morph_export` text).
+The bed is a live canvas: drag = cursor (`joy_x`/`joy_y`: the message cursor `morph <x> <y>` in the
+software hosts, inlets 23/24 + `morph_cursor 1` on the Pd panel); SNAP = `snapshot <slot>` +
+`morph_point <slot> <x> <y>` **and the selected PRESETS slot auto-advances to the next free slot**
+(the next SNAP adds a point instead of overwriting); drag a point = `morph_point`; **remove a point** =
+double-click, a pointer-timed double-tap (works under pointer capture / touch / WebKit), alt-click,
+right-click, or Delete/Backspace with the point selected → `surface.morphRemove(slot)` =
+`morph_unplace` + `snapshot_clear` (lamp cleared, marker dropped); shift-click = route waypoints;
+ROUTE RUN = `morph_route x y rate curve` legs + `morph_run 1`; STOP/PAUSE; KERNEL → `morph_interp 0|1`;
+POWER → `morph_power`; BASE rate strip → `morph_rate`. While the cursor moves or a route runs the knobs
+follow the blended bases (get_params knob follow). Plugin: joy_x/joy_y are DAW lanes (the most valuable
+automation: two floats drive the whole surface); points/route/power/cursor persist in the "voice" state
+(`morph_export` text).
 
 ## 13. SCOPE — TAP · VIEW · OUT 10/11
 XY phosphor display of outlets 10/11 (`scope_x~`/`scope_y~`). TAP → `scope_tap folw` / `scope_tap grain`
@@ -194,3 +215,24 @@ worklet; plugin: the DSP keeps a 1024-sample XY history read by the UI.
 | state | snapshots in RAM; `morph_save` files by hand | full DAW project state (§16) |
 | two instances in one process | `perlin_perm` global + `last_organize` static corrupted each other | per-instance (src fix, regression-exact) |
 | Euclid ROT · AXIS→SLOTS literal transposition | engine seams (no `(k,n,rot)` token; sequenced via `scale_root`) | unchanged — engine work, tracked in QUEUE |
+
+### 17b. Second pass — verified against the running engine (`web/test_panel_engine.mjs`)
+Every control is now driven through the brain into the real hosted engine and the engine's own
+state is asserted (`get_params`, `snapbuf_get`, `morph_state`, `matrix_dump`, the status struct;
+any engine error fails the case). 143/143. What that pass found and fixed:
+
+| item | was | now |
+|---|---|---|
+| snapshots / metasurface / XPNDR vs the 20 CV knobs | a driving inlet re-asserts every block: FROM LIVE captured the stale message base, ASSIGN/recall/morph could not move a knob (a facade for the main knobs) | software hosts deliver knobs as messages (`INLET_SELECTORS`, headless 1); knobs follow the engine; the Pd panel keeps the hardware model (documented above) |
+| metasurface remove | `dblclick` only, after `pointerdown.preventDefault()` + pointer capture (fragile off-Chromium); no brain API | `surface.morphRemove(slot)`; double-tap / alt-click / right-click / Delete; marker + lamp + engine slot all cleared |
+| SNAP twice | overwrote the selected slot (one point) | auto-advances to the next free slot |
+| CHORD button | `chord 0 4 7` (note 0 invalid → 2 voices) | `chord 60 64 67` |
+| NBDY D knob | `nbody_pump <inst> <amount>` (engine wants `<interval>` too; amount range 0–0.01) | 3-arg message, engine range, interval 10 |
+| matrix re-patching | after 32 distinct connections the engine refused new ones (disconnected slots stayed allocated) | `matrix_connect` reclaims an inert slot when full (engine) |
+| `get_params` on a message-set parameter | reported the raw inlet sample (0 when unpatched) | reports the effective value the block used (engine) |
+| `get_params sos` in Morphagene mode | the recorder's crossfade (never the applied mix) | the applied mix (engine) |
+| CV morph cursor before the first point | did not move (readback/cursor frozen) | tracks the CV pair; the blend still needs points (engine) |
+| `pattern_clear <param>` | left the band enabled (and widened to 0..1) → the parameter stayed randomly modulated | restores the band's prior enabled/min/max (engine) |
+| SEQ `pattern scale_root [...]` | looked inert in the harness | steps once the cycle clock has a tempo (two clock bangs) — engine behaviour, test fixed |
+| XPNDR ASSIGN readback with the band on | live value = the modulated band value, not the base | documented; the test disables the band first |
+| MIDI NOTE knob after a MIDI note | silently inert | engine rule (`midi` message owns the destination), documented |

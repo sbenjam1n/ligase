@@ -76,6 +76,8 @@ lgR_/lgS_ readback, MEMFS reel load/save, mic-graph wiring — via `test_harness
   every bind kind + every `special` of `panel_layout.py`, ported from the Pd wiring. DOM-free.
 - `test_panel_logic.mjs` — node tests for the brain + bridge against the generated descriptors
   (`node web/test_panel_logic.mjs`; regenerates `ligase_controls.js` if missing).
+- `test_panel_engine.mjs` — the brain driving the REAL hosted engine (`make -C plugin/tests host`
+  builds `plugin/tests/build/engine_host`): every control, engine state asserted, 143 cases.
 - `index.html` — the deployable player shell (start / mic / reel load+export / Web MIDI + computer-keyboard notes + the panel).
 - `test_harness.html` — headless verification API (test-only; not deployed).
 - `assemble_site.sh` — gathers the flat static site into `web/site/`.

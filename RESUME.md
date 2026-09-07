@@ -3,7 +3,7 @@
 _Snapshot for picking work back up. Authoritative changelog lives in `QUEUE.md` (§6);
 this is the "where we are / how to continue" digest._
 
-## Where we are (2026-09-07, Queue Seq 102) — QUEUE RESET; the plugin arc is delivered
+## Where we are (2026-09-07, Queue Seq 103) — the plugin arc is delivered AND verified control-by-control
 
 - **Branch state:** everything up to Seq 101 is on `main` (PR #24). This session's work is on
   **`claude/ligase-vst-audio-midi-ebh9sf`**, pushed, **unmerged** (owner PR = queue item P3).
@@ -11,7 +11,14 @@ this is the "where we are / how to continue" digest._
   `plugin-build` workflow (Linux + macOS plugin artifacts).
 - **The queue was reset** (`QUEUE.md` §1): P1 owner DAW hands-on · P2 owner ear-test of the
   DIST-ON panel default · P3 merge PR · P4 the two SEQ engine seams (Euclid ROT token, per-slot
-  transposition) · P5 plugin polish backlog. Every earlier B/M item is closed history.
+  transposition) · P5 plugin polish backlog · P6 owner feel-test of the software knob model.
+  Every earlier B/M item is closed history.
+- **Seq 103 (same day):** the owner asked whether each section was REALLY functional beyond
+  emitting messages. Answer built as a test: `make -C plugin/tests host && node
+  web/test_panel_engine.mjs` drives every control through the brain into the hosted engine and
+  asserts engine state (143/143). It exposed that the 20 CV knobs were a facade for snapshots /
+  the metasurface / XPNDR (a driving inlet re-asserts every block) — fixed by the software knob
+  model below — plus a list of engine readback/slot seams, all fixed regression-exact.
 
 ### What shipped this session
 1. **ligase~ as a native DAW plugin** — `plugin/` (see `docs/plugin_build.md`):
@@ -51,6 +58,23 @@ this is the "where we are / how to continue" digest._
    organize jitter filter (was a function static), `envelope 3/4` accepted, `get_params` now
    reports `splice/reel/playing/recording/rec_mode`, `src/ligase_status.h` host status API.
 
+4. **Second pass — the software knob model + metasurface completion (Seq 103):**
+   `panel_layout.INLET_SELECTORS` gives every CV inlet its message twin; the browser and the
+   plugin run the engine `headless 1`, deliver knobs as messages (`grainsize 0.25`; stut mode
+   remaps the delay knobs; the joystick is `morph <x> <y>` with `morph_cursor 0`), and the brain
+   re-seats knobs from `get_params` while the engine moves the bases (1.5 s windows after
+   morph/recall/ASSIGN, or while a route runs; 600 ms touch guard). The plugin ramps knob
+   messages over 20 ms per inner block with the engine console quiet (`ligase_engine_set_quiet`).
+   Only SMEAR MIX and MIDI NOTE stay CV (no message twin). The Pd panel is unchanged (hardware
+   model: `[line~]` → inlets, headless 0) — documented side by side in `docs/ui/ui_sections.md` §0.
+   Metasurface: `surface.morphRemove(slot)` (double-tap / alt-click / right-click / Delete),
+   SNAP auto-advances to the next free slot; CHORD is `chord 60 64 67`; NBDY pump sends
+   `nbody_pump <inst> <amount 0-0.01> <interval 10>`. Engine (`src/`): `get_params` reports the
+   effective value (was the raw inlet sample → 0 when unpatched), `sos` reports the applied mix,
+   `matrix_connect` reclaims inert slots when full, `pattern_clear` restores the band's prior
+   enabled/min/max, the CV cursor tracks before the first point. `plugin/tests/Makefile` now
+   tracks header deps (`-MMD -MP`) — a `types.h` edit had produced a stale-object false failure.
+
 ## What ligase~ is
 - Pure Data granular synth / sampler / looper / delay external. C, **GPL-2-only**. Repo `sbenjam1n/ligase`.
 - **Hardware-synth PROTOTYPE** → every parameter signal/CV-driven via its inlet where one exists;
@@ -63,7 +87,11 @@ this is the "where we are / how to continue" digest._
   `emit_plugin.py` (host parameters → `plugin/ligase_params.h` + `plugin/ui/params.json`, both
   committed). Change the data, re-run the emitters; never hand-edit generated artifacts.
 - **Two identity gates now**: `AUTOMATED_TEST_PROCEDURE.md` for the Pd external AND
-  `make -C plugin/tests` for the hosted engine (byte-identical reel). Run both after any `src/` change.
+  `make -C plugin/tests` for the hosted engine (byte-identical reel). Run both after any `src/` change,
+  plus `bash tests/run_acceptance.sh` (needs the external built: `make` first — a `make clean`
+  leaves the runner with nothing to load and every suite reports empty).
+- **Panel × engine suite** `make -C plugin/tests host && node web/test_panel_engine.mjs` is the
+  answer to "is this control real?": extend it whenever a control or a special is added.
 - **Panel brain edits** go in `web/ligase_panel_logic.js` (browser + plugin share it); run
   `node web/test_panel_logic.mjs`; the plugin page is rebuilt by `make -C plugin ui`
   (`plugin/ui/build_page.py` inlines SVG + widgets + brain + bridge into one `index.html`).

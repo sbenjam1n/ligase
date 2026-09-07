@@ -170,6 +170,13 @@ private:
     std::atomic<float> fVelAmp{0.0f};
     std::atomic<int>   fBendCents{50};
     float fVelGain;            /* last note velocity -> level multiplier */
+    /* message-delivered knobs (LP_INLET with a selector): a 20 ms per-block ramp, each step sent
+     * as `<sel> <value>` with the engine's console quiet (the panel's [line~] glide, as messages) */
+    struct Ramp { float cur = 0.f, to = 0.f; int left = 0; bool active = false; };
+    Ramp fRamp[LIGASE_PARAM_COUNT] = {};
+    void stepRamps();
+    void sendKnobMessage(uint32_t index, float v);
+    void sendMorphCursor();
     int   fMidiChGrain, fMidiChSmear;
     std::map<int, int> fCCMap;  /* cc number -> parameter index */
     mutable std::mutex fCCMutex;

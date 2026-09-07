@@ -27,6 +27,9 @@
   const bridge = window.LigaseBridge;
   bridge.init(LIGASE_PARAMS);
   const surface = createPanel(bridge, CONTROLS, TABLES);
+  // knob follow: the brain re-seats message-delivered knobs from get_params replies while the
+  // engine moves the bases (metasurface blend / route / recall / XPNDR); 4 Hz is plenty
+  setInterval(() => { try { bridge.msg('get_params'); } catch (_) {} }, 250);
   const svg = document.getElementById('ligase-svg').textContent;
   const handles = buildControls(surface, document.getElementById('controls'), { svg: svg });
   surface.attach(handles);

@@ -162,7 +162,7 @@ CONTROLS = [
     _c("poly", "toggle", dict(x=544, y=744, label="POLY ×8", on=True),
        ("toggle", "poly"), lo=0, hi=1, default=1),
     _c("chord", "button", dict(x=619, y=746, label="CHORD", w=48, lit=False),
-       ("bang", "chord 0 4 7"), init_send=False, note="demo major triad"),
+       ("bang", "chord 60 64 67"), init_send=False, note="demo C major triad (MIDI notes)"),
 
     # ---------- G. DISTORTION + OUTPUT/SPACE ----------
     _c("dist_on", "toggle", dict(x=96, y=822, label="ON / OFF", on=True),
@@ -406,10 +406,35 @@ SHAPE_MEANINGS = {
         6: ("sphere_spin", "inst2", 0.0, 10.0),
     },
     # D: NBDY pump amount; SPHR kick strength is CONSUMED by the KICK button (no send)
+    # (a 5th element = constant trailing args: nbody_pump <inst> <amount> <interval>, amount 0-0.01
+    #  = the engine's own range, interval fixed at the engine default of 10 updates)
     "shape_d": {
-        5: ("nbody_pump", "inst2", 0.0, 1.0),
+        5: ("nbody_pump", "inst2", 0.0, 0.01, (10,)),
     },
 }
+# ---------- CV inlet -> message twin (software-host knob delivery) ----------
+# The Pd panel is the HARDWARE prototype: every CV knob feeds its signal inlet through a [line~]
+# and the engine runs headless 0 (a driving inlet re-asserts its value every block, so snapshots,
+# the morph surface and the expander cannot move a CV-driven knob -- exactly like a physical knob).
+# The SOFTWARE hosts (web prototype, plugin) have no physical knobs: there a knob is the parameter's
+# message BASE (the engine runs headless 1 with the inlets unpatched), so snapshot recall, the
+# metasurface blend and XPNDR ASSIGN move every knob, and the knob follows the engine.
+# inlet number -> selector (None = no message twin: the knob stays a CV inlet in every host).
+INLET_SELECTORS = {
+    3: "grainsize", 4: "grainstart", 5: "speed", 6: "organize", 7: "scanrate", 8: "sos",
+    9: "iot", 10: "maxgrains",
+    11: "gdelay_time", 12: "gdelay_feed", 13: "gdelay_tone", 14: "gdelay_mix",   # stut mode remaps 11/12/13
+    15: None,            # smear mix: inlet-only in the engine (no message twin)
+    16: "moog_cutoff", 17: "moog_resonance", 18: "moog_mix",
+    19: None,            # MIDI note: the pitch inlet (a `midi` message is a note-on/off, not a knob)
+    20: "env_skew", 21: "amplitude", 22: "pan",
+    23: None, 24: None,  # morph cursor: software hosts send `morph <x> <y>` (message cursor) instead
+}
+# Stut mode (delay MODE 2) remaps the three delay CV inlets exactly like the engine does for the
+# signal inlets: TIME 0-10 -> stut_reps 1-16, FDBK 0-1 -> stut_reduction, TONE 0-1 -> stut_spacing
+# 1..5000 ms (exponential). Software hosts apply the same map when composing the message.
+INLET_STUT_SELECTORS = {11: "stut_reps", 12: "stut_reduction", 13: "stut_spacing"}
+
 # RESET button per family (selector taking <inst 1-4>); families absent = no-op
 SHAPE_RESET = {3: "perlin_reset", 4: "lorenz_reset", 5: "nbody_reset", 6: "sphere_reset"}
 # MODE switch per family ("<sel> <inst> <mode>")

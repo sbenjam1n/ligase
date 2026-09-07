@@ -8,7 +8,7 @@ SRC     := $(ROOT)/src
 PLUGIN  := $(ROOT)/plugin
 BUILD   := build
 CFLAGS  ?= -O2 -fPIC -Wall -Wno-unused-function
-CFLAGS  += -I$(SRC) -I$(PLUGIN) -std=gnu11
+CFLAGS  += -I$(SRC) -I$(PLUGIN) -std=gnu11 -MMD -MP   # .d files: a header edit (types.h) rebuilds every object
 ENGINE_SRCS := $(wildcard $(SRC)/*.c)
 SHIM_SRCS   := $(PLUGIN)/pdshim.c $(PLUGIN)/ligase_engine.c
 OBJS := $(patsubst $(SRC)/%.c,$(BUILD)/src_%.o,$(ENGINE_SRCS)) $(patsubst $(PLUGIN)/%.c,$(BUILD)/plugin_%.o,$(SHIM_SRCS))
@@ -32,6 +32,7 @@ run: $(BUILD)/identity_test
 clean:
 	rm -rf $(BUILD)
 .PHONY: all run clean
+-include $(OBJS:.o=.d)
 
 # ---- CLAP host smoke test against the built plugin binary ----
 CLAP_BIN ?= $(abspath ../bin/ligase.clap/ligase.clap)
@@ -41,3 +42,9 @@ $(BUILD)/clap_host_test: clap_host_test.c
 clap: $(BUILD)/clap_host_test
 	./$(BUILD)/clap_host_test $(CLAP_BIN)
 .PHONY: clap
+
+# ---- engine host for the JS panel brain (web/test_panel_engine.mjs) ----
+$(BUILD)/engine_host: engine_host.c $(OBJS)
+	$(CC) $(CFLAGS) engine_host.c $(OBJS) -o $@ -lm -lpthread
+host: $(BUILD)/engine_host
+.PHONY: host

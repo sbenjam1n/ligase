@@ -43,6 +43,9 @@ typedef struct pdshim_instance {
     t_pd            *obj;
     /* the object's canvas (returned by canvas_getcurrent while this instance is current) */
     struct _glist   *canvas;
+    /* 1 => post()/verbose()/logpost(>1) are dropped (a host smoothing a knob with a burst of
+     * per-block messages must not flood the console); pd_error()/error() are ALWAYS delivered */
+    int              quiet;
 } pdshim_instance_t;
 
 /* Process-wide init (idempotent, thread-safe): builtin symbols. Called by everything below. */

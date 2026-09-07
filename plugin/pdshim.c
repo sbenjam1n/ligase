@@ -146,6 +146,7 @@ void pdshim_instance_release(pdshim_instance_t *inst) {
  * ------------------------------------------------------------------------------------------ */
 static void emit(int level, const char *text) {
     pdshim_instance_t *inst = g_current;
+    if (level == 0 && inst && inst->quiet) return;   /* quiet: informational posts dropped */
     if (inst && inst->print) inst->print(inst->user, level, text);
     else { fputs(text, stderr); fputc('\n', stderr); }
 }
