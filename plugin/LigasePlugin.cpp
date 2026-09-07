@@ -1,6 +1,7 @@
 /* LigasePlugin.cpp — the DSP side of ligase~ as a DPF plugin. See LigasePlugin.hpp. */
 #include "LigasePlugin.hpp"
 
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -137,7 +138,7 @@ LigasePlugin::LigasePlugin()
     : Plugin(LIGASE_PARAM_COUNT, 0, 7),
       fEngine(nullptr), fRecMode(2), fRecording(false), fVelGain(1.0f), fMidiChGrain(1), fMidiChSmear(2),
       fWasPlaying(false), fLastBeat(-1.0), fInFill(0), fOutHead(0), fOutCount(0), fPrimed(false), fLatency(0),
-      fStatusCounter(0)
+      fStatusCounter(0), fRunCount(0)
 {
     std::memset(scopeX, 0, sizeof scopeX); std::memset(scopeY, 0, sizeof scopeY);
     std::memset(&statusSnap, 0, sizeof statusSnap);
@@ -280,6 +281,11 @@ void LigasePlugin::setParameterValue(uint32_t index, float value) {
     const lp_param_t& p = LIGASE_PARAMS[index];
     if (p.kind == LP_OUTPUT) return;
     if (p.kind == LP_TRIGGER) { if (value > 0.5f) { fParamValue[index].store(1.0f); fParamDirty[index].store(true); } return; }
+    if (index == LP_RECORD && value > 0.5f && !fActive) {
+        /* a RECORD=1 restored with a project (before activation) must not start a take on load */
+        fParamValue[index].store(0.0f);
+        return;
+    }
     fParamValue[index].store(value);
     fParamDirty[index].store(true, std::memory_order_release);
 }
@@ -543,8 +549,8 @@ void LigasePlugin::configureLatency(uint32_t bufferSize) {
     setLatency(fLatency);
 }
 
-void LigasePlugin::activate() { configureLatency(getBufferSize()); fLastBeat = -1.0; }
-void LigasePlugin::deactivate() {}
+void LigasePlugin::activate() { configureLatency(getBufferSize()); fLastBeat = -1.0; fActive.store(true); }
+void LigasePlugin::deactivate() { fActive.store(false); }
 void LigasePlugin::bufferSizeChanged(uint32_t newBufferSize) { configureLatency(newBufferSize); }
 void LigasePlugin::sampleRateChanged(double newSampleRate) {
     std::lock_guard<std::mutex> lk(fEngineMutex);
@@ -697,6 +703,7 @@ void LigasePlugin::run(const float** inputs, float** outputs, uint32_t frames, c
         }
     }
     for (; wi < frames; wi++) { outL[wi] = 0.f; outR[wi] = 0.f; }   /* unreachable in steady state */
+    fRunCount++;
 }
 
 Plugin* createPlugin() { return new LigasePlugin(); }

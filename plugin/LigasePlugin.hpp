@@ -45,14 +45,16 @@ struct TextRing {
     bool push(const char* s) noexcept {
         const uint32_t h = head.load(std::memory_order_relaxed), t = tail.load(std::memory_order_acquire);
         if (h - t >= (uint32_t)SLOTS) return false;
-        std::strncpy(slots[h % SLOTS], s, BYTES - 1); slots[h % SLOTS][BYTES - 1] = 0;
+        size_t n = std::strlen(s); if (n > (size_t)BYTES - 1) n = BYTES - 1;
+        std::memcpy(slots[h % SLOTS], s, n); slots[h % SLOTS][n] = 0;
         head.store(h + 1, std::memory_order_release);
         return true;
     }
     bool pop(char* out, size_t n) noexcept {
         const uint32_t t = tail.load(std::memory_order_relaxed), h = head.load(std::memory_order_acquire);
         if (t == h) return false;
-        std::strncpy(out, slots[t % SLOTS], n - 1); out[n - 1] = 0;
+        size_t len = std::strlen(slots[t % SLOTS]); if (len > n - 1) len = n - 1;
+        std::memcpy(out, slots[t % SLOTS], len); out[len] = 0;
         tail.store(t + 1, std::memory_order_release);
         return true;
     }
@@ -195,6 +197,8 @@ private:
     uint32_t fLatency;
     float fBlockOutL[ligase::kBlock], fBlockOutR[ligase::kBlock], fBlockSX[ligase::kBlock], fBlockSY[ligase::kBlock];
     uint32_t fStatusCounter;
+    uint32_t fRunCount;        /* run() calls so far */
+    std::atomic<bool> fActive{false};
     std::atomic<uint32_t> fCmdDrops{0};
 
     DISTRHO_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(LigasePlugin)
